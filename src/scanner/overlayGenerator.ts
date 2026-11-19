@@ -63,6 +63,16 @@ export function generateBubbleOverlay(
         ctx.stroke();
       }
     });
+    // Stray ink can produce uncertainty without any dark bubble interior.
+    // Show a conspicuous review cue at the row, not a fabricated answer.
+    if (q.status === 'uncertain' && q.measurements.every(m => m.fillPercent < 20)) {
+      const a = getBubbleCentre(q.question, 0);
+      const x = mmToPx(a.xMm - 5.5, dpi);
+      const y = mmToPx(a.yMm, dpi);
+      ctx.fillStyle = '#b77900';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText('!', x, y + 6);
+    }
   });
 
   // 3. Draw Test ID bubbles
