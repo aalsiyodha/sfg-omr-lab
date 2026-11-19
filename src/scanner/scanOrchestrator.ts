@@ -11,6 +11,7 @@ import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion } from './qrDecoder';
 import { detectAllAnswers, detectTestId } from './bubbleDetector';
 import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
+import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
 import { OMR_LAYOUT } from '../config/omrLayout';
@@ -226,15 +227,18 @@ export async function runFullScan(
         activeInkCeiling:inkCeiling,
         note:grayCalibration.note
       });
+      onProgress?.({ stage: 'Refining printed bubble-grid alignment…', percent: 67 });
+      const grid = estimateGridAlignment(chosen.gray,dpi);
+      logger.info('perspective','Independent printed-ring grid offsets', {grid});
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
-      const detectedId = detectTestId(chosen.gray, dpi, inkCeiling ?? undefined);
+      const detectedId = detectTestId(chosen.gray, dpi, inkCeiling ?? undefined, grid.testId);
       testId = detectedId.testId;
       logger.info('testIdDetection', `Test ID: ${testId}`, detectedId);
-      answers = detectAllAnswers(chosen.gray, dpi, inkCeiling ?? undefined);
+      answers = detectAllAnswers(chosen.gray, dpi, inkCeiling ?? undefined, q => offsetForQuestion(grid,q));
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
       images.bubbleOverlay = generateBubbleOverlay(
-        chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi
+        chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi, grid.testId
       );
     } else {
       logger.error('perspective',
