@@ -339,19 +339,26 @@ export function detectQuestion(
   });
 
   const measurements = rawMeasurements.map(r => r.measurement);
-  // Separate stray-ink signals from answer validity.
-  const bands = centres.map(c => measureOutlineBand(correctedGray,c.x,c.y,dpi));
-  const tracedOutline = bands.some((value,i) =>
+  // Hybrid: inspect the outer paper only when the row lacks a confident
+  // answer. An optional very faint second mark is handled separately below.
+  // This avoids flagging ordinary solid answers due to shadows, adjacent
+  // printed text, and JPEG artifacts around the bubble rings.
+  const strongestFill = Math.max(...measurements.map(m => m.fillPercent));
+  const probeExternal = strongestFill < settings.bubbleFillThreshold;
+  const bands = probeExternal
+    ? centres.map(c => measureOutlineBand(correctedGray,c.x,c.y,dpi))
+    : [];
+  const tracedOutline = probeExternal && bands.some((value,i) =>
     measurements[i].fillPercent < settings.bubbleFillThreshold &&
     value < 85 && Math.max(...bands.filter((_,j)=>j!==i)) - value > 45);
-  const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
-    measurements.map(m => m.localPaperBrightness ?? 235));
+  const offBubbleInk = probeExternal &&
+    hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
+      measurements.map(m => m.localPaperBrightness ?? 235));
   // The 2.0.1 external-band probe sees printed text/rings and JPEG artifacts,
   // so it is not trustworthy when a clear solid answer is present. Constrain
   // it to *otherwise unfilled* rows that also have local interior evidence of
   // a genuine stray mark. Never reject a clear fill based on this probe alone.
-  const strongestFill = Math.max(...measurements.map(m => m.fillPercent));
-  const externalStroke = strongestFill < settings.bubbleFillThreshold &&
+  const externalStroke = probeExternal &&
     centres.some((c,i) =>
       measurements[i].fillPercent >= 18 &&
       measurements[i].fillPercent < settings.bubbleFillThreshold &&
@@ -419,8 +426,15 @@ export function detectQuestion(
       }
       const fraction=total?dark/total:0;
       // Faint strokes: nontrivial interior evidence but not broad solid ink.
+      const radialCore=measurements[i].radialCore ?? 0;
+      const radialMiddle=measurements[i].radialMiddle ?? 0;
+      // The full engine mistook clean printed rings (Test 12 Q11) for
+      // deliberate marks. Require extra evidence for weaker interior ink.
+      // Strong narrow marks (Test 12 Q37/Q38) still go to manual review.
       return paper>=115 && fraction>=0.075 && fraction<=0.48 &&
-        measurements[i].fillPercent < RULES.visiblePartialFill;
+        measurements[i].fillPercent < RULES.visiblePartialFill &&
+        (measurements[i].fillPercent>=14 ||
+          (radialCore>=15 && radialMiddle>=10));
     });
     if (faintMark) {
       top.measurement.rejectReason = 'Faint or thin non-solid ink inside bubble';
@@ -451,7 +465,16 @@ export function detectQuestion(
 
   // Only borderline selections need perturbation analysis; clear 90%-filled
   // answers remain fast. Recheck neighbouring ink thresholds and ROI centres.
-  if (max < RULES.strongFill) {
+  // A symmetric, centre-and-edge-filled bubble is a legitimate lightly
+  // filled selection (Test 12 Q12-B and Q24-C). Variance checks should
+  // target narrow/uneven marks (Test 27 Q27 cross), not all medium fills.
+  const stableSolidShape =
+    (top.detail.filledQuadrants ?? 0) === 4 &&
+    !top.detail.strokeLike &&
+    (top.measurement.radialCore ?? 0)>=40 &&
+    (top.measurement.radialMiddle ?? 0)>=40 &&
+    (top.measurement.radialOuter ?? 0)>=45;
+  if (max < RULES.strongFill && !stableSolidShape) {
     const optionIdx = options.indexOf(top.measurement.option) as 0|1|2|3;
     const centre = getBubbleCentre(question, optionIdx);
     const cx = mmToPx(centre.xMm, dpi)+offset.dx, cy = mmToPx(centre.yMm, dpi)+offset.dy;
