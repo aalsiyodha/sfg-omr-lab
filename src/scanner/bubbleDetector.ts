@@ -253,7 +253,8 @@ export function detectQuestion(
   question: number,    // 1-based
   dpi: number,
   darkThreshold?: number,
-  inkCeiling?: number
+  inkCeiling?: number,
+  offset: {dx:number;dy:number} = {dx:0,dy:0}
 ): BubbleReadResult {
   const settings = getSettings();
   const effectiveThreshold = darkThreshold ?? computeAdaptiveDarkThreshold(correctedGray);
@@ -263,7 +264,7 @@ export function detectQuestion(
   
   const centres = options.map((_, idx) => {
     const c = getBubbleCentre(question, idx as 0|1|2|3);
-    return { x: mmToPx(c.xMm,dpi), y: mmToPx(c.yMm,dpi) };
+    return { x: mmToPx(c.xMm,dpi)+offset.dx, y: mmToPx(c.yMm,dpi)+offset.dy };
   });
   const preliminary = centres.map(c =>
     measureBubbleInterior(correctedGray, c.x, c.y, interiorRadiusPx, effectiveThreshold, dpi, undefined, inkCeiling));
@@ -444,7 +445,7 @@ export function detectQuestion(
   if (max < RULES.strongFill) {
     const optionIdx = options.indexOf(top.measurement.option) as 0|1|2|3;
     const centre = getBubbleCentre(question, optionIdx);
-    const cx = mmToPx(centre.xMm, dpi), cy = mmToPx(centre.yMm, dpi);
+    const cx = mmToPx(centre.xMm, dpi)+offset.dx, cy = mmToPx(centre.yMm, dpi)+offset.dy;
     const samples = [
       measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - RULES.thresholdPerturbation, dpi),
       measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + RULES.thresholdPerturbation, dpi),
@@ -478,12 +479,13 @@ export function detectQuestion(
 export function detectAllAnswers(
   correctedGray: any,
   dpi: number,
-  inkCeiling?: number
+  inkCeiling?: number,
+  offsetForRow: (q:number)=>{dx:number;dy:number} = ()=>({dx:0,dy:0})
 ): QuestionResult[] {
   const darkThreshold = computeAdaptiveDarkThreshold(correctedGray);
   return Array.from({ length: 50 }, (_, i) => {
     const q = i + 1;
-    const result = detectQuestion(correctedGray, q, dpi, darkThreshold, inkCeiling);
+    const result = detectQuestion(correctedGray, q, dpi, darkThreshold, inkCeiling, offsetForRow(q));
     return {
       question: q,
       measurements: result.measurements,
@@ -498,8 +500,11 @@ export function detectAllAnswers(
 export function detectTestId(
   correctedGray: any,
   dpi: number,
-  inkCeiling?: number
-): { tens: number | null; units: number | null; testId: number | null } {
+  inkCeiling?: number,
+  offset: {dx:number;dy:number} = {dx:0,dy:0}
+): { tens: number | null; units: number | null; testId: number | null;
+  tensCandidates: {digit:number;fill:number;valid:boolean}[];
+  unitsCandidates: {digit:number;fill:number;valid:boolean}[] } {
   const settings = getSettings();
   const darkThreshold = computeAdaptiveDarkThreshold(correctedGray);
   const TID = OMR_LAYOUT.testId;
@@ -509,14 +514,14 @@ export function detectTestId(
   // Detect TENS (0-5)
   const tensFills = (TID.tens.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('tens', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi)+offset.dx, mmToPx(c.yMm, dpi)+offset.dy, interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
     return { digit, fill: detail.fillPercent, valid: detail.isValid, paper: detail.paperReferenceBrightness ?? 235 };
   });
   
   // Detect UNITS (0-9)
   const unitsFills = (TID.units.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('units', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi)+offset.dx, mmToPx(c.yMm, dpi)+offset.dy, interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
     return { digit, fill: detail.fillPercent, valid: detail.isValid, paper: detail.paperReferenceBrightness ?? 235 };
   });
   
@@ -553,5 +558,8 @@ export function detectTestId(
   const testId = (tens !== null && units !== null) ? tens * 10 + units : null;
   const validRange = testId !== null && testId >= 1 && testId <= 40;
   
-  return { tens, units, testId: validRange ? testId : null };
+  return { tens, units, testId: validRange ? testId : null,
+    tensCandidates: tensFills.map(({digit,fill,valid})=>({digit,fill,valid})),
+    unitsCandidates: unitsFills.map(({digit,fill,valid})=>({digit,fill,valid})) };
+
 }
