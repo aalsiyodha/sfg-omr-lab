@@ -5,9 +5,11 @@ import { version } from '../../package.json';
 // Injected by Vite at build time.
 declare const __APP_BUILD_ID__: string;
 
-export const APP_VERSION = `v${version}`;
+export const APP_VERSION = version.startsWith('2.1.1-extended-noob')
+  ? 'v2.1.1 Extended Noob Version'
+  : `v${version}`;
 export const APP_BUILD_ID = __APP_BUILD_ID__;
 export const APP_RELEASE_LABEL = APP_BUILD_ID === 'local'
   ? APP_VERSION
   : `${APP_VERSION} · ${APP_BUILD_ID}`;
-export const APP_BUILD_NAME = `SFG OMR Lab ${APP_VERSION} (Shadow-Aware • Ink Review • Beta)`;
+export const APP_BUILD_NAME = `SFG OMR Lab ${APP_VERSION} (Simplified Offline Scanner • Experimental)`;
