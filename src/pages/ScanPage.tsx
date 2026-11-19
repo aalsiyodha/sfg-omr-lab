@@ -165,6 +165,10 @@ export default function ScanPage({ appState }: Props) {
       setSubmitError('No active practice test. Please generate a practice test first.');
       return;
     }
+    if (scanResult.overallStatus === 'failed' || scanResult.errors.length > 0 || !scanResult.qrValid || scanResult.testId === null) {
+      setSubmitError('This scan failed validation and cannot be scored. Check registration, orientation and Test ID, then rescan.');
+      return;
+    }
     if (scanResult.testId !== null && scanResult.testId !== practice.activeTest.testId) {
       const confirmed = window.confirm(
         `⚠️ Test ID mismatch!\nScanned sheet shows Test ID ${String(scanResult.testId).padStart(2,'0')}, ` +
@@ -604,9 +608,10 @@ export default function ScanPage({ appState }: Props) {
           {/* Submission bar */}
           {hasAnswers && (
             <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-              <button className="btn btn-success btn-lg" onClick={handleSubmit} disabled={!practice.activeTest}>
+              <button className="btn btn-success btn-lg" onClick={handleSubmit} disabled={!practice.activeTest || scanResult.overallStatus === 'failed'}>
                 <i className="bi bi-check-circle me-2" />Submit & Score
               </button>
+              {scanResult.overallStatus === 'failed' && <span className="text-danger small">Scan validation failed — rescan before scoring.</span>}
               {!practice.activeTest && (
                 <span className="text-danger small">
                   <i className="bi bi-info-circle me-1" />
