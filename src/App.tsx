@@ -53,9 +53,9 @@ export default function App() {
                 {[
                   ['/', 'Home', 'bi-house'],
                   ['/practice', 'Practice Test', 'bi-pencil-square'],
-                  ['/scan', 'Scan OMR', 'bi-camera'],
+                  ['/scan', 'Scan a Sheet', 'bi-camera'],
                   ['/results', 'Results', 'bi-bar-chart'],
-                  ['/diagnostics', 'Diagnostics', 'bi-bug'],
+                  ['/diagnostics', 'Advanced', 'bi-gear'],
                 ].map(([to, label, icon]) => (
                   <li className="nav-item" key={to}>
                     <NavLink to={to} end={to==='/'} className={({isActive}) => `nav-link px-3 ${isActive ? 'active fw-bold' : ''}`}>
@@ -85,10 +85,10 @@ export default function App() {
               <span className="badge bg-light text-secondary border">{APP_RELEASE_LABEL}</span>
             </div>
             <div>
-              High-Precision Dual-Pass Optical Mark Recognition &bull; Calibrated for UPSC SFG 2027
+              50-question SFG OMR scanning &bull; Beta release — review unclear marks
             </div>
             <div className="text-muted small">
-              100% Client-Side &bull; Pure WASM &bull; Offline Ready
+              On-device image processing &bull; Review before scoring
             </div>
           </div>
         </footer>
