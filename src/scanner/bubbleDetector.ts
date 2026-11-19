@@ -276,35 +276,68 @@ export function detectQuestion(
   const jump = max - baseline;
   const diff = max - second.measurement.fillPercent;
 
-  // Classify the whole row before choosing a winner. Previously a high
-  // baseline could suppress a genuine second mark (Q26 in regression scans).
+  // Evaluate all marks, including a second selection just below the
+  // 45% threshold (Test 5 Q29: A=42.5%, C=83.2%).
   const validFills = rawMeasurements.filter(r =>
     r.detail.isValid && r.measurement.fillPercent >= settings.bubbleFillThreshold
   );
   const substantialMarks = rawMeasurements.filter(r =>
     r.measurement.fillPercent >= settings.bubbleFillThreshold
   );
-
   if (validFills.length >= 2) {
     return { measurements, answer: null, status: 'multiple', confidence: 0 };
   }
   if (max < settings.bubbleFillThreshold) {
+    if (max >= 42 || (max >= 37 && top.detail.strokeLike)) {
+      top.measurement.rejectReason = top.detail.rejectReason || 'Visible mark near the fill threshold';
+      return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+    }
     return { measurements, answer: null, status: 'blank', confidence: Math.max(0, 100 - max) };
   }
-  if (substantialMarks.length >= 2 || !top.detail.isValid) {
-    // Even if another mark fails morphology, it is not safe to assign an
-    // unambiguous single answer; ask for a manual review instead.
+
+  const borderlineSecond = max >= 70 &&
+    second.measurement.fillPercent >= 36 &&
+    second.measurement.fillPercent >= max * 0.4;
+  if (borderlineSecond && substantialMarks.length < 2) {
+    second.measurement.rejectReason = 'Possible additional mark just below threshold';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
-  if (jump < 16 || diff < settings.bubbleUncertainThreshold) {
-    return { measurements, answer: null, status: 'uncertain', confidence: Math.min(Math.round(diff * 2.5), 100) };
+  if (substantialMarks.length >= 2 || !top.detail.isValid || jump < 16 ||
+      diff < settings.bubbleUncertainThreshold) {
+    return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
 
+  // Only borderline selections need perturbation analysis; clear 90%-filled
+  // answers remain fast. Recheck neighbouring ink thresholds and ROI centres.
+  if (max < 85) {
+    const optionIdx = options.indexOf(top.measurement.option) as 0|1|2|3;
+    const centre = getBubbleCentre(question, optionIdx);
+    const cx = mmToPx(centre.xMm, dpi), cy = mmToPx(centre.yMm, dpi);
+    const samples = [
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - 8, dpi),
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + 8, dpi),
+      measureBubbleInterior(correctedGray, cx - 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
+      measureBubbleInterior(correctedGray, cx + 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
+      measureBubbleInterior(correctedGray, cx, cy - 1, interiorRadiusPx, effectiveThreshold, dpi),
+      measureBubbleInterior(correctedGray, cx, cy + 1, interiorRadiusPx, effectiveThreshold, dpi),
+    ];
+    const values = [max, ...samples.map(s => s.fillPercent)];
+    const range = Math.max(...values) - Math.min(...values);
+    top.measurement.stabilitySpread = Number(range.toFixed(1));
+    if (range >= 18 || samples.filter(s => s.strokeLike).length >= 2) {
+      top.measurement.rejectReason = 'Unstable or stroke-like mark (variation ' + range.toFixed(0) + '%)';
+      return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+    }
+  }
+
+  // Difference from other options is a separation score, not the likelihood
+  // of a valid filled bubble. Cap confidence for borderline marks.
+  const cap = max < 60 ? 75 : max < 75 ? 87 : max < 85 ? 95 : 99;
   return {
     measurements,
     answer: top.measurement.option,
     status: 'detected',
-    confidence: Math.min(Math.round(diff * 3), 100),
+    confidence: Math.min(cap, Math.round(diff * 3)),
   };
 }
 
