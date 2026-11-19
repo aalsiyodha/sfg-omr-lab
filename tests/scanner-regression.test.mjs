@@ -913,7 +913,7 @@ test('OMR v4 candidate: diagonal hatching channels inside a shaded bubble requir
     // Bright corridor between two dense ink regions; not an empty outer edge.
     return [inside && dx>=1 && dx<=2 ? 225 : read(y,x)[0]];
   };
-  const raw=bubbles.interiorHatchEvidence(image,160,120,150,152);
+  const raw=v201Engine().interiorHatchEvidence(image,160,120,150,152);
   assert.ok(raw.hatchLike);
   const result=v201Engine().detectQuestion(image,20,150,152);
   assert.equal(result.status,'uncertain');
@@ -936,7 +936,7 @@ test('OMR v4 candidate: one-sided high-density shading is not a completed fill',
 
 test('OMR v4 candidate: full unbroken ink is not mistakenly called hatched',()=>{
   const img=v201Image({shape:'solid',option:1});
-  const evidence=bubbles.interiorHatchEvidence(img,160,120,150,152);
+  const evidence=v201Engine().interiorHatchEvidence(img,160,120,150,152);
   assert.equal(evidence.hatchLike,false);
   const result=v201Engine().detectQuestion(img,1,150,152);
   assert.equal(result.status,'detected');
