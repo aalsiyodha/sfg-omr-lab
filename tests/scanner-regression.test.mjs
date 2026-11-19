@@ -988,3 +988,47 @@ test('OMR v4 ArUco predicts the true midpoint anchors in the v3 edge photo',()=>
   }
   assert.equal(predictMidpointsFromArucos({...detected,found:false}),null);
 });
+
+
+test('v4 Q18: tone correction cannot silently erase strong original fill',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const make=(q,status,fill,answer=null)=>({
+    question:q,status,detectedAnswer:answer,confidence:status==='blank'?95:0,isManuallyEdited:false,
+    measurements:['A','B','C','D'].map(option=>({
+      question:q,option,fillPercent:option==='D'?fill:0,xMm:0,yMm:0,
+    })),
+  });
+  const raw=make(18,'uncertain',55);
+  const toned=make(18,'blank',23);
+  const result=reconcileToneAnswers([raw],[toned]);
+  assert.equal(result.answers[0].status,'uncertain');
+  assert.equal(result.answers[0].detectedAnswer,null);
+  assert.equal(result.differences[0].action,'retain_manual_review');
+  assert.match(result.answers[0].measurements[3].rejectReason,/Original-grayscale/);
+});
+
+test('v4 Q42: faint coloured ink remains blank in dual grayscale scan',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const row=(status,fill)=>({
+    question:42,status,detectedAnswer:null,confidence:98,isManuallyEdited:false,
+    measurements:['A','B','C','D'].map(option=>({
+      question:42,option,fillPercent:option==='D'?fill:0,xMm:0,yMm:0,
+    })),
+  });
+  assert.equal(reconcileToneAnswers([row('blank',1.8)],[row('blank',0)]).answers[0].status,'blank');
+  assert.equal(reconcileToneAnswers([row('uncertain',12)],[row('blank',0)]).answers[0].status,'blank');
+});
+
+test('v4 Q20/Q24: tone mapping cannot promote an original uncertain irregular mark',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const row=(status,fill)=>({
+    question:24,status,detectedAnswer:status==='detected'?'B':null,
+    confidence:95,isManuallyEdited:false,
+    measurements:['A','B','C','D'].map(option=>({
+      question:24,option,fillPercent:option==='B'?fill:0,xMm:0,yMm:0,
+    })),
+  });
+  const c=reconcileToneAnswers([row('uncertain',76)],[row('detected',80)]);
+  assert.equal(c.answers[0].status,'uncertain');
+  assert.equal(c.answers[0].detectedAnswer,null);
+});
