@@ -22,6 +22,8 @@ export interface BubbleMeasurementDetail {
   filledQuadrants?: number;
   strokeLike?: boolean;
   effectiveThreshold?: number;
+  axisCoverage?: number;
+  diagonalCoverage?: number;
 }
 
 /**
@@ -132,6 +134,7 @@ function measureBubbleInterior(
   let q2Dark = 0, q2Tot = 0; // Top-Right
   let q3Dark = 0, q3Tot = 0; // Bottom-Left
   let q4Dark = 0, q4Tot = 0; // Bottom-Right
+  let axisDark = 0, axisTotal = 0, diagonalDark = 0, diagonalTotal = 0;
 
   const rSq = r * r;
   for (let row = 0; row < h; row++) {
@@ -144,6 +147,14 @@ function measureBubbleInterior(
         const pixelVal = grayMat.ucharPtr(y + row, x + col)[0];
         const isDark = pixelVal < inkThreshold;
         if (isDark) darkCirclePx++;
+        if (Math.abs(dx) <= 1 || Math.abs(dy) <= 1) {
+          axisTotal++;
+          if (isDark) axisDark++;
+        }
+        if (Math.abs(Math.abs(dx) - Math.abs(dy)) <= 1) {
+          diagonalTotal++;
+          if (isDark) diagonalDark++;
+        }
 
         if (dx < 0) {
           leftTot++;
@@ -181,7 +192,15 @@ function measureBubbleInterior(
   // quadrants. A genuinely filled bubble should occupy most quadrants, even
   // when photographed under moderate shadows.
   const filledQuadrants = [q1Pct, q2Pct, q3Pct, q4Pct].filter(v => v >= 24).length;
-  const strokeLike = fillPercent >= 45 && fillPercent < 75 && filledQuadrants <= 2;
+  const axisCoverage = axisTotal ? axisDark * 100 / axisTotal : 0;
+  const diagonalCoverage = diagonalTotal ? diagonalDark * 100 / diagonalTotal : 0;
+  // A thick X can cover all four quadrants and must not become valid at 65%.
+  const strokeLike = fillPercent >= 38 && fillPercent < 88 && (
+    filledQuadrants <= 2 ||
+    (diagonalCoverage >= 67 && diagonalCoverage - axisCoverage >= 22) ||
+    diagonalDisparity > 85 ||
+    horizontalDisparity > 65
+  );
 
   // OMR rejection criteria:
   // 1. Solid fill threshold: at least 45% (crosses ~25%, ticks ~25% fail)
@@ -195,7 +214,7 @@ function measureBubbleInterior(
     rejectReason = `Low fill (${fillPercent.toFixed(0)}%)`;
   } else if (strokeLike) {
     isValid = false;
-    rejectReason = `Sparse stroke shape (${filledQuadrants}/4 filled quadrants)`;
+    rejectReason = `Stroke-like shape (quadrants=${filledQuadrants}/4, diag=${diagonalCoverage.toFixed(0)}%, axis=${axisCoverage.toFixed(0)}%)`;
   } else if (horizontalDisparity > 65 && Math.min(leftPct, rightPct) < 15) {
     isValid = false;
     rejectReason = `Half-filled crescent mark (H-disparity ${horizontalDisparity.toFixed(0)}%)`;
@@ -206,7 +225,7 @@ function measureBubbleInterior(
 
   return { fillPercent, horizontalDisparity, diagonalDisparity, isValid,
     rejectReason, localPaperBrightness: paper, filledQuadrants, strokeLike,
-    effectiveThreshold: inkThreshold };
+    effectiveThreshold: inkThreshold, axisCoverage, diagonalCoverage };
 }
 
 export function detectQuestion(
@@ -238,6 +257,8 @@ export function detectQuestion(
         localPaperBrightness: detail.localPaperBrightness,
         filledQuadrants: detail.filledQuadrants,
         strokeLike: detail.strokeLike,
+        axisCoverage: detail.axisCoverage,
+        diagonalCoverage: detail.diagonalCoverage,
         xMm: centre.xMm, yMm: centre.yMm
       },
       detail,
@@ -326,7 +347,7 @@ export function detectTestId(
   // Detect UNITS (0-9)
   const unitsFills = (TID.units.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('units', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold);
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
     return { digit, fill: detail.fillPercent };
   });
   
