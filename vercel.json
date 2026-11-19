@@ -20,7 +20,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "test-build": false
+      "test-build": false,
+      "hybrid-experiment": false
     }
   }
 }
