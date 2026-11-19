@@ -808,3 +808,69 @@ test('v2.1.2: multiple overlay highlights true A+B but not third crossed D',()=>
     ]
   }),['A','B']);
 });
+
+test('hybrid: skip external outline/corridor probes on a clearly filled answer',()=>{
+  const engine=loadTS('src/scanner/bubbleDetector.ts',{
+    '../config/omrLayout':{
+      mmToPx:mm=>mm,
+      getBubbleCentre:(_q,option)=>({xMm:20+option*20,yMm:30}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings':{
+      getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{
+        minFill:45,nearThresholdFill:42,visiblePartialFill:37,strongFill:85,
+        strongMultipleRunner:65,secondMarkTopMin:70,secondMarkFillMin:36,
+        secondMarkRelative:.4,minJump:16,stabilityReviewSpread:18,
+        thresholdPerturbation:8,strokeReviewMaxFill:88,strokeReviewMinFill:38,
+        quadrantCoverage:24,diagonalLineCoverage:67,diagonalAxisGap:22,
+        diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+      }
+    },
+    './strayInk':{
+      measureOutlineBand:()=>{throw Error('should not inspect outline of solid selection')},
+      hasInterBubbleInk:()=>{throw Error('should not scan corridor of solid selection')},
+      hasExternalStroke:()=>{throw Error('should not scan exterior of solid selection')}
+    },
+    './radialInk':{measureRadialInk:()=>({
+      core:100,middle:100,outer:100,classification:'solid_like'
+    })}
+  });
+  const result=engine.detectQuestion(fakeImage([0,0,1,0]),1,150,152);
+  assert.equal(result.status,'detected');
+  assert.equal(result.answer,'C');
+});
+
+test('hybrid: off-bubble row ink remains a manual review, not a blank',()=>{
+  const engine=loadTS('src/scanner/bubbleDetector.ts',{
+    '../config/omrLayout':{
+      mmToPx:mm=>mm,
+      getBubbleCentre:(_q,option)=>({xMm:20+option*20,yMm:30}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings':{
+      getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{
+        minFill:45,nearThresholdFill:42,visiblePartialFill:37,strongFill:85,
+        strongMultipleRunner:65,secondMarkTopMin:70,secondMarkFillMin:36,
+        secondMarkRelative:.4,minJump:16,stabilityReviewSpread:18,
+        thresholdPerturbation:8,strokeReviewMaxFill:88,strokeReviewMinFill:38,
+        quadrantCoverage:24,diagonalLineCoverage:67,diagonalAxisGap:22,
+        diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+      }
+    },
+    './strayInk':{
+      measureOutlineBand:()=>255,
+      hasInterBubbleInk:()=>true,
+      hasExternalStroke:()=>false
+    },
+    './radialInk':{measureRadialInk:()=>({
+      core:0,middle:0,outer:0,classification:'no_ink'
+    })}
+  });
+  const result=engine.detectQuestion(fakeImage([0,0,0,0]),30,150,152);
+  assert.equal(result.status,'uncertain');
+  assert.equal(result.answer,null);
+});
