@@ -144,5 +144,25 @@ function validateGeometry(
   if (Math.abs(topWidth - bottomWidth) / Math.max(topWidth, bottomWidth) > 0.35) return false;
   if (Math.abs(leftHeight - rightHeight) / Math.max(leftHeight, rightHeight) > 0.35) return false;
 
+  // Four arbitrary black shapes can form a quadrilateral. The four SFG corner
+  // marker centres instead form a known ~191 x 278 mm rectangle. Reject gross
+  // distortions before homography turns them into plausible-looking bubbles.
+  const averageWidth = (topWidth + bottomWidth) / 2;
+  const averageHeight = (leftHeight + rightHeight) / 2;
+  const expectedAspect = 191 / 278;
+  const observedAspect = averageWidth / averageHeight;
+  // +/- 14% still allows camera tilt but rejects the Test 4 false anchors.
+  if (Math.abs(observedAspect / expectedAspect - 1) > 0.14) return false;
+
+  // Prevent degenerate, crossed, or reversed quadrilaterals.
+  const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
+  const points = [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft];
+  const turns = points.map((pt, i) => {
+    const next = points[(i + 1) % 4];
+    const next2 = points[(i + 2) % 4];
+    return cross(next.x - pt.x, next.y - pt.y, next2.x - next.x, next2.y - next.y);
+  });
+  if (turns.some(turn => turn <= 0)) return false;
+
   return true;
 }

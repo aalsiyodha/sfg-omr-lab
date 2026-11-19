@@ -5,21 +5,22 @@ export function validateScanResult(result: ScanResult): { warnings: string[]; er
   const errors = [...result.errors];
   
   if (!result.qrValid) {
-    warnings.push('QR code could not be verified. Student identity unconfirmed.');
+    errors.push('QR code not verified in its expected location; page orientation is untrusted.');
   }
   if (result.markerCount < 4) {
     errors.push(`Only ${result.markerCount}/4 registration markers detected. Scan may be inaccurate.`);
   }
   if (!result.perspectiveCorrected) {
-    warnings.push('Perspective correction not applied. Detection accuracy may be reduced.');
+    errors.push('Perspective correction not applied; answer locations cannot be trusted.');
   }
   if (result.testId === null) {
-    warnings.push('Test ID not detected. Scoring may use the wrong answer key.');
+    errors.push('Test ID not detected. Verify geometry and marking before scoring.');
   }
   if (result.testId !== null && (result.testId < 1 || result.testId > 40)) {
     errors.push(`Detected test ID ${result.testId} is outside valid range 01–40.`);
   }
   
+  if (result.answers.length !== 50) errors.push(`Expected 50 question results, received ${result.answers.length}.`);
   const blanks = result.answers.filter(a => a.status === 'blank').length;
   const uncertain = result.answers.filter(a => a.status === 'uncertain').length;
   const multiple = result.answers.filter(a => a.status === 'multiple').length;

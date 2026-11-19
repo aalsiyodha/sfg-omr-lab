@@ -3,7 +3,7 @@ import { loadImageFromFile, validateImage } from './imageLoader';
 import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
 import { correctPerspective } from './perspectiveCorrection';
-import { decodeQR, decodeQRFromRegion } from './qrDecoder';
+import { decodeQRFromRegion } from './qrDecoder';
 import { detectAllAnswers, detectTestId } from './bubbleDetector';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
@@ -25,6 +25,7 @@ export async function runFullScan(
   const start = Date.now();
   const images: IntermediateImages = {};
   
+  logger.clear();
   logger.info('loading', 'Starting scan pipeline', { fileName: file.name, fileSize: file.size });
   onProgress?.({ stage: 'Loading image…', percent: 5 });
   
@@ -44,6 +45,9 @@ export async function runFullScan(
   
   // Stage 2: Preprocess
   const preprocessed = preprocessImage(loaded.canvas);
+  let correctedGray: any = null;
+  let perspectiveResources: { corrected: any; transform: any } | null = null;
+  try {
   images.grayscale = preprocessed.grayDataUrl;
   images.thresholded = preprocessed.thresholdedDataUrl;
   logger.info('preprocessing', 'Image preprocessed');
@@ -57,6 +61,7 @@ export async function runFullScan(
   
   // Stage 4: Perspective correction
   const perspResult = correctPerspective(loaded.canvas, markerResult);
+  perspectiveResources = perspResult;
   if (!perspResult.success) {
     logger.warning('perspective', perspResult.error || 'Perspective correction failed');
   } else {
@@ -74,42 +79,35 @@ export async function runFullScan(
     corrCanvas.height = perspResult.corrected.rows;
     cv.imshow(corrCanvas, perspResult.corrected);
 
-    // Try decoding from standard top-right QR region
+    // Strict region checks: a QR found elsewhere must never count as upright.
     qrResult = decodeQRFromRegion(
-      corrCanvas,
-      OMR_LAYOUT.qr.xMm,
-      OMR_LAYOUT.qr.yMm,
-      OMR_LAYOUT.qr.sizeMm,
-      dpi
+      corrCanvas, OMR_LAYOUT.qr.xMm, OMR_LAYOUT.qr.yMm, OMR_LAYOUT.qr.sizeMm, dpi
     );
-
-    // If not found at top-right, check if image is upside down (180°)
-    if (!qrResult.found) {
+    if (!qrResult.valid) {
       const oppX = OMR_LAYOUT.page.widthMm - OMR_LAYOUT.qr.xMm - OMR_LAYOUT.qr.sizeMm;
       const oppY = OMR_LAYOUT.page.heightMm - OMR_LAYOUT.qr.yMm - OMR_LAYOUT.qr.sizeMm;
       const invertedQR = decodeQRFromRegion(corrCanvas, oppX, oppY, OMR_LAYOUT.qr.sizeMm, dpi);
-
-      if (invertedQR.found) {
-        // Image was scanned upside down! Rotate 180 degrees
-        logger.info('perspective', 'Detected upside-down sheet via QR. Rotating 180°...');
+      if (invertedQR.valid) {
+        logger.info('perspective', 'QR found in opposite corner: rotating sheet by 180°');
         cv.rotate(perspResult.corrected, perspResult.corrected, cv.ROTATE_180);
         cv.imshow(corrCanvas, perspResult.corrected);
         images.perspectiveCorrected = corrCanvas.toDataURL('image/png');
-        qrResult = invertedQR;
+        // Verify again AFTER rotation rather than trusting the old region.
+        qrResult = decodeQRFromRegion(
+          corrCanvas, OMR_LAYOUT.qr.xMm, OMR_LAYOUT.qr.yMm, OMR_LAYOUT.qr.sizeMm, dpi
+        );
       } else {
-        // Fallback: full canvas scan
-        qrResult = decodeQR(corrCanvas);
+        logger.error('qrDecoding', 'Cannot establish page orientation: QR absent from both expected corners');
       }
     }
   } else {
-    qrResult = decodeQR(loaded.canvas);
+    logger.error('perspective', 'Cannot establish orientation without trusted marker geometry');
   }
   logger.info('qrDecoding', `QR: found=${qrResult.found} valid=${qrResult.valid}`, { raw: qrResult.raw });
   onProgress?.({ stage: 'Pass 1: Detecting Test ID & primary answer grid…', percent: 60 });
   
   // Stage 6: Test ID
   let testIdResult = { tens: null as number|null, units: null as number|null, testId: null as number|null };
-  let correctedGray: any = null;
   
   if (perspResult.success && perspResult.corrected) {
     correctedGray = new cv.Mat();
@@ -125,15 +123,9 @@ export async function runFullScan(
     logger.info('bubbleDetection', `Pass 1: Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
   }
   
-  // Pass 2: Double-Check Verification Pass
-  onProgress?.({ stage: 'Pass 2: Double-checking symmetry & partial mark rejection…', percent: 80 });
-  await new Promise(r => setTimeout(r, 450));
-  
+  // Visual audit overlay. Do not pretend identical second-pass scans independently verify results.
+  onProgress?.({ stage: 'Generating scan alignment and answer overlay…', percent: 85 });
   if (correctedGray) {
-    // Re-verify answers in Pass 2
-    const pass2Answers = detectAllAnswers(correctedGray, dpi);
-    answers = pass2Answers;
-
     // Generate visual bubble detection overlay
     images.bubbleOverlay = generateBubbleOverlay(
       corrCanvas,
@@ -143,8 +135,7 @@ export async function runFullScan(
     );
   }
   
-  onProgress?.({ stage: 'Pass 2: Auditing baseline integrity & confidence metrics…', percent: 94 });
-  await new Promise(r => setTimeout(r, 350));
+  onProgress?.({ stage: 'Validating orientation, geometry and classification…', percent: 94 });
   
   // Build result
   const partialResult: ScanResult = {
@@ -158,21 +149,19 @@ export async function runFullScan(
     processingTimeMs: Date.now() - start,
     stageLogs: logger.getAll(),
     warnings: [],
-    errors: [],
+    errors: [
+      ...(!markerResult.found ? [markerResult.error || 'Registration geometry is not reliable.'] : []),
+      ...(!qrResult.valid ? ['Could not verify page orientation from the QR location.'] : []),
+    ],
     overallStatus: 'success',
   };
   
   const { warnings, errors } = validateScanResult(partialResult);
   partialResult.warnings = warnings;
   partialResult.errors = errors;
-  partialResult.overallStatus = errors.length > 3 ? 'failed' : warnings.length > 0 ? 'partial' : 'success';
+  partialResult.overallStatus = errors.length > 0 ? 'failed' : warnings.length > 0 ? 'partial' : 'success';
   
-  // Cleanup OpenCV Mats
-  cleanupMats(preprocessed.gray, preprocessed.blurred, preprocessed.thresholded);
-  if (correctedGray) cleanupMats(correctedGray);
-  if (perspResult.corrected) cleanupMats(perspResult.corrected);
-  if (perspResult.transform) cleanupMats(perspResult.transform);
-  
+
   logger.info('complete', `Scan complete in ${partialResult.processingTimeMs}ms`, {
     status: partialResult.overallStatus,
     testId: partialResult.testId,
@@ -181,4 +170,9 @@ export async function runFullScan(
   
   onProgress?.({ stage: 'Complete', percent: 100 });
   return { result: partialResult, images };
+  } finally {
+    cleanupMats(preprocessed.gray, preprocessed.blurred, preprocessed.thresholded);
+    cleanupMats(correctedGray);
+    if (perspectiveResources) cleanupMats(perspectiveResources.corrected, perspectiveResources.transform);
+  }
 }
