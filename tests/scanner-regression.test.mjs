@@ -881,3 +881,23 @@ test('OMR 2.1 seven reference positions map from bottom-left JSON to top-left sc
   assert.ok(CALIBRATION_PATCH_CENTRES_MM.every(p=>p.y===286.5));
   assert.deepEqual(WHITE_REFERENCE_CENTRES_MM.map(p=>p.y),[9.5,286.5]);
 });
+
+
+test('OMR 2.1: second vertical pen stroke beside solid answer cannot pass silently',()=>{
+  const engine=v201Engine();
+  const mat=v201Image({shape:'solid',option:1});
+  const original=mat.ucharPtr;
+  // A narrow second option mark, with broad enough core/middle evidence.
+  mat.ucharPtr=(y,x)=>[Math.abs(x-80)<=1 && Math.abs(y-120)<=5 ? 20 : original(y,x)[0]];
+  const result=engine.detectQuestion(mat,1,150,152);
+  assert.equal(result.status,'uncertain');
+  assert.equal(result.answer,null);
+  assert.ok(result.measurements.some(m=>/additional ink/i.test(m.rejectReason??'')));
+});
+
+test('OMR 2.1: lone solid answer still follows the fast path',()=>{
+  const engine=v201Engine();
+  const result=engine.detectQuestion(v201Image({shape:'solid',option:1}),1,150,152);
+  assert.equal(result.status,'detected');
+  assert.equal(result.answer,'B');
+});
