@@ -116,6 +116,23 @@ export function generateLLMDiagnosticPrompt({
     lines.push(`| ${qNum} | ${aFill}% | ${bFill}% | ${cFill}% | ${dFill}% | ${top?.option ?? '—'} | ${second?.option ?? '—'} | ${gap} | ${baseline} | ${det} | ${status} | ${conf} | ${q.isManuallyEdited ? 'yes' : 'no'} | ${exp} | ${match} |`);
   });
 
+  lines.push('\n### Detailed bubble-shape diagnostics for review rows');
+  const reviewDetails = scanResult.answers.filter(q =>
+    q.status === 'uncertain' || q.status === 'multiple' ||
+    q.status === 'error' || q.isManuallyEdited
+  );
+  if (!reviewDetails.length) lines.push('No ambiguous or manually edited rows.');
+  for (const q of reviewDetails) {
+    lines.push(`- **Q${String(q.question).padStart(2, '0')} (${q.status}):** ` +
+      q.measurements.map(m => `${m.option}: fill=${m.fillPercent.toFixed(1)}%, ` +
+        `H=${m.horizontalDisparity?.toFixed(1) ?? '?'}, ` +
+        `D=${m.diagonalDisparity?.toFixed(1) ?? '?'}, ` +
+        `valid=${m.validMark ?? '?'}, ` +
+        `ROI=(${m.sampleXPx ?? '?'},${m.sampleYPx ?? '?'}), ` +
+        `ink<${m.inkThreshold ?? '?'}, ` +
+        `reason=${m.rejectReason || 'none'}`).join(' | '));
+  }
+
   lines.push('\n## 7. Execution Stage Logs (redacted)');
   lines.push('```text');
   // Use logs attached to this scan rather than a global history of previous scans.
