@@ -8,7 +8,7 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## 🌟 Key Architecture & Capabilities
 
-1. **Self-Calibrating Adaptive Lighting Engine (`v1.4`)**:
+1. **Self-Calibrating Adaptive Lighting Engine (`v1.5`)**:
    - Calculates the exact Otsu binarization point on the perspective-corrected grayscale canvas in $<2\text{ ms}$.
    - Dynamically self-calibrates the dark ink threshold (`~154`), completely preventing false blanks caused by uneven ambient room lighting or mobile camera auto-exposure.
 
@@ -34,6 +34,12 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
    - Full review table with visual overlay and LLM diagnostic export for rapid feedback.
 
 ---
+
+## Version and deployment identification
+
+The release version comes from `package.json` (currently **v1.5.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
+
+For a future release, update both `package.json` and `package-lock.json` (for example, using `npm version patch --no-git-tag-version`), commit, and deploy. Code commits without a version bump retain the release number but display a different build identifier.
 
 ## 🚀 Quick Start (Local Run)
 
@@ -93,7 +99,7 @@ src/
 ├── config/
 │   ├── omrLayout.ts           # SINGLE SOURCE OF TRUTH for all millimeter coordinates
 │   ├── scannerSettings.ts     # Configurable thresholds and adaptive parameters
-│   └── version.ts             # Active engine version (v1.4)
+│   └── version.ts             # Active engine version (from package.json)
 ├── scanner/
 │   ├── bubbleDetector.ts      # Adaptive Otsu thresholding, symmetry audit & multi-mark detection
 │   ├── imageLoader.ts         # Image loading & dimension normalization
