@@ -227,10 +227,10 @@ export async function runFullScan(
         note:grayCalibration.note
       });
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
-      const detectedId = detectTestId(chosen.gray, dpi, inkCeiling);
+      const detectedId = detectTestId(chosen.gray, dpi, inkCeiling ?? undefined);
       testId = detectedId.testId;
       logger.info('testIdDetection', `Test ID: ${testId}`, detectedId);
-      answers = detectAllAnswers(chosen.gray, dpi, inkCeiling);
+      answers = detectAllAnswers(chosen.gray, dpi, inkCeiling ?? undefined);
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
       images.bubbleOverlay = generateBubbleOverlay(
