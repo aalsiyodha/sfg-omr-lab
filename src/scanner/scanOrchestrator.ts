@@ -10,6 +10,7 @@ import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspective
 import { detectArucoMarkers, predictMidpointsFromArucos } from './arucoDetector';
 import type { ArucoRegistration } from './arucoDetector';
 import { applySevenToneCorrection } from './grayToneCorrection';
+import { reconcileToneAnswers } from './toneConsensus';
 import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion } from './qrDecoder';
 import { detectAllAnswers, detectTestId } from './bubbleDetector';
@@ -287,16 +288,29 @@ export async function runFullScan(
       }
       testId = detectedId.testId;
       logger.info('testIdDetection', `Test ID: ${testId}`, detectedId);
-      // The baseline/registration path remains on original grayscale.
-      // Apply calibrated image values only to answer classification, making
-      // the new seven-tone references an active but bounded experiment.
+      // Compare original and seven-tone readings under exactly the same
+      // verified registration, grid offsets and ink ceiling. This separates
+      // geometry from tone-mapping changes and protects against Q18-like
+      // disappearing filled marks without promoting Q42-like faint debris.
+      const rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
+        q=>offsetForQuestion(grid,q));
       const tone=applySevenToneCorrection(chosen.gray,grayCalibration);
       logger.info('bubbleDetection','Seven-tone image correction',{
         applied:tone.applied,topBottomDelta:tone.topBottomDelta,
         description:tone.description});
       try {
-        answers=detectAllAnswers(tone.corrected,dpi,inkCeiling??undefined,
-          q=>offsetForQuestion(grid,q));
+        if(tone.applied){
+          const toneAnswers=detectAllAnswers(tone.corrected,dpi,inkCeiling??undefined,
+            q=>offsetForQuestion(grid,q));
+          const consensus=reconcileToneAnswers(rawAnswers,toneAnswers);
+          answers=consensus.answers;
+          logger.info('bubbleDetection','Original-vs-seven-tone answer comparison',{
+            differingRows:consensus.differences,
+            reviewedConflicts:consensus.differences.filter(d=>d.action!=='retain_corrected').length,
+          });
+        }else{
+          answers=rawAnswers;
+        }
       } finally {
         cleanupMats(tone.corrected);
       }
