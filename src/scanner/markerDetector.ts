@@ -20,7 +20,7 @@ export function detectMarkers(
   const hierarchy = new cv.Mat();
   
   try {
-    cv.findContours(thresholded, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(thresholded, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
     
     // A 7x7 mm marker on an A4 page (210x297 mm) is ~0.0786% of the total page area.
     const totalImageArea = imageWidth * imageHeight;
@@ -66,7 +66,9 @@ export function detectMarkers(
       cnt.delete();
     }
     
-    // Classify candidates into corner positions
+    // Evaluate combinations, not the four extremal contours. Small QR finder
+    // patterns, edge timing marks and degraded corner outlines can be mistaken
+    // for the reference squares, particularly in compressed pictures.
     const corners = classifyCorners(candidates, imageWidth, imageHeight);
     const validGeom = corners.count >= 4 && validateGeometry(corners, imageWidth, imageHeight);
     
@@ -82,7 +84,7 @@ export function detectMarkers(
         corners.count < 4
           ? `Only ${corners.count}/4 registration markers detected. Please ensure all 4 solid black corner squares are visible and uncropped.`
           : !validGeom
-          ? 'Registration markers detected but geometry is distorted. Please ensure the camera is reasonably parallel to the sheet.'
+          ? 'Four trustworthy corner markers could not be matched to A4 geometry. Check cropped/washed-out squares, perspective and image compression.'
           : undefined,
     };
   } finally {
@@ -91,38 +93,75 @@ export function detectMarkers(
   }
 }
 
+/**
+ * Match marker combinations against known A4 geometry. The naive extremal
+ * approach often selected inner midpoints in degraded/low-contrast scans.
+ * Prefer wide, rectangular sets while rejecting non-convex or warped sets.
+ */
 function classifyCorners(markers: DetectedMarker[], W: number, H: number) {
-  if (markers.length < 4) {
-    return { count: markers.length, topLeft: null, topRight: null, bottomLeft: null, bottomRight: null };
+  const empty = { count: 0, topLeft: null, topRight: null, bottomLeft: null, bottomRight: null };
+  if (markers.length < 4) return { ...empty, count: markers.length };
+
+  const quadrants = [
+    markers.filter(m => m.cx < W * 0.46 && m.cy < H * 0.46),
+    markers.filter(m => m.cx >= W * 0.54 && m.cy < H * 0.46),
+    markers.filter(m => m.cx < W * 0.46 && m.cy >= H * 0.54),
+    markers.filter(m => m.cx >= W * 0.54 && m.cy >= H * 0.54)
+  ];
+  const count = quadrants.filter(q => q.length > 0).length;
+  if (count < 4) return { ...empty, count };
+
+  // Bound combinations for images that have hundreds of candidate contours.
+  const corners = quadrants.map((items, index) =>
+    [...items].sort((a, b) => {
+      const score = (m: DetectedMarker) => {
+        const nx = m.cx / W, ny = m.cy / H;
+        const dx = index % 2 === 0 ? nx : 1 - nx;
+        const dy = index < 2 ? ny : 1 - ny;
+        return dx * dx + dy * dy;
+      };
+      return score(a) - score(b);
+    }).slice(0, 7)
+  );
+
+  let best: ReturnType<typeof asCorners> | null = null;
+  let bestScore = Infinity;
+  for (const tl of corners[0]) for (const tr of corners[1]) {
+    for (const bl of corners[2]) for (const br of corners[3]) {
+      const current = asCorners(tl, tr, bl, br);
+      if (!validateGeometry(current, W, H)) continue;
+      const top = Math.hypot(tr.cx - tl.cx, tr.cy - tl.cy);
+      const bottom = Math.hypot(br.cx - bl.cx, br.cy - bl.cy);
+      const left = Math.hypot(bl.cx - tl.cx, bl.cy - tl.cy);
+      const right = Math.hypot(br.cx - tr.cx, br.cy - tr.cy);
+      const aspect = (top + bottom) / (left + right);
+      const expected = 191 / 278;
+      const widthSpread = Math.abs(top - bottom) / Math.max(top, bottom);
+      const heightSpread = Math.abs(left - right) / Math.max(left, right);
+      // Penalize implausibly different marker sizes and interior false anchors.
+      const sizes = [tl, tr, bl, br].map(m => Math.sqrt(m.width * m.height));
+      const sizeSpread = (Math.max(...sizes) - Math.min(...sizes)) / Math.max(...sizes);
+      const cornerDistance = (tl.cx + tl.cy + (W - tr.cx) + tr.cy +
+        bl.cx + (H - bl.cy) + (W - br.cx) + (H - br.cy)) / (2 * (W + H));
+      const score = 5 * Math.abs(Math.log(aspect / expected)) +
+        widthSpread + heightSpread + sizeSpread + cornerDistance;
+      if (score < bestScore) { bestScore = score; best = current; }
+    }
   }
 
-  // Quadrant partitioning with generous reach
-  const tlCandidates = markers.filter(m => m.cx < W * 0.40 && m.cy < H * 0.40);
-  const trCandidates = markers.filter(m => m.cx >= W * 0.60 && m.cy < H * 0.40);
-  const blCandidates = markers.filter(m => m.cx < W * 0.40 && m.cy >= H * 0.60);
-  const brCandidates = markers.filter(m => m.cx >= W * 0.60 && m.cy >= H * 0.60);
+  // Retain diagnostic coordinates when candidates exist but cannot be trusted.
+  if (!best) {
+    const [tl, tr, bl, br] = corners.map(q => q[0]);
+    return { ...asCorners(tl, tr, bl, br), count: 4 };
+  }
+  return { ...best, count: 4 };
+}
 
-  // Corner extreme criteria:
-  // TL: minimizes (cx + cy) -> closest to top-left corner
-  const topLeft = tlCandidates.sort((a, b) => (a.cx + a.cy) - (b.cx + b.cy))[0] ?? null;
-
-  // TR: prioritize farthest right (maximum cx) while minimizing cy.
-  // Using (cx - 1.5 * cy) descending reliably avoids picking the QR code finder pattern (which is at x ~ 0.80*W)
-  const topRight = trCandidates.sort((a, b) => (b.cx - 1.5 * b.cy) - (a.cx - 1.5 * a.cy))[0] ?? null;
-
-  // BL: maximizes (cy - cx) -> closest to bottom-left corner
-  const bottomLeft = blCandidates.sort((a, b) => (b.cy - b.cx) - (a.cy - a.cx))[0] ?? null;
-
-  // BR: maximizes (cx + cy) -> closest to bottom-right corner
-  const bottomRight = brCandidates.sort((a, b) => (b.cx + b.cy) - (a.cx + a.cy))[0] ?? null;
-
-  const count = [topLeft, topRight, bottomLeft, bottomRight].filter(Boolean).length;
+function asCorners(tl: DetectedMarker, tr: DetectedMarker, bl: DetectedMarker, br: DetectedMarker) {
+  const point = (m: DetectedMarker) => ({ x: m.cx, y: m.cy });
   return {
-    count,
-    topLeft: topLeft ? { x: topLeft.cx, y: topLeft.cy } : null,
-    topRight: topRight ? { x: topRight.cx, y: topRight.cy } : null,
-    bottomLeft: bottomLeft ? { x: bottomLeft.cx, y: bottomLeft.cy } : null,
-    bottomRight: bottomRight ? { x: bottomRight.cx, y: bottomRight.cy } : null,
+    topLeft: point(tl), topRight: point(tr),
+    bottomLeft: point(bl), bottomRight: point(br)
   };
 }
 
