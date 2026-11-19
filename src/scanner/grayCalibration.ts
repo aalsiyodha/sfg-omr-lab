@@ -54,7 +54,7 @@ export function measureGrayCalibration(
     return {status:'low_contrast',patchMedians:medians,contrast,ordered,
       note:'Low tonal separation in the reference strip; review lighting and focus'};
   return {status:'ok',patchMedians:medians,contrast,ordered,
-    note:'Grayscale strip has usable tonal separation (diagnostic only)'};
+    note:'Grayscale strip has usable tonal separation; conservative ink calibration available'};
 }
 
 /**
