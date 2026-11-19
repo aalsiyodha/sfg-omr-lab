@@ -229,8 +229,10 @@ export async function runFullScan(
         note:grayCalibration.note
       });
       onProgress?.({ stage: 'Refining printed bubble-grid alignment…', percent: 67 });
+      const gridStart=Date.now();
       const grid = estimateGridAlignment(chosen.gray,dpi);
-      logger.info('perspective','Independent printed-ring grid offsets', {grid});
+      logger.info('perspective','Independent printed-ring grid offsets',
+        {grid, durationMs:Date.now()-gridStart});
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
       let idOffset: {dx:number;dy:number} = grid.testId;
       let detectedId = detectTestId(chosen.gray, dpi, inkCeiling ?? undefined, idOffset);
