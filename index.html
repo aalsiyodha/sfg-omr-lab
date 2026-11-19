@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SFG OMR Lab v1.4</title>
+    <script>
+      // OpenCV.js loading state
+      window.opencvReady = false;
+      window.opencvError = null;
+    </script>
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js"
+      onload="window.opencvReady = true; window.dispatchEvent(new Event('opencv-ready'));"
+      onerror="window.opencvError = 'Failed to load OpenCV.js'; window.dispatchEvent(new Event('opencv-error'));">
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
