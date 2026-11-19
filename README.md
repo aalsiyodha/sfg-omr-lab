@@ -8,6 +8,14 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## 🌟 Key Architecture & Capabilities
 
+### v1.8 beta release
+
+- Adds a first-time-user homepage, a straightforward scanner workflow, camera guidance and beta feedback instructions.
+- Adds a compact privacy-safe beta diagnostic report (50-answer map, suspect bubble metrics and primary scan information) while keeping the full technical report.
+- Adds stronger conservative review for borderline second marks (e.g. Q29), line-shaped strokes, and mark instability under minor threshold/registration changes.
+- Keeps the fixed physical OMR sheet and v1.7 marker registration engine; no third-party ML API.
+- Separates scan inspection from optional practice-test scoring. Automated grades remain subject to manual review.
+
 ### v1.7 fixed-template scanner updates
 
 - Uses **all eight fiducials** from the existing printed format: corner squares plus four independent edge-midpoint squares.
@@ -29,7 +37,7 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 - Avoids cascading diagnostic errors after an early registration failure.
 - Retains fail-safe scoring: invalid alignment cannot be submitted.
 
-1. **Self-Calibrating Adaptive Lighting Engine (`v1.7`)**:
+1. **Self-Calibrating Adaptive Lighting Engine (`v1.8`)**:
    - Calculates the exact Otsu binarization point on the perspective-corrected grayscale canvas in $<2\text{ ms}$.
    - Dynamically self-calibrates the dark ink threshold (`~154`), completely preventing false blanks caused by uneven ambient room lighting or mobile camera auto-exposure.
 
@@ -58,7 +66,7 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## Version and deployment identification
 
-The release version comes from `package.json` (currently **v1.7.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
+The release version comes from `package.json` (currently **v1.8.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
 
 For a future release, update both `package.json` and `package-lock.json` (for example, using `npm version patch --no-git-tag-version`), commit, and deploy. Code commits without a version bump retain the release number but display a different build identifier.
 
