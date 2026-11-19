@@ -32,7 +32,11 @@ export function generateBubbleOverlay(
       const cy = m?.sampleYPx ?? mmToPx(c.yMm, dpi);
       const isDetected = q.detectedAnswer === opt && q.status === 'detected';
       const maxFill = Math.max(...q.measurements.map(x => x.fillPercent));
-      const isMultiple = q.status === 'multiple' && (m?.fillPercent ?? 0) >= 30;
+      // Highlight only the strongest confirmed selections; e.g. Q26 has
+      // solid A+B plus a stray slash over D. D is not a third accepted mark.
+      const confirmed=q.measurements.filter(x=>x.validMark && x.fillPercent>=75);
+      const multipleCutoff=confirmed.length>=2?75:45;
+      const isMultiple = q.status === 'multiple' && !!m && !!m.validMark && m.fillPercent >= multipleCutoff;
       const isUncertain = q.status === 'uncertain' && !!m &&
         (m.fillPercent >= Math.max(20, maxFill - 12)) && maxFill >= 20;
 
@@ -91,7 +95,7 @@ export function generateBubbleOverlay(
   if (detectedTestId.units !== null) {
     const c = getTestIdBubbleCentre('units', detectedTestId.units);
     ctx.beginPath();
-    ctx.arc(mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), tidRadius * 1.2, 0, Math.PI * 2);
+    ctx.arc(mmToPx(c.xMm, dpi)+testOffset.dx, mmToPx(c.yMm, dpi)+testOffset.dy, tidRadius * 1.2, 0, Math.PI * 2);
     ctx.strokeStyle = '#0d6efd';
     ctx.lineWidth = 2.5;
     ctx.fillStyle = 'rgba(13, 110, 253, 0.25)';
