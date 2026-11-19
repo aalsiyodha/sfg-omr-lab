@@ -703,3 +703,81 @@ test('v2.1: calibration fallback does not change clear solid or blank results', 
   const blank=bubbles.detectQuestion(fakeImage([0,0,0,0]),1,150,152,123);
   assert.equal(blank.status,'blank');
 });
+
+test('v2.1.2: two-row Test ID rescue locates a translated 27 and rejects empty grids', () => {
+  const dpi=150, scale=dpi/25.4,W=760,H=540;
+  const coords=(row,d)=>{
+    const yMm=row==='tens'?57.4:65.8;
+    return {xMm:38+d*8.5,yMm};
+  };
+  const {rescueTestIdOffset}=loadTS('src/scanner/testIdAlignment.ts',{
+    '../config/omrLayout':{
+      getTestIdBubbleCentre:coords,
+      mmToPx:(mm,d)=>mm*d/25.4
+    }
+  });
+  const data=new Uint8Array(W*H).fill(220);
+  const put=(x,y,value)=>{if(x>=0&&y>=0&&x<W&&y<H)data[y*W+x]=value};
+  const shift={dx:8,dy:-6};
+  // Realistic blank printed rings around all candidates, filled 2 and 7 only.
+  for(const row of ['tens','units'])for(let d=0;d<(row==='tens'?6:10);d++){
+    const c=coords(row,d),cx=Math.round(c.xMm*scale)+shift.dx,cy=Math.round(c.yMm*scale)+shift.dy;
+    for(let yy=-13;yy<=13;yy++)for(let xx=-13;xx<=13;xx++){
+      const distance=Math.hypot(xx,yy);
+      if(distance>=10&&distance<=12)put(cx+xx,cy+yy,45);
+      if(distance<=7&&d===(row==='tens'?2:7))put(cx+xx,cy+yy,20);
+    }
+  }
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  const rescue=rescueTestIdOffset(mat,dpi,145);
+  assert.ok(rescue,'isolated pair of marked digit centres should be recoverable');
+  assert.equal(rescue.tens,2);
+  assert.equal(rescue.units,7);
+  assert.ok(Math.abs(rescue.dx-shift.dx)<=3);
+  assert.ok(Math.abs(rescue.dy-shift.dy)<=3);
+  const blank=new Uint8Array(W*H).fill(220);
+  assert.equal(rescueTestIdOffset({rows:H,cols:W,ucharPtr:(y,x)=>[blank[y*W+x]]},dpi,145),null);
+});
+
+test('v2.1.2: Test ID pair search rejects multiple markings in an ID row', () => {
+  const dpi=150,scale=dpi/25.4,W=760,H=540;
+  const coords=(row,d)=>({xMm:38+d*8.5,yMm:row==='tens'?57.4:65.8});
+  const {rescueTestIdOffset}=loadTS('src/scanner/testIdAlignment.ts',{
+    '../config/omrLayout':{getTestIdBubbleCentre:coords,mmToPx:(mm,d)=>mm*d/25.4}
+  });
+  const data=new Uint8Array(W*H).fill(220);
+  for(const [row,d] of [['tens',2],['tens',3],['units',7]]){
+    const c=coords(row,d),x0=Math.round(c.xMm*scale),y0=Math.round(c.yMm*scale);
+    for(let dy=-8;dy<=8;dy++)for(let dx=-8;dx<=8;dx++)
+      if(dx*dx+dy*dy<=64)data[(y0+dy)*W+x0+dx]=20;
+  }
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  assert.equal(rescueTestIdOffset(mat,dpi,145),null,'a marked tens row with two digits is invalid');
+});
+
+test('v2.1.2: fast ring alignment estimates a printed-ring translation',()=>{
+  const dpi=150, scale=dpi/25.4,W=420,H=420;
+  const {estimateGridOffset}=loadTS('src/scanner/gridAlignment.ts',{
+    '../config/omrLayout':{
+      getBubbleCentre:()=>({xMm:0,yMm:0}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      mmToPx:(mm,d)=>mm*d/25.4
+    }
+  });
+  const data=new Uint8Array(W*H).fill(225), dx=3,dy=-4;
+  const anchors=[];
+  for(let row=0;row<3;row++)for(let col=0;col<4;col++){
+    const x=65+col*80,y=70+row*100;
+    anchors.push({x,y});
+    for(let oy=-13;oy<=13;oy++)for(let ox=-13;ox<=13;ox++){
+      const distance=Math.hypot(ox,oy);
+      if(distance>=9.0&&distance<=10.9)
+        data[(y+dy+oy)*W+x+dx+ox]=40;
+    }
+  }
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  const estimate=estimateGridOffset(mat,dpi,anchors);
+  assert.equal(estimate.applied,true);
+  assert.ok(Math.abs(estimate.dx-dx)<=2 && Math.abs(estimate.dy-dy)<=2,
+    JSON.stringify(estimate));
+});
