@@ -8,6 +8,18 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## 🌟 Key Architecture & Capabilities
 
+### v1.7 fixed-template scanner updates
+
+- Uses **all eight fiducials** from the existing printed format: corner squares plus four independent edge-midpoint squares.
+- Tests multiple registration hypotheses (adaptive threshold and Otsu) and accepts one only when the QR occupies the correct corner and both side timing-mark bands align.
+- Recovers distorted/corner-washed sheets by computing a homography from the four midpoint markers.
+- Adds conservative local paper-brightness measurement around each bubble, plus a quadrant-based sparse-stroke diagnostic.
+- Exports registration method, timing-mark coverage, rotation, and per-bubble paper/shape metrics for future debugging.
+- Retains manual review for uncertain marks, fails safely when all registration methods fail.
+- No external ML API: student scans stay in the user's browser.
+
+**Physical sheet format remains v1.1:** the official static PDF and fallback generator were not modified. Testing with the actual PDF is recommended before mass-printing.
+
 ### v1.6 scanner reliability changes
 
 - Tries alternate Otsu marker extraction if adaptive thresholding fails.
@@ -17,7 +29,7 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 - Avoids cascading diagnostic errors after an early registration failure.
 - Retains fail-safe scoring: invalid alignment cannot be submitted.
 
-1. **Self-Calibrating Adaptive Lighting Engine (`v1.6`)**:
+1. **Self-Calibrating Adaptive Lighting Engine (`v1.7`)**:
    - Calculates the exact Otsu binarization point on the perspective-corrected grayscale canvas in $<2\text{ ms}$.
    - Dynamically self-calibrates the dark ink threshold (`~154`), completely preventing false blanks caused by uneven ambient room lighting or mobile camera auto-exposure.
 
@@ -46,7 +58,7 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## Version and deployment identification
 
-The release version comes from `package.json` (currently **v1.6.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
+The release version comes from `package.json` (currently **v1.7.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
 
 For a future release, update both `package.json` and `package-lock.json` (for example, using `npm version patch --no-git-tag-version`), commit, and deploy. Code commits without a version bump retain the release number but display a different build identifier.
 
