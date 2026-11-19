@@ -248,6 +248,38 @@ function measureBubbleInterior(
     paperReferenceBrightness: referencePaper, paperReferenceContaminated: paperOverride !== undefined };
 }
 
+/**
+ * Detect persistent unfilled vertical channels inside a partially shaded
+ * bubble. Repeated two-pixel light gaps bracketed by dark ink on both
+ * sides are typical of parallel hatch strokes; clean solid marks lack them.
+ * The mask ends at the 1mm interior radius (away from printed outlines).
+ */
+export function interiorHatchEvidence(
+  gray:{rows:number;cols:number;ucharPtr(y:number,x:number):ArrayLike<number>},
+  cxPx:number,cyPx:number,dpi:number,threshold:number,
+):{gapRows:number;hatchLike:boolean}{
+  const r=Math.max(2,Math.round(mmToPx(1.0,dpi)));
+  const cx=Math.round(cxPx),cy=Math.round(cyPx);
+  if(cx-r<0||cy-r<0||cx+r>=gray.cols||cy+r>=gray.rows)
+    return {gapRows:0,hatchLike:false};
+  let rows=0;
+  for(let dy=-Math.round(r*.72);dy<=Math.round(r*.72);dy++){
+    const xs:number[]=[];
+    for(let dx=-r;dx<=r;dx++)
+      if(dx*dx+dy*dy<=r*r)xs.push(dx);
+    const dark=xs.map(dx=>gray.ucharPtr(cy+dy,cx+dx)[0]<threshold);
+    // A gap must be inside ink, not a partially marked outer edge.
+    let found=false;
+    for(let i=2;i<dark.length-3;i++){
+      if(dark[i-2]&&dark[i-1]&&!dark[i]&&!dark[i+1]&&dark.slice(i+2).some(Boolean)){
+        found=true;break;
+      }
+    }
+    if(found)rows++;
+  }
+  return {gapRows:rows,hatchLike:rows>=Math.max(4,Math.round(r*.6))};
+}
+
 export function detectQuestion(
   correctedGray: any,  // grayscale cv.Mat of perspective-corrected image
   question: number,    // 1-based
@@ -493,6 +525,22 @@ export function detectQuestion(
   // A symmetric, centre-and-edge-filled bubble is a legitimate lightly
   // filled selection (Test 12 Q12-B and Q24-C). Variance checks should
   // target narrow/uneven marks (Test 27 Q27 cross), not all medium fills.
+  // Evaluate inner fill topology even when the global fill score is high:
+  // v3 Q20-C's diagonal hatching left a persistent bright channel and Q24-B
+  // was dark on one side but only half-shaded on the other.
+  const topIndex=options.indexOf(top.measurement.option);
+  const hatch=interiorHatchEvidence(correctedGray,centres[topIndex].x,
+    centres[topIndex].y,dpi,top.detail.effectiveThreshold??effectiveThreshold);
+  const oneSidedFill=max>=60 && max<92 &&
+    top.detail.horizontalDisparity>=38 &&
+    (top.measurement.radialOuter??0)<85;
+  const hatchedFill=max>=45 && max<90 && hatch.hatchLike;
+  if(oneSidedFill||hatchedFill){
+    top.measurement.rejectReason=oneSidedFill
+      ? 'Asymmetric partial fill: left/right ink coverage differs'
+      : 'Hatched/striped ink: repeated unfilled channels inside bubble';
+    return {measurements,answer:null,status:'uncertain',confidence:0};
+  }
   const stableSolidShape =
     (top.detail.filledQuadrants ?? 0) === 4 &&
     !top.detail.strokeLike &&
