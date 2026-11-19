@@ -34,7 +34,10 @@ interface Candidate extends ImagePoint { width: number; height: number; area: nu
 type Side = keyof typeof MIDPOINTS_MM;
 const sides: Side[] = ['top', 'bottom', 'left', 'right'];
 
-export function detectMidpointMarkers(binary: any, W: number, H: number): MidpointRegistration {
+export function detectMidpointMarkers(
+  binary: any, W: number, H: number,
+  expected?: Partial<Record<Side,ImagePoint>>,
+): MidpointRegistration {
   const fallback: MidpointRegistration = {
     found: false, count: 0, top: null, bottom: null, left: null, right: null
   };
@@ -69,6 +72,17 @@ export function detectMidpointMarkers(binary: any, W: number, H: number): Midpoi
       left: candidates.filter(c => c.x < W * .29 && c.y > H * .25 && c.y < H * .75),
       right: candidates.filter(c => c.x > W * .71 && c.y > H * .25 && c.y < H * .75),
     };
+    // Independently identified ArUco IDs can disambiguate extra printed
+    // squares. An ArUco-guided hypothesis is separate from ordinary midpoint
+    // registration and fails closed if a printed square is not nearby.
+    if(expected){
+      const radius=Math.max(12,Math.min(W,H)*.045);
+      for(const side of sides){
+        const p=expected[side];
+        if(!p)continue;
+        regions[side]=regions[side].filter(c=>Math.hypot(c.x-p.x,c.y-p.y)<=radius);
+      }
+    }
     const count = sides.filter(side => regions[side].length > 0).length;
     if (count < 4) {
       return {
@@ -78,6 +92,12 @@ export function detectMidpointMarkers(binary: any, W: number, H: number): Midpoi
     }
 
     const rank = (side: Side, m: Candidate) => {
+      if(expected?.[side]){
+        const p=expected[side];
+        const distance=Math.hypot(m.x-p.x,m.y-p.y);
+        const areaPenalty=Math.abs(Math.log(Math.max(1,m.area)/nominal));
+        return distance/Math.max(1,Math.min(W,H)*.045)+.15*areaPenalty;
+      }
       const x = m.x / W, y = m.y / H;
       const position = side === 'top' ? 2 * Math.abs(x - .5) + 3 * y :
         side === 'bottom' ? 2 * Math.abs(x - .5) + 3 * (1-y) :
