@@ -638,3 +638,43 @@ test('test-build regression: paired exposures resist false external-band uncerta
     assert.equal(blank.status,'blank','clean blank at paper='+paper);
   }
 });
+
+test('2.0.2: fully filled bubble with ink extending beyond outline is detected as valid answer',()=>{
+  const px = mm => mm*150/25.4;
+  const radial = loadTS('src/scanner/radialInk.ts');
+  const stray = loadTS('src/scanner/strayInk.ts');
+  const engine = loadTS('src/scanner/bubbleDetector.ts', {
+    '../config/omrLayout': {
+      mmToPx: px,
+      getBubbleCentre: (_q, option) => ({ xMm: (80 + option * 80) / px(1), yMm: 120 / px(1) }),
+      getTestIdBubbleCentre: () => ({ xMm: 0, yMm: 0 }),
+      OMR_LAYOUT: { testId: {} }
+    },
+    '../config/scannerSettings': {
+      getSettings: () => ({ bubbleFillThreshold: 45, bubbleUncertainThreshold: 18 }),
+      MARK_REVIEW_THRESHOLDS: {
+        minFill: 45, nearThresholdFill: 42, visiblePartialFill: 37, strongFill: 85,
+        strongMultipleRunner: 65, secondMarkTopMin: 70, secondMarkFillMin: 36,
+        secondMarkRelative: .4, minJump: 16, stabilityReviewSpread: 18,
+        thresholdPerturbation: 8, strokeReviewMaxFill: 88, strokeReviewMinFill: 38,
+        quadrantCoverage: 24, diagonalLineCoverage: 67, diagonalAxisGap: 22,
+        diagonalDisparity: 85, horizontalDisparity: 65, testIdMinSeparation: 20
+      }
+    },
+    './radialInk': radial,
+    './strayInk': stray
+  });
+
+  const W = 460, H = 245, data = new Uint8Array(W * H).fill(225), scale = 150 / 25.4;
+  const cx = 80 + 1 * 80, cy = 120; // option B
+  for (let dy = -25; dy <= 25; dy++) for (let dx = -25; dx <= 25; dx++) {
+    const mm = Math.hypot(dx, dy) / scale;
+    if (mm <= 2.35) { // pen ink fills interior and extends to 2.35mm
+      data[(cy + dy) * W + cx + dx] = 30;
+    }
+  }
+  const mat = { rows: H, cols: W, ucharPtr: (y, x) => [data[y * W + x]] };
+  const result = engine.detectQuestion(mat, 1, 150, 152);
+  assert.equal(result.status, 'detected');
+  assert.equal(result.answer, 'B');
+});
