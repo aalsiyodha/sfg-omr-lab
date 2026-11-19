@@ -4,21 +4,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import ts from 'typescript';
+import { stripTypeScriptTypes } from 'node:module';
 
+// TypeScript 7 is a native compiler: its npm package no longer exports the
+// old transpileModule JS API. Node 22+ can strip this project's erasable types.
 function loadTS(path, dependencies = {}) {
   const source = readFileSync(resolve(process.cwd(), path), 'utf8');
-  const js = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
-  }).outputText;
-  const module = { exports: {} };
-  new Function('require', 'module', 'exports', js)(
-    (name) => {
-      if (!(name in dependencies)) throw new Error('Missing test dependency: ' + name);
-      return dependencies[name];
-    }, module, module.exports
-  );
-  return module.exports;
+  const stripped = stripTypeScriptTypes(source, { mode: 'strip' });
+  const exports = [...stripped.matchAll(/^export\\s+(?:async\\s+)?(?:function|const|class)\\s+(\\w+)/gm)]
+    .map(match => match[1]);
+  const js = stripped
+    .replace(/^import\\s+type\\s+.*?;\\s*$/gm, '')
+    .replace(/^import\\s+\\{([^}]+)\\}\\s+from\\s+['"]([^'"]+)['"];?\\s*$/gm,
+      (_all, names, from) => `const { ${names} } = deps[${JSON.stringify(from)}];`)
+    .replace(/^import\\s+(\\w+)\\s+from\\s+['"]([^'"]+)['"];?\\s*$/gm,
+      (_all, local, from) => `const ${local} = deps[${JSON.stringify(from)}].default;`)
+    .replace(/^export\\s+(?=(?:async\\s+)?(?:function|const|class))/gm, '');
+  return new Function('deps', 'cv', js + `\\nreturn { ${exports.join(', ')} };\\n`)(dependencies, globalThis.cv);
 }
 
 const settings = {
