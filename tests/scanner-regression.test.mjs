@@ -249,3 +249,59 @@ test('a thin crossed mark is not confidently accepted as a filled bubble', () =>
   const r = bubbles.detectQuestion(mat, 1, 150, 152);
   assert.notEqual(r.status, 'detected');
 });
+
+test('v1.8 Q29: second mark below 45% prevents confident C-only result', () => {
+  const data = new Uint8Array(120 * 100).fill(255);
+  const coords = [];
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if (dx*dx + dy*dy <= 4) coords.push([dx,dy]);
+  }
+  // A has 5/13 dark pixels (~38%); C has 12/13 (~92%).
+  // Both are meaningful, but A is beneath the global 45% threshold.
+  for (let i = 0; i < 5; i++) {
+    const [dx,dy] = coords[i];
+    data[(30+dy)*120 + 20+dx] = 0;
+  }
+  for (let i = 0; i < 12; i++) {
+    const [dx,dy] = coords[i];
+    data[(30+dy)*120 + 60+dx] = 0;
+  }
+  const mat = {rows:100, cols:120, ucharPtr:(y,x)=>[data[y*120+x]]};
+  const result = bubbles.detectQuestion(mat,29,150,152);
+  assert.equal(result.status,'uncertain');
+  assert.equal(result.answer,null);
+});
+
+test('v1.8 clear C remains detected, A+B multiple remains multiple', () => {
+  assert.equal(bubbles.detectQuestion(fakeImage([0,0,1,0]), 37, 150, 152).status,'detected');
+  assert.equal(bubbles.detectQuestion(fakeImage([1,1,0,0]), 26, 150, 152).status,'multiple');
+});
+
+test('v1.8 beta report includes concise answer map and excludes student identity', () => {
+  const report = loadTS('src/diagnostics/llmPromptGenerator.ts', {
+    '../config/scannerSettings': { getSettings: () => settings },
+    '../config/version': { APP_VERSION: 'v1.8.0' }
+  });
+  const answers = Array.from({length:50}, (_,index) => ({
+    question:index+1,
+    status:index===28 ? 'uncertain':'blank',
+    measurements: ['A','B','C','D'].map((option,ix)=>({
+      question:index+1, option,
+      fillPercent:index===28 && ix===0 ? 42.5 : 0
+    })),
+    detectedAnswer:null,
+    confidence:0,
+    isManuallyEdited:false
+  }));
+  const prompt = report.generateBetaFeedbackPrompt({scanResult:{
+    studentId:'SENSITIVE_STUDENT', qrRaw:'SFGOMR1:SECRET',
+    status:'partial',overallStatus:'partial',testId:27,qrValid:true,
+    registrationMethod:'corner/adaptive',alignmentMatched:45,
+    orientationRotated:false,answers,errors:[]
+  }});
+  assert.match(prompt,/Beta scan feedback/);
+  assert.match(prompt,/29:\?/);
+  assert.match(prompt,/Q29 uncertain/);
+  assert.doesNotMatch(prompt,/SENSITIVE_STUDENT|SFGOMR1:SECRET/);
+  assert.ok(prompt.length < 2400, 'Beta report should be short enough for messaging');
+});
