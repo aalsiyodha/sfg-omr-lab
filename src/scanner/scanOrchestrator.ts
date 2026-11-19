@@ -7,7 +7,7 @@ import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
-import { detectArucoMarkers } from './arucoDetector';
+import { detectArucoMarkers, predictMidpointsFromArucos } from './arucoDetector';
 import type { ArucoRegistration } from './arucoDetector';
 import { applySevenToneCorrection } from './grayToneCorrection';
 import type { PerspectiveResult } from './perspectiveCorrection';
@@ -143,6 +143,7 @@ export async function runFullScan(
 
     const hypotheses: Hypothesis[] = [];
     const arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
+    const arucoMidpointPrediction=predictMidpointsFromArucos(arucoAdaptive);
     logger.info('markerDetection','ArUco 4x4 marker identification (adaptive)',{
       identified:arucoAdaptive.count,ids:Object.keys(arucoAdaptive.points),
       readyForRescue:arucoAdaptive.found});
@@ -153,6 +154,15 @@ export async function runFullScan(
     // corner quadrilateral can be geometrically plausible (Test 4 v1.6).
     const mid = detectMidpointMarkers(preprocessed.thresholded, loaded.width, loaded.height);
     if (mid.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/adaptive', markers: mid });
+    if(arucoMidpointPrediction){
+      const guided=detectMidpointMarkers(preprocessed.thresholded,loaded.width,loaded.height,arucoMidpointPrediction);
+      logger.info('markerDetection','ArUco-guided midpoint square selection',{
+        predictions:arucoMidpointPrediction,valid:guided.found,
+        selected:guided.found?{top:guided.top,right:guided.right,
+          bottom:guided.bottom,left:guided.left}:null,
+      });
+      if(guided.found) hypotheses.push({kind:'midpoint',name:'midpoint/aruco-guided',markers:guided});
+    }
 
     const alternate = new cv.Mat();
     try {
@@ -161,6 +171,12 @@ export async function runFullScan(
       const midOtsu = detectMidpointMarkers(alternate, loaded.width, loaded.height);
       if (cornerOtsu.found) hypotheses.push({ kind: 'corner', name: 'corner/Otsu', markers: cornerOtsu });
       if (midOtsu.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/Otsu', markers: midOtsu });
+      if(arucoMidpointPrediction){
+        const guidedOtsu=detectMidpointMarkers(alternate,loaded.width,loaded.height,arucoMidpointPrediction);
+        if(guidedOtsu.found)hypotheses.push({
+          kind:'midpoint',name:'midpoint/aruco-guided-Otsu',markers:guidedOtsu,
+        });
+      }
       const arucoOtsu=detectArucoMarkers(preprocessed.gray,alternate);
       logger.info('markerDetection','ArUco identification (Otsu)',{
         identified:arucoOtsu.count,ids:Object.keys(arucoOtsu.points),
