@@ -17,5 +17,10 @@
         }
       ]
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "test-build": false
+    }
+  }
 }
