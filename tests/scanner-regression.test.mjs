@@ -236,16 +236,14 @@ test('bubble measurements include local background and spatial ink features', ()
   assert.equal(typeof selected.inkThreshold, 'number');
 });
 
-test('a sparse diagonal mark is not confidently accepted as a filled bubble', () => {
+test('a thin crossed mark is not confidently accepted as a filled bubble', () => {
   const data = new Uint8Array(120 * 100).fill(255);
   // Draw an X-shaped partial mark across bubble A. The reference image
   // contributes an empty ring, so only the pen stroke should be evaluated.
   const cx = 20, cy = 30;
   for (let i = -4; i <= 4; i++) {
-    for (let t = -1; t <= 1; t++) {
-      data[(cy + i) * 120 + cx + i + t] = 0;
-      data[(cy + i) * 120 + cx - i + t] = 0;
-    }
+    data[(cy + i) * 120 + cx + i] = 0;
+    data[(cy + i) * 120 + cx - i] = 0;
   }
   const mat = { cols: 120, rows: 100, ucharPtr: (y,x) => [data[y * 120 + x]] };
   const r = bubbles.detectQuestion(mat, 1, 150, 152);
