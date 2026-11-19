@@ -25,6 +25,10 @@ export interface BubbleMeasurement {
   axisCoverage?: number;
   diagonalCoverage?: number;
   stabilitySpread?: number;
+  radialCore?: number;
+  radialMiddle?: number;
+  radialOuter?: number;
+  radialShape?: 'solid_like' | 'centre_dot' | 'hollow_ring' | 'partial' | 'no_ink' | 'insufficient_resolution';
   xMm: number;
   yMm: number;
 }

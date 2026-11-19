@@ -136,6 +136,7 @@ export function generateLLMDiagnosticPrompt({
         `quadrants=${m.filledQuadrants ?? '?'}/4, stroke=${m.strokeLike ?? '?'}, ` +
         `axis=${m.axisCoverage?.toFixed(1) ?? '?'}, diag=${m.diagonalCoverage?.toFixed(1) ?? '?'}, ` +
         `stability=${m.stabilitySpread?.toFixed(1) ?? '?'}, ` +
+        `radial=${m.radialShape ?? '?'} (core=${m.radialCore ?? '?'}, middle=${m.radialMiddle ?? '?'}, outer=${m.radialOuter ?? '?'}), ` +
         `reason=${m.rejectReason || 'none'}`).join(' | '));
   }
 
@@ -194,7 +195,8 @@ export function generateBetaFeedbackPrompt({ scanResult }: LLMReportOptions): st
     return q.status === 'detected' && (
       (first && first.fillPercent < 85) ||
       (second && second.fillPercent >= 33) ||
-      q.measurements.some(m => !!m.strokeLike || (m.stabilitySpread ?? 0) >= 12)
+      q.measurements.some(m => !!m.strokeLike || (m.stabilitySpread ?? 0) >= 12 ||
+      m.radialShape === 'centre_dot' || m.radialShape === 'hollow_ring' || m.radialShape === 'partial')
     );
   });
   const lines = [
@@ -226,6 +228,7 @@ export function generateBetaFeedbackPrompt({ scanResult }: LLMReportOptions): st
     const candidates = [...q.measurements].sort((a,b) => b.fillPercent-a.fillPercent);
     const details = candidates.slice(0, 2).map(m => m.option + '=' +
       m.fillPercent.toFixed(1) + '%' +
+      (m.radialShape && m.radialShape !== 'no_ink' && m.radialShape !== 'solid_like' ? '/' + m.radialShape : '') +
       (m.strokeLike ? '/stroke' : '') +
       (m.stabilitySpread !== undefined ? '/spread' + m.stabilitySpread.toFixed(0) : '') +
       (m.rejectReason ? '/' + m.rejectReason.slice(0, 60) : '')

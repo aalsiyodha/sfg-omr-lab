@@ -35,7 +35,16 @@ const bubbles = loadTS('src/scanner/bubbleDetector.ts', {
     getTestIdBubbleCentre: () => ({ xMm: 0, yMm: 0 }),
     OMR_LAYOUT: { testId: {} }
   },
-  '../config/scannerSettings': { getSettings: () => settings }
+  '../config/scannerSettings': { getSettings: () => settings, MARK_REVIEW_THRESHOLDS: {
+    minFill:45,nearThresholdFill:42,visiblePartialFill:37,strongFill:85,strongMultipleRunner:65,
+    secondMarkTopMin:70,secondMarkFillMin:36,secondMarkRelative:.4,minJump:16,
+    stabilityReviewSpread:18,thresholdPerturbation:8,strokeReviewMaxFill:88,
+    strokeReviewMinFill:38,quadrantCoverage:24,diagonalLineCoverage:67,
+    diagonalAxisGap:22,diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+  }},
+  './radialInk': { measureRadialInk: () => ({
+    core: 0,middle:0,outer:0,classification:'insufficient_resolution'
+  }) }
 });
 
 function fakeImage(fillAmounts) {
@@ -304,4 +313,82 @@ test('v1.8 beta report includes concise answer map and excludes student identity
   assert.match(prompt,/Q29 uncertain/);
   assert.doesNotMatch(prompt,/SENSITIVE_STUDENT|SFGOMR1:SECRET/);
   assert.ok(prompt.length < 2400, 'Beta report should be short enough for messaging');
+});
+
+test('v1.9 radial profile distinguishes centre dot, uniform fill, and hollow ring at 150 DPI', () => {
+  const radial = loadTS('src/scanner/radialInk.ts');
+  const W=200,H=200,cx=100,cy=100,mmPx=150/25.4;
+  const make = shape => {
+    const data=new Uint8Array(W*H).fill(245);
+    for(let dy=-11;dy<=11;dy++)for(let dx=-11;dx<=11;dx++){
+      const r=Math.hypot(dx,dy)/mmPx;
+      const ink=shape==='dot' ? r<.46 : shape==='solid' ? r<1.44 : r>.98 && r<1.43;
+      if(ink)data[(cy+dy)*W+cx+dx]=18;
+    }
+    return {rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  };
+  const dot=radial.measureRadialInk(make('dot'),cx,cy,150,152);
+  const solid=radial.measureRadialInk(make('solid'),cx,cy,150,152);
+  const ring=radial.measureRadialInk(make('ring'),cx,cy,150,152);
+  assert.equal(dot.classification,'centre_dot');
+  assert.equal(solid.classification,'solid_like');
+  assert.equal(ring.classification,'hollow_ring');
+  assert.ok(dot.core > 55 && dot.outer < 30);
+  assert.ok(solid.outer > 85);
+  assert.ok(ring.outer > 55 && ring.core < 25);
+});
+
+test('v1.9 low resolution radial samples ask for review rather than inventing a shape', () => {
+  const radial=loadTS('src/scanner/radialInk.ts');
+  const mat={rows:50,cols:50,ucharPtr:()=>[255]};
+  const result=radial.measureRadialInk(mat,25,25,35,152);
+  assert.equal(result.classification,'insufficient_resolution');
+});
+
+test('v1.9 complete classifier rejects central dots and rings while keeping full fills', () => {
+  const radial = loadTS('src/scanner/radialInk.ts');
+  const px = mm => mm * 150 / 25.4;
+  const realistic = loadTS('src/scanner/bubbleDetector.ts', {
+    '../config/omrLayout': {
+      mmToPx: px,
+      getBubbleCentre: (_question, option) => ({
+        xMm: (50+option*45)*25.4/150, yMm:100*25.4/150
+      }),
+      getTestIdBubbleCentre: () => ({xMm:0,yMm:0}),
+      OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings': {
+      getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{
+        minFill:45,nearThresholdFill:42,visiblePartialFill:37,
+        strongFill:85,strongMultipleRunner:65,secondMarkTopMin:70,
+        secondMarkFillMin:36,secondMarkRelative:.4,minJump:16,
+        stabilityReviewSpread:18,thresholdPerturbation:8,
+        strokeReviewMaxFill:88,strokeReviewMinFill:38,
+        quadrantCoverage:24,diagonalLineCoverage:67,diagonalAxisGap:22,
+        diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+      }
+    },
+    './radialInk':radial
+  });
+  const make = marks => {
+    const W=240,H=220,data=new Uint8Array(W*H).fill(235);
+    for (let option=0; option<4; option++) {
+      const shape=marks[option] || 'blank';
+      const cx=50+option*45,cy=100;
+      for(let dy=-12;dy<=12;dy++)for(let dx=-12;dx<=12;dx++){
+        const dist=Math.hypot(dx,dy)/px(1);
+        const ink=shape==='fill' ? dist<1.46 :
+          shape==='dot' ? dist<.86 :
+          shape==='ring' ? dist>1.07 && dist<1.44 : false;
+        if(ink)data[(cy+dy)*W+(cx+dx)]=20;
+      }
+    }
+    return {rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  };
+  assert.equal(realistic.detectQuestion(make(['blank','blank','fill','blank']),1,150,152).answer,'C');
+  assert.notEqual(realistic.detectQuestion(make(['dot','blank','blank','blank']),1,150,152).status,'detected');
+  assert.notEqual(realistic.detectQuestion(make(['blank','blank','ring','blank']),1,150,152).status,'detected');
+  assert.equal(realistic.detectQuestion(make(['fill','fill','blank','blank']),1,150,152).status,'multiple');
+  assert.notEqual(realistic.detectQuestion(make(['fill','blank','blank','dot']),1,150,152).status,'multiple');
 });
