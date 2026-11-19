@@ -1,6 +1,6 @@
 // src/scanner/bubbleDetector.ts
 import { getBubbleCentre, getTestIdBubbleCentre, mmToPx, OMR_LAYOUT } from '../config/omrLayout';
-import { getSettings, MARK_REVIEW_THRESHOLDS } from '../config/scannerSettings';
+import { getSettings, MARK_REVIEW_THRESHOLDS, SIMPLIFIED_SCAN_EXPERIMENT } from '../config/scannerSettings';
 const RULES = MARK_REVIEW_THRESHOLDS;
 import { measureRadialInk } from './radialInk';
 import { measureOutlineBand, hasInterBubbleInk, hasExternalStroke } from './strayInk';
@@ -339,6 +339,58 @@ export function detectQuestion(
   });
 
   const measurements = rawMeasurements.map(r => r.measurement);
+  // Offline Extended Noob A/B path. Keep the well-tested geometrical mapping,
+  // local grayscale threshold and basic radial shape validation, but turn off
+  // stray-outline, corridor, outer-stroke and faint-speck heuristics.
+  // Original detailed classifier remains available below for comparison.
+  if (SIMPLIFIED_SCAN_EXPERIMENT) {
+    const ranked = [...rawMeasurements].sort((a,b) =>
+      b.measurement.fillPercent-a.measurement.fillPercent);
+    const first=ranked[0], second=ranked[1];
+    const max=first.measurement.fillPercent;
+    const secondary=second.measurement.fillPercent;
+    const valid = ranked.filter(r =>
+      r.detail.isValid && r.measurement.fillPercent >= settings.bubbleFillThreshold);
+    const strong = valid.filter(r=>r.measurement.fillPercent>=75);
+    if(strong.length>=2 || valid.length>=2 ||
+      (strong.length>=1 && ranked.filter(r=>r.measurement.fillPercent>=75).length>=2))
+      return {measurements,answer:null,status:'multiple',confidence:0};
+    // In this experimental version, weak interior specks and printing
+    // artifacts are BLANK, not automatically suspicious external marks.
+    if(max<35)
+      return {measurements,answer:null,status:'blank',confidence:Math.round(100-max)};
+    if(max<settings.bubbleFillThreshold || !first.detail.isValid ||
+      secondary>=settings.bubbleFillThreshold || max-secondary<settings.bubbleUncertainThreshold) {
+      first.measurement.rejectReason ??= 'Non-solid or borderline interior ink';
+      return {measurements,answer:null,status:'uncertain',confidence:0};
+    }
+    // Retain short ROI perturbation only for medium fills, protecting against
+    // cross/diagonal marks without the costly global stray-ink sensors.
+    if(max<85){
+      const index=options.indexOf(first.measurement.option) as 0|1|2|3;
+      const c=centres[index];
+      const shifted=[[0,0],[-1,0],[1,0],[0,-1],[0,1]] as const;
+      const trials=shifted.map(([dx,dy])=>measureBubbleInterior(
+        correctedGray,c.x+dx,c.y+dy,interiorRadiusPx,effectiveThreshold,dpi,
+        undefined,inkCeiling));
+      const thresholdTrials=[-RULES.thresholdPerturbation,RULES.thresholdPerturbation]
+        .map(delta=>measureBubbleInterior(correctedGray,c.x,c.y,
+          interiorRadiusPx,effectiveThreshold+delta,dpi,undefined,inkCeiling));
+      const values=[max,...trials.map(t=>t.fillPercent),
+        ...thresholdTrials.map(t=>t.fillPercent)];
+      const spread=Math.max(...values)-Math.min(...values);
+      first.measurement.stabilitySpread=Number(spread.toFixed(1));
+      if(spread>=RULES.stabilityReviewSpread ||
+          trials.filter(t=>t.strokeLike).length>=2){
+        first.measurement.rejectReason='Unstable medium-density mark';
+        return {measurements,answer:null,status:'uncertain',confidence:0};
+      }
+    }
+    const confidence=Math.min(max<60?75:max<75?87:max<85?95:99,
+      Math.round((max-secondary)*3));
+    return {measurements,answer:first.measurement.option,
+      status:'detected',confidence};
+  }
   // Separate stray-ink signals from answer validity.
   const bands = centres.map(c => measureOutlineBand(correctedGray,c.x,c.y,dpi));
   const tracedOutline = bands.some((value,i) =>
