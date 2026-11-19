@@ -970,3 +970,21 @@ test('OMR v4 candidate: full unbroken ink is not mistakenly called hatched',()=>
   const result=v201Engine().detectQuestion(img,1,150,152);
   assert.equal(result.status,'detected');
 });
+
+
+test('OMR v4 ArUco predicts the true midpoint anchors in the v3 edge photo',()=>{
+  const {predictMidpointsFromArucos}=loadTS('src/scanner/arucoDetector.ts');
+  const detected={found:true,count:4,points:{
+    0:{x:302.5,y:140},1:{x:496.25,y:139.25},
+    2:{x:201.75,y:937.75},3:{x:396.25,y:936.75},
+  }};
+  const p=predictMidpointsFromArucos(detected);
+  assert.ok(p);
+  for(const [side,reference] of Object.entries({
+    top:{x:364,y:135},right:{x:642,y:534.5},
+    bottom:{x:360,y:943.5},left:{x:81.5,y:530},
+  })){
+    assert.ok(Math.hypot(p[side].x-reference.x,p[side].y-reference.y)<11,side);
+  }
+  assert.equal(predictMidpointsFromArucos({...detected,found:false}),null);
+});
