@@ -10,7 +10,7 @@ import { correctPerspective, correctPerspectiveFromMidpoints } from './perspecti
 import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion } from './qrDecoder';
 import { detectAllAnswers, detectTestId } from './bubbleDetector';
-import { measureGrayCalibration } from './grayCalibration';
+import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
 import { OMR_LAYOUT } from '../config/omrLayout';
@@ -218,17 +218,19 @@ export async function runFullScan(
         : generateMidpointOverlay(loaded.canvas, chosen.hypothesis.markers);
 
       grayCalibration = measureGrayCalibration(chosen.gray, dpi);
-      logger.info('bubbleDetection', 'Grayscale reference strip (diagnostic only)', {
+      const inkCeiling = grayStripInkCeiling(grayCalibration);
+      logger.info('bubbleDetection', 'Grayscale reference strip calibration', {
         status:grayCalibration.status,
         patchMedians:grayCalibration.patchMedians,
         contrast:grayCalibration.contrast,
+        activeInkCeiling:inkCeiling,
         note:grayCalibration.note
       });
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
-      const detectedId = detectTestId(chosen.gray, dpi);
+      const detectedId = detectTestId(chosen.gray, dpi, inkCeiling);
       testId = detectedId.testId;
       logger.info('testIdDetection', `Test ID: ${testId}`, detectedId);
-      answers = detectAllAnswers(chosen.gray, dpi);
+      answers = detectAllAnswers(chosen.gray, dpi, inkCeiling);
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
       images.bubbleOverlay = generateBubbleOverlay(
