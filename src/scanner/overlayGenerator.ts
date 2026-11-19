@@ -9,7 +9,8 @@ export function generateBubbleOverlay(
   baseCanvas: HTMLCanvasElement,
   answers: QuestionResult[],
   detectedTestId: { tens: number | null; units: number | null },
-  dpi: number
+  dpi: number,
+  testOffset: {dx:number;dy:number} = {dx:0,dy:0}
 ): string {
   const overlay = document.createElement('canvas');
   overlay.width = baseCanvas.width;
@@ -26,10 +27,9 @@ export function generateBubbleOverlay(
   answers.forEach((q) => {
     optLetters.forEach((opt, optIdx) => {
       const c = getBubbleCentre(q.question, optIdx as 0 | 1 | 2 | 3);
-      const cx = mmToPx(c.xMm, dpi);
-      const cy = mmToPx(c.yMm, dpi);
-
       const m = q.measurements.find((meas) => meas.option === opt);
+      const cx = m?.sampleXPx ?? mmToPx(c.xMm, dpi);
+      const cy = m?.sampleYPx ?? mmToPx(c.yMm, dpi);
       const isDetected = q.detectedAnswer === opt && q.status === 'detected';
       const maxFill = Math.max(...q.measurements.map(x => x.fillPercent));
       const isMultiple = q.status === 'multiple' && (m?.fillPercent ?? 0) >= 30;
@@ -80,7 +80,7 @@ export function generateBubbleOverlay(
   if (detectedTestId.tens !== null) {
     const c = getTestIdBubbleCentre('tens', detectedTestId.tens);
     ctx.beginPath();
-    ctx.arc(mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), tidRadius * 1.2, 0, Math.PI * 2);
+    ctx.arc(mmToPx(c.xMm, dpi)+testOffset.dx, mmToPx(c.yMm, dpi)+testOffset.dy, tidRadius * 1.2, 0, Math.PI * 2);
     ctx.strokeStyle = '#0d6efd';
     ctx.lineWidth = 2.5;
     ctx.fillStyle = 'rgba(13, 110, 253, 0.25)';
