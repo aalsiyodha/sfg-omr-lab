@@ -166,7 +166,7 @@ function asCorners(tl: DetectedMarker, tr: DetectedMarker, bl: DetectedMarker, b
 }
 
 function validateGeometry(
-  corners: ReturnType<typeof classifyCorners>,
+  corners: Pick<MarkerDetectionResult, 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight'>,
   W: number, H: number
 ): boolean {
   if (!corners.topLeft || !corners.topRight || !corners.bottomLeft || !corners.bottomRight) return false;
