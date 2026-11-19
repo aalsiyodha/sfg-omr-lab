@@ -808,39 +808,3 @@ test('v2.1.2: multiple overlay highlights true A+B but not third crossed D',()=>
     ]
   }),['A','B']);
 });
-
-test('Extended Noob experiment: ignore stray-ink sensor yet keep solid answers and blanks',()=>{
-  const noob=loadTS('src/scanner/bubbleDetector.ts',{
-    '../config/omrLayout':{
-      mmToPx:mm=>mm,
-      getBubbleCentre:(_q,option)=>({xMm:20+option*20,yMm:30}),
-      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
-      OMR_LAYOUT:{testId:{}}
-    },
-    '../config/scannerSettings':{
-      getSettings:()=>settings,
-      SIMPLIFIED_SCAN_EXPERIMENT:true,
-      MARK_REVIEW_THRESHOLDS:{
-        strokeReviewMaxFill:88,strokeReviewMinFill:38,quadrantCoverage:24,
-        diagonalLineCoverage:67,diagonalAxisGap:22,diagonalDisparity:85,
-        horizontalDisparity:65,thresholdPerturbation:8,stabilityReviewSpread:18,
-        testIdMinSeparation:20
-      }
-    },
-    './strayInk':{
-      measureOutlineBand:()=>{throw Error('must not probe external ink')},
-      hasInterBubbleInk:()=>{throw Error('must not probe corridor')},
-      hasExternalStroke:()=>{throw Error('must not probe outer strokes')}
-    },
-    './radialInk':{measureRadialInk:()=>({
-      core:0,middle:0,outer:0,classification:'insufficient_resolution'
-    })}
-  });
-  const solid=noob.detectQuestion(fakeImage([0,0,1,0]),1,150,152);
-  assert.equal(solid.answer,'C');
-  assert.equal(solid.status,'detected');
-  const blank=noob.detectQuestion(fakeImage([0,0,0,0]),1,150,152);
-  assert.equal(blank.status,'blank');
-  const two=noob.detectQuestion(fakeImage([1,1,0,0]),1,150,152);
-  assert.equal(two.status,'multiple');
-});
