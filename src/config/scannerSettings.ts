@@ -37,3 +37,30 @@ export const updateSettings = (patch: Partial<ScannerSettings>): void => {
 export const resetSettings = (): void => {
   _settings = { ...DEFAULT_SETTINGS };
 };
+
+/**
+ * Centralized mark-classification thresholds. Distances in % of the sampled
+ * pixels unless named otherwise. Do not tune these from a single photograph:
+ * compare labelled real sheets and synthetic controls first.
+ */
+export const MARK_REVIEW_THRESHOLDS = {
+  minFill: 45,
+  nearThresholdFill: 42,
+  visiblePartialFill: 37,
+  strongFill: 85,
+  strongMultipleRunner: 65,
+  secondMarkTopMin: 70,
+  secondMarkFillMin: 36,
+  secondMarkRelative: 0.40,
+  minJump: 16,
+  stabilityReviewSpread: 18,
+  thresholdPerturbation: 8,
+  strokeReviewMaxFill: 88,
+  strokeReviewMinFill: 38,
+  quadrantCoverage: 24,
+  diagonalLineCoverage: 67,
+  diagonalAxisGap: 22,
+  diagonalDisparity: 85,
+  horizontalDisparity: 65,
+  testIdMinSeparation: 20,
+} as const;
