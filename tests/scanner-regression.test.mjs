@@ -678,3 +678,28 @@ test('2.0.2: fully filled bubble with ink extending beyond outline is detected a
   assert.equal(result.status, 'detected');
   assert.equal(result.answer, 'B');
 });
+
+test('v2.1: grayscale strip calibrates only trustworthy ordered patches', () => {
+  const { grayStripInkCeiling } = loadTS('src/scanner/grayCalibration.ts');
+  assert.equal(grayStripInkCeiling({status:'ok',ordered:true,patchMedians:[7,15,52,156]}),123);
+  assert.equal(grayStripInkCeiling({status:'unavailable',ordered:false,patchMedians:[90,80,70,60]}),null);
+  assert.equal(grayStripInkCeiling({status:'low_contrast',ordered:true,patchMedians:[20,35,48,52]}),null);
+});
+
+test('v2.1: calibrated ceiling prevents moderately shadowed paper from becoming a filled bubble', () => {
+  const mat = fakeImage([0,0,0,0]);
+  const darkened = {rows:mat.rows,cols:mat.cols,ucharPtr:(y,x) => [y>=20 && y<=40 && x>=20 && x<=85 ? 125 : 225]};
+  const uncalibrated = bubbles.detectQuestion(darkened,1,150,152);
+  const calibrated = bubbles.detectQuestion(darkened,1,150,152,115);
+  assert.ok(calibrated.measurements.every(m=>m.fillPercent===0));
+  assert.ok(uncalibrated.measurements.some(m=>m.fillPercent>=0));
+});
+
+test('v2.1: calibration fallback does not change clear solid or blank results', () => {
+  const full=bubbles.detectQuestion(fakeImage([0,1,0,0]),1,150,152);
+  const calibrated=bubbles.detectQuestion(fakeImage([0,1,0,0]),1,150,152,123);
+  assert.equal(calibrated.status,full.status);
+  assert.equal(calibrated.answer,full.answer);
+  const blank=bubbles.detectQuestion(fakeImage([0,0,0,0]),1,150,152,123);
+  assert.equal(blank.status,'blank');
+});
