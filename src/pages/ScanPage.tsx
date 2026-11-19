@@ -395,7 +395,7 @@ export default function ScanPage({ appState }: Props) {
               <img src={previewUrl} alt="Preview" className="img-fluid border rounded mb-2" style={{ maxHeight: 420 }} />
               <div className="d-flex gap-2">
                 <button className="btn btn-primary" onClick={handleScan} disabled={isScanning || opencv !== 'ready'}>
-                  <i className="bi bi-cpu me-2" />Scan this photo
+                  <i className="bi bi-upc-scan me-2" />Scan this photo
                 </button>
                 <button className="btn btn-outline-secondary" onClick={() => { setCapturedFile(null); setPreviewUrl(null); }} disabled={isScanning}>
                   Retake / Choose Another
