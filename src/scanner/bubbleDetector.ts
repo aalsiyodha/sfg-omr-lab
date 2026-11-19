@@ -189,7 +189,16 @@ export function detectQuestion(
     const cyPx = mmToPx(centre.yMm, dpi);
     const detail = measureBubbleInterior(correctedGray, cxPx, cyPx, interiorRadiusPx, effectiveThreshold);
     return {
-      measurement: { question, option: opt, fillPercent: detail.fillPercent, xMm: centre.xMm, yMm: centre.yMm },
+      measurement: {
+        question, option: opt, fillPercent: detail.fillPercent,
+        horizontalDisparity: detail.horizontalDisparity,
+        diagonalDisparity: detail.diagonalDisparity,
+        validMark: detail.isValid,
+        rejectReason: detail.rejectReason,
+        sampleXPx: Math.round(cxPx), sampleYPx: Math.round(cyPx),
+        inkThreshold: effectiveThreshold,
+        xMm: centre.xMm, yMm: centre.yMm
+      },
       detail,
     };
   });
