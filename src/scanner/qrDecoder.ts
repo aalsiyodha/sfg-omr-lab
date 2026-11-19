@@ -80,7 +80,7 @@ function parseQRData(raw: string): QRResult {
   return { found: true, raw, valid: true, studentId };
 }
 
-// Try decoding from a region of the corrected image
+// Strict region-only decoding. Never search the full sheet here: doing so hides 180° rotation.
 export function decodeQRFromRegion(
   fullCanvas: HTMLCanvasElement,
   xMm: number,
@@ -97,21 +97,21 @@ export function decodeQRFromRegion(
     const size = Math.round((sizeMm + padMm * 2) * scale);
 
     if (x + size > fullCanvas.width || y + size > fullCanvas.height) {
-      return decodeQR(fullCanvas);
+      return { found: false, raw: null, valid: false, studentId: null, error: 'QR region outside corrected page' };
     }
 
     const regionCanvas = document.createElement('canvas');
     regionCanvas.width = size;
     regionCanvas.height = size;
     const ctx = regionCanvas.getContext('2d');
-    if (!ctx) return decodeQR(fullCanvas);
+    if (!ctx) return { found: false, raw: null, valid: false, studentId: null, error: 'No regional QR canvas context' };
 
     ctx.drawImage(fullCanvas, x, y, size, size, 0, 0, size, size);
     const result = decodeQR(regionCanvas);
     if (result.found) return result;
 
-    return decodeQR(fullCanvas);
+    return result;
   } catch (err) {
-    return decodeQR(fullCanvas);
+    return { found: false, raw: null, valid: false, studentId: null, error: 'Could not decode regional QR' };
   }
 }
