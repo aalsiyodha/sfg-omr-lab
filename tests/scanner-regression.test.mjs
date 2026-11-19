@@ -470,3 +470,13 @@ test('v2 midpoint candidate regions tolerate extra framing margins', () => {
   const result=detector.detectMidpointMarkers(null,1035,1460);
   assert.equal(result.found,true);
 });
+
+test('v2 corridor sensor ignores a uniformly dark shadow', () => {
+  const stray=loadTS('src/scanner/strayInk.ts');
+  const W=280,H=180, data=new Uint8Array(W*H).fill(132);
+  const centres=[50,135,220].map(x=>({x,y:90}));
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  assert.equal(stray.hasInterBubbleInk(mat,centres,150,142,[133,133,133]),false);
+  for(let y=87;y<=93;y++)for(let x=91;x<=106;x++)data[y*W+x]=20;
+  assert.equal(stray.hasInterBubbleInk(mat,centres,150,142,[133,133,133]),true);
+});
