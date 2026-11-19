@@ -483,11 +483,11 @@ test('v2 corridor sensor ignores a uniformly dark shadow', () => {
 });
 
 
-test('v2 grayscale reference measures four patches without changing classification', () => {
+test('OMR 2.1 seven-tone reference measures seven patches without changing classification', () => {
   const {measureGrayCalibration,CALIBRATION_PATCH_CENTRES_MM}=loadTS('src/scanner/grayCalibration.ts');
   const W=1240,H=1754,dpi=150,scale=dpi/25.4;
   const data=new Uint8Array(W*H).fill(230);
-  const shades=[25,55,115,220];
+  const shades=[25,40,67,126,190,221,245];
   CALIBRATION_PATCH_CENTRES_MM.forEach((p,i)=>{
     const x=Math.round(p.x*scale), y=Math.round(p.y*scale);
     for(let dy=-12;dy<=12;dy++)for(let dx=-12;dx<=12;dx++)
@@ -497,7 +497,7 @@ test('v2 grayscale reference measures four patches without changing classificati
   const result=measureGrayCalibration(gray,dpi);
   assert.equal(result.status,'ok');
   assert.deepEqual(result.patchMedians,shades);
-  assert.equal(result.contrast,195);
+  assert.equal(result.contrast,220);
 });
 
 test('v2 grayscale reference is unavailable on sheets without printed strip', () => {
@@ -512,7 +512,7 @@ test('v2 grayscale reference flags weak tonal separation as diagnostic', () => {
   const {measureGrayCalibration,CALIBRATION_PATCH_CENTRES_MM}=loadTS('src/scanner/grayCalibration.ts');
   const W=1240,H=1754,dpi=150,scale=dpi/25.4;
   const data=new Uint8Array(W*H).fill(165);
-  [48,58,69,85].forEach((tone,i)=>{
+  [48,52,55,59,64,68,72].forEach((tone,i)=>{
     const p=CALIBRATION_PATCH_CENTRES_MM[i],cx=Math.round(p.x*scale),cy=Math.round(p.y*scale);
     for(let dy=-10;dy<=10;dy++)for(let dx=-10;dx<=10;dx++)
       data[(cy+dy)*W+cx+dx]=tone;
@@ -682,9 +682,9 @@ test('2.0.2: fully filled bubble with ink extending beyond outline is detected a
 
 test('v2.1: grayscale strip calibrates only trustworthy ordered patches', () => {
   const { grayStripInkCeiling } = loadTS('src/scanner/grayCalibration.ts');
-  assert.equal(grayStripInkCeiling({status:'ok',ordered:true,patchMedians:[7,15,52,156]}),123);
-  assert.equal(grayStripInkCeiling({status:'unavailable',ordered:false,patchMedians:[90,80,70,60]}),null);
-  assert.equal(grayStripInkCeiling({status:'low_contrast',ordered:true,patchMedians:[20,35,48,52]}),null);
+  assert.equal(grayStripInkCeiling({status:'ok',ordered:true,patchMedians:[7,15,52,80,100,132,156]}),123);
+  assert.equal(grayStripInkCeiling({status:'unavailable',ordered:false,patchMedians:[90,80,70,60,50,40,30]}),null);
+  assert.equal(grayStripInkCeiling({status:'low_contrast',ordered:true,patchMedians:[20,25,30,35,40,45,52]}),null);
 });
 
 test('v2.1: calibrated ceiling prevents moderately shadowed paper from becoming a filled bubble', () => {
@@ -873,4 +873,11 @@ test('hybrid: off-bubble row ink remains a manual review, not a blank',()=>{
   const result=engine.detectQuestion(fakeImage([0,0,0,0]),30,150,152);
   assert.equal(result.status,'uncertain');
   assert.equal(result.answer,null);
+});
+
+test('OMR 2.1 seven reference positions map from bottom-left JSON to top-left scanner',()=>{
+  const {CALIBRATION_PATCH_CENTRES_MM,WHITE_REFERENCE_CENTRES_MM}=loadTS('src/scanner/grayCalibration.ts');
+  assert.deepEqual(CALIBRATION_PATCH_CENTRES_MM.map(p=>p.x),[132,141,150,159,168,177,186]);
+  assert.ok(CALIBRATION_PATCH_CENTRES_MM.every(p=>p.y===286.5));
+  assert.deepEqual(WHITE_REFERENCE_CENTRES_MM.map(p=>p.y),[9.5,286.5]);
 });
