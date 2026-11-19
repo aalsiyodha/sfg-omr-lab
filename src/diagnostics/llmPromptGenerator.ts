@@ -24,7 +24,7 @@ export function generateLLMDiagnosticPrompt({
   const lines: string[] = [];
 
   lines.push(`# SFG OMR LAB — SCAN DIAGNOSTIC REPORT FOR LLM DEBUGGING (${APP_VERSION})`);
-  lines.push(`> Engine: SFG OMR Lab ${APP_VERSION} (Dual-Pass • Multi-Mark • Adaptive Lighting)`);
+  lines.push(`> Engine: SFG OMR Lab ${APP_VERSION} (Geometry-Verified • Multi-Mark • Adaptive Lighting)`);
   lines.push('> Share this report together with the original scan image AND, if available, the bubble overlay screenshot.');
   lines.push('> This report contains measurements, not the source image pixels. Visual confirmation requires the image.');
   lines.push('> Personal/student identifiers are intentionally excluded from this shareable report.\n');
@@ -49,6 +49,7 @@ export function generateLLMDiagnosticPrompt({
   lines.push(`- **Processing Latency:** ${scanResult.processingTimeMs} ms`);
   lines.push(`- **Corner Registration Markers Found:** ${scanResult.markerCount} / 4 (Perspective Corrected: \`${scanResult.perspectiveCorrected}\`)`);
   lines.push(`- **Student QR Code:** \`${scanResult.qrValid ? 'VALID' : 'INVALID / MISSING'}\` (raw payload and student ID omitted)`);
+  lines.push(`- **Side timing marks verified:** \`${scanResult.alignmentVerified === true ? 'YES' : scanResult.alignmentVerified === false ? 'NO' : 'UNKNOWN'}\``);
   lines.push(`- **Detected Test ID:** \`${scanResult.testId ? String(scanResult.testId).padStart(2, '0') : 'NULL / NOT DETECTED'}\``);
   if (activeTestId) {
     lines.push(`- **Active Practice Test ID:** \`${String(activeTestId).padStart(2, '0')}\``);
@@ -136,7 +137,7 @@ export function generateLLMDiagnosticPrompt({
   lines.push('```');
 
   lines.push('\n## 8. Instructions for the LLM and Image Comparison');
-  lines.push('Based on the darkness measurements in Section 5, corner markers in Section 3, and settings in Section 4:');
+  lines.push('Based on the darkness measurements in Section 6, corner markers in Section 3, and settings in Section 4:');
   lines.push('1. Check if all questions in a column are shifted (e.g. if A is high across the whole column, there may be an X-offset error).');
   lines.push('2. Check if darkness values are uniformly low (underexposed/faint marks) or uniformly high (shadow/dark paper background).');
   lines.push('3. Inspect the source image and overlay side by side. Cite question numbers and visible marked options; distinguish what is visibly confirmed from hypotheses.');
