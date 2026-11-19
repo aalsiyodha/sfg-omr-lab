@@ -259,6 +259,7 @@ export function detectQuestion(
         strokeLike: detail.strokeLike,
         axisCoverage: detail.axisCoverage,
         diagonalCoverage: detail.diagonalCoverage,
+        stabilitySpread: undefined as number | undefined,
         xMm: centre.xMm, yMm: centre.yMm
       },
       detail,
