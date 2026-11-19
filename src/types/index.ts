@@ -33,6 +33,7 @@ export interface ScanResult {
   qrValid: boolean;
   markerCount: number;
   perspectiveCorrected: boolean;
+  alignmentVerified?: boolean;
   processingTimeMs: number;
   stageLogs: LogEntry[];
   warnings: string[];
