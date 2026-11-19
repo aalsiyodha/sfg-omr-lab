@@ -43,7 +43,7 @@ export function measureOutlineBand(
  */
 export function hasInterBubbleInk(
   mat: InkMat, centres: { x: number; y: number }[],
-  dpi: number, threshold: number,
+  dpi: number, threshold: number, localPaper?: number[],
 ): boolean {
   const scale = dpi / 25.4;
   const halfHeight = Math.max(2, Math.round(1.05 * scale));
@@ -53,6 +53,10 @@ export function hasInterBubbleInk(
     const xEnd = Math.floor(next.x - 2.1 * scale);
     if (xEnd - xStart < 4) continue;
     const cy = Math.round((first.y + next.y) / 2);
+    // Use the darker neighbouring paper baseline to avoid reporting a
+    // localized shadow as stray ink (Test 10 Q21–24).
+    const localCutoff = Math.max(45, Math.min(threshold,
+      Math.min(localPaper?.[i] ?? 255, localPaper?.[i+1] ?? 255) - 24));
     let dark = 0, total = 0, activeRows = 0, activeCols = 0;
     for (let dy = -halfHeight; dy <= halfHeight; dy++) {
       let rowDark = 0;
@@ -61,7 +65,7 @@ export function hasInterBubbleInk(
       for (let x = xStart; x <= xEnd; x++) {
         if (x < 0 || x >= mat.cols) continue;
         total++;
-        if (grayAt(mat,x,y) < threshold) { dark++; rowDark++; }
+        if (grayAt(mat,x,y) < localCutoff) { dark++; rowDark++; }
       }
       if (rowDark >= 3) activeRows++;
     }
