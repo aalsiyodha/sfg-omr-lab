@@ -10,6 +10,9 @@ export function validateScanResult(result: ScanResult): { warnings: string[]; er
   if (result.markerCount < 4) {
     errors.push(`Only ${result.markerCount}/4 registration markers detected. Scan may be inaccurate.`);
   }
+  if (result.perspectiveCorrected && result.alignmentVerified === false) {
+    errors.push('Answer grid alignment could not be verified using the side timing marks.');
+  }
   if (!result.perspectiveCorrected) {
     errors.push('Perspective correction not applied; answer locations cannot be trusted.');
   }
