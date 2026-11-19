@@ -53,6 +53,12 @@ export function generateLLMDiagnosticPrompt({
   lines.push(`- **Registration method:** \`${scanResult.registrationMethod || 'none'}\``);
   lines.push(`- **Timing marks matched:** ${scanResult.alignmentMatched ?? 'unknown'}/50`);
   lines.push(`- **Rotation applied:** ${scanResult.orientationRotated ? '180°' : 'No'}`);
+  if (scanResult.grayCalibration) {
+    const c = scanResult.grayCalibration;
+    lines.push(`- **Grayscale calibration:** \`${c.status}\` (diagnostic only)`);
+    lines.push(`- **Grayscale patch medians (dark to light):** ${c.patchMedians.join(', ') || 'not available'}; contrast=${c.contrast ?? 'N/A'}; ordered=${c.ordered}`);
+    lines.push(`- **Calibration note:** ${c.note}`);
+  }
   lines.push(`- **Detected Test ID:** \`${scanResult.testId ? String(scanResult.testId).padStart(2, '0') : 'NULL / NOT DETECTED'}\``);
   if (activeTestId) {
     lines.push(`- **Active Practice Test ID:** \`${String(activeTestId).padStart(2, '0')}\``);

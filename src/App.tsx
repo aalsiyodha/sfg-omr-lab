@@ -35,7 +35,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="min-vh-100 d-flex flex-column">
-        <nav className="navbar navbar-expand-md navbar-dark py-2" style={{ background: 'var(--accent)' }}>
+        <nav className="navbar navbar-expand-md navbar-dark py-2 sticky-top" style={{ background: 'var(--accent)' }}>
           <div className="container-fluid" style={{ maxWidth: 1100 }}>
             <NavLink to="/" className="text-decoration-none d-flex align-items-center gap-2">
               <div className="d-flex align-items-center justify-content-center rounded-2 bg-primary text-white" style={{ width: 32, height: 32 }}>

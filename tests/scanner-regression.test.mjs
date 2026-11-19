@@ -480,3 +480,43 @@ test('v2 corridor sensor ignores a uniformly dark shadow', () => {
   for(let y=87;y<=93;y++)for(let x=91;x<=106;x++)data[y*W+x]=20;
   assert.equal(stray.hasInterBubbleInk(mat,centres,150,142,[133,133,133]),true);
 });
+
+
+test('v2 grayscale reference measures four patches without changing classification', () => {
+  const {measureGrayCalibration,CALIBRATION_PATCH_CENTRES_MM}=loadTS('src/scanner/grayCalibration.ts');
+  const W=1240,H=1754,dpi=150,scale=dpi/25.4;
+  const data=new Uint8Array(W*H).fill(230);
+  const shades=[25,55,115,220];
+  CALIBRATION_PATCH_CENTRES_MM.forEach((p,i)=>{
+    const x=Math.round(p.x*scale), y=Math.round(p.y*scale);
+    for(let dy=-12;dy<=12;dy++)for(let dx=-12;dx<=12;dx++)
+      data[(y+dy)*W+x+dx]=shades[i];
+  });
+  const gray={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  const result=measureGrayCalibration(gray,dpi);
+  assert.equal(result.status,'ok');
+  assert.deepEqual(result.patchMedians,shades);
+  assert.equal(result.contrast,195);
+});
+
+test('v2 grayscale reference is unavailable on sheets without printed strip', () => {
+  const {measureGrayCalibration}=loadTS('src/scanner/grayCalibration.ts');
+  const gray={rows:1754,cols:1240,ucharPtr:()=>[235]};
+  const result=measureGrayCalibration(gray,150);
+  assert.equal(result.status,'unavailable');
+  assert.equal(result.ordered,true);
+});
+
+test('v2 grayscale reference flags weak tonal separation as diagnostic', () => {
+  const {measureGrayCalibration,CALIBRATION_PATCH_CENTRES_MM}=loadTS('src/scanner/grayCalibration.ts');
+  const W=1240,H=1754,dpi=150,scale=dpi/25.4;
+  const data=new Uint8Array(W*H).fill(165);
+  [48,58,69,85].forEach((tone,i)=>{
+    const p=CALIBRATION_PATCH_CENTRES_MM[i],cx=Math.round(p.x*scale),cy=Math.round(p.y*scale);
+    for(let dy=-10;dy<=10;dy++)for(let dx=-10;dx<=10;dx++)
+      data[(cy+dy)*W+cx+dx]=tone;
+  });
+  const result=measureGrayCalibration(
+    {rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]},dpi);
+  assert.equal(result.status,'low_contrast');
+});

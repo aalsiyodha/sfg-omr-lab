@@ -10,6 +10,7 @@ import { correctPerspective, correctPerspectiveFromMidpoints } from './perspecti
 import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion } from './qrDecoder';
 import { detectAllAnswers, detectTestId } from './bubbleDetector';
+import { measureGrayCalibration } from './grayCalibration';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
 import { OMR_LAYOUT } from '../config/omrLayout';
@@ -196,6 +197,7 @@ export async function runFullScan(
     let alignmentMatched = 0;
     let registrationMethod: string | null = null;
     let rotated = false;
+    let grayCalibration: ReturnType<typeof measureGrayCalibration> | undefined;
 
     if (selected) {
       const chosen = selected;
@@ -215,6 +217,13 @@ export async function runFullScan(
         ? generateMarkerOverlay(loaded.canvas, chosen.hypothesis.markers)
         : generateMidpointOverlay(loaded.canvas, chosen.hypothesis.markers);
 
+      grayCalibration = measureGrayCalibration(chosen.gray, dpi);
+      logger.info('bubbleDetection', 'Grayscale reference strip (diagnostic only)', {
+        status:grayCalibration.status,
+        patchMedians:grayCalibration.patchMedians,
+        contrast:grayCalibration.contrast,
+        note:grayCalibration.note
+      });
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
       const detectedId = detectTestId(chosen.gray, dpi);
       testId = detectedId.testId;
@@ -235,6 +244,7 @@ export async function runFullScan(
       perspectiveCorrected: corrected, alignmentVerified, alignmentMatched,
       registrationMethod, orientationRotated: rotated,
       processingTimeMs: Date.now() - start,
+      grayCalibration,
       stageLogs: [],
       warnings: [],
       errors: selected ? [] : [
