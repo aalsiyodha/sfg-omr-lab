@@ -12,6 +12,7 @@ import { decodeQRFromRegion } from './qrDecoder';
 import { detectAllAnswers, detectTestId } from './bubbleDetector';
 import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
+import { rescueTestIdOffset } from './testIdAlignment';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
 import { OMR_LAYOUT } from '../config/omrLayout';
@@ -231,14 +232,30 @@ export async function runFullScan(
       const grid = estimateGridAlignment(chosen.gray,dpi);
       logger.info('perspective','Independent printed-ring grid offsets', {grid});
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
-      const detectedId = detectTestId(chosen.gray, dpi, inkCeiling ?? undefined, grid.testId);
+      let idOffset: {dx:number;dy:number} = grid.testId;
+      let detectedId = detectTestId(chosen.gray, dpi, inkCeiling ?? undefined, idOffset);
+      if(detectedId.testId===null){
+        // A global warp may miss the top ID grid even if answer rings align.
+        // Only retry at a location with TWO isolated high-density digit cores.
+        const rescue=rescueTestIdOffset(chosen.gray,dpi,Math.min(150,inkCeiling??150));
+        if(rescue){
+          const retry=detectTestId(chosen.gray,dpi,inkCeiling??undefined,rescue);
+          if(retry.testId===rescue.tens*10+rescue.units){
+            detectedId=retry;
+            idOffset=rescue;
+            logger.info('testIdDetection','ID rescued with independent two-row evidence',
+              {offset:{dx:rescue.dx,dy:rescue.dy},strength:rescue.strength});
+          } else logger.warning('testIdDetection','Candidate ID offset failed full validation',
+            {offset:{dx:rescue.dx,dy:rescue.dy},strength:rescue.strength});
+        }
+      }
       testId = detectedId.testId;
       logger.info('testIdDetection', `Test ID: ${testId}`, detectedId);
       answers = detectAllAnswers(chosen.gray, dpi, inkCeiling ?? undefined, q => offsetForQuestion(grid,q));
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
       images.bubbleOverlay = generateBubbleOverlay(
-        chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi, grid.testId
+        chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi, idOffset
       );
     } else {
       logger.error('perspective',
