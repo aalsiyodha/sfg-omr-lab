@@ -290,7 +290,8 @@ test('v1.8 clear C remains detected, A+B multiple remains multiple', () => {
 test('v1.8 beta report includes concise answer map and excludes student identity', () => {
   const report = loadTS('src/diagnostics/llmPromptGenerator.ts', {
     '../config/scannerSettings': { getSettings: () => settings },
-    '../config/version': { APP_VERSION: 'v1.8.0' }
+    '../config/version': { APP_VERSION: 'v1.8.0' },
+    '../scanner/grayCalibration': {grayStripInkCeiling:()=>null}
   });
   const answers = Array.from({length:50}, (_,index) => ({
     question:index+1,
