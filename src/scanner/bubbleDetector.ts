@@ -18,6 +18,10 @@ export interface BubbleMeasurementDetail {
   diagonalDisparity: number;
   isValid: boolean;
   rejectReason?: string;
+  localPaperBrightness?: number;
+  filledQuadrants?: number;
+  strokeLike?: boolean;
+  effectiveThreshold?: number;
 }
 
 /**
@@ -78,7 +82,8 @@ function measureBubbleInterior(
   cxPx: number,
   cyPx: number,
   interiorRadiusPx: number,
-  darkThreshold: number = 152
+  darkThreshold: number = 152,
+  dpi: number = 150
 ): BubbleMeasurementDetail {
   // Sample the known homography-mapped centre. Searching for the darkest
   // single pixel caused the ROI to chase outlines and stray ink.
@@ -96,6 +101,28 @@ function measureBubbleInterior(
   if (w <= 0 || h <= 0) {
     return { fillPercent: 0, horizontalDisparity: 0, diagonalDisparity: 0, isValid: false, rejectReason: 'out_of_bounds' };
   }
+
+  // Reference-informed local background: the printed outline has radius
+  // 1.7mm. Sample clean paper in a 2.05–2.55mm annulus, before the option
+  // letter printed ~3.3mm to the right. Use the median to resist speckles.
+  const ringInner = Math.max(r + 2, Math.round(mmToPx(2.05, dpi)));
+  const ringOuter = Math.max(ringInner + 2, Math.round(mmToPx(2.55, dpi)));
+  const ringSamples: number[] = [];
+  for (let dy = -ringOuter; dy <= ringOuter; dy++) {
+    for (let dx = -ringOuter; dx <= ringOuter; dx++) {
+      const distanceSq = dx * dx + dy * dy;
+      if (distanceSq < ringInner * ringInner || distanceSq > ringOuter * ringOuter) continue;
+      const sampleX = bestCx + dx, sampleY = bestCy + dy;
+      if (sampleX < 0 || sampleY < 0 || sampleX >= grayMat.cols || sampleY >= grayMat.rows) continue;
+      ringSamples.push(grayMat.ucharPtr(sampleY, sampleX)[0]);
+    }
+  }
+  ringSamples.sort((a,b) => a-b);
+  const paper = ringSamples.length ? ringSamples[Math.floor(ringSamples.length / 2)] : 235;
+  // Cap the local adjustment at +/-7 grayscale levels: strong changes in
+  // illumination should not redefine a marked bubble as background.
+  const correction = Math.max(-7, Math.min(7, (paper - 235) * .14));
+  const inkThreshold = Math.max(135, Math.min(173, darkThreshold + correction));
 
   let totalCirclePx = 0;
   let darkCirclePx = 0;
@@ -115,7 +142,7 @@ function measureBubbleInterior(
       if (dx * dx + dySq <= rSq) {
         totalCirclePx++;
         const pixelVal = grayMat.ucharPtr(y + row, x + col)[0];
-        const isDark = pixelVal < darkThreshold;
+        const isDark = pixelVal < inkThreshold;
         if (isDark) darkCirclePx++;
 
         if (dx < 0) {
@@ -150,7 +177,13 @@ function measureBubbleInterior(
   const q4Pct = q4Tot > 0 ? (q4Dark / q4Tot) * 100 : 0;
   const diagonalDisparity = Math.abs((q1Pct + q4Pct) - (q2Pct + q3Pct));
 
-  // Published OMR rejection criteria:
+  // Shape-aware rejection: thin slashes/ticks often darken only one or two
+  // quadrants. A genuinely filled bubble should occupy most quadrants, even
+  // when photographed under moderate shadows.
+  const filledQuadrants = [q1Pct, q2Pct, q3Pct, q4Pct].filter(v => v >= 24).length;
+  const strokeLike = fillPercent >= 45 && fillPercent < 75 && filledQuadrants <= 2;
+
+  // OMR rejection criteria:
   // 1. Solid fill threshold: at least 45% (crosses ~25%, ticks ~25% fail)
   // 2. Crescent mark: horizontal disparity > 65% with an empty opposing side (< 15%)
   // 3. Diagonal slash: opposing diagonal disparity > 85% when fill < 65%
@@ -160,6 +193,9 @@ function measureBubbleInterior(
   if (fillPercent < 45) {
     isValid = false;
     rejectReason = `Low fill (${fillPercent.toFixed(0)}%)`;
+  } else if (strokeLike) {
+    isValid = false;
+    rejectReason = `Sparse stroke shape (${filledQuadrants}/4 filled quadrants)`;
   } else if (horizontalDisparity > 65 && Math.min(leftPct, rightPct) < 15) {
     isValid = false;
     rejectReason = `Half-filled crescent mark (H-disparity ${horizontalDisparity.toFixed(0)}%)`;
@@ -168,7 +204,9 @@ function measureBubbleInterior(
     rejectReason = `Diagonal slash mark (diagonal disparity ${diagonalDisparity.toFixed(0)}%)`;
   }
 
-  return { fillPercent, horizontalDisparity, diagonalDisparity, isValid, rejectReason };
+  return { fillPercent, horizontalDisparity, diagonalDisparity, isValid,
+    rejectReason, localPaperBrightness: paper, filledQuadrants, strokeLike,
+    effectiveThreshold: inkThreshold };
 }
 
 export function detectQuestion(
@@ -187,7 +225,7 @@ export function detectQuestion(
     const centre = getBubbleCentre(question, idx as 0|1|2|3);
     const cxPx = mmToPx(centre.xMm, dpi);
     const cyPx = mmToPx(centre.yMm, dpi);
-    const detail = measureBubbleInterior(correctedGray, cxPx, cyPx, interiorRadiusPx, effectiveThreshold);
+    const detail = measureBubbleInterior(correctedGray, cxPx, cyPx, interiorRadiusPx, effectiveThreshold, dpi);
     return {
       measurement: {
         question, option: opt, fillPercent: detail.fillPercent,
@@ -196,7 +234,10 @@ export function detectQuestion(
         validMark: detail.isValid,
         rejectReason: detail.rejectReason,
         sampleXPx: Math.round(cxPx), sampleYPx: Math.round(cyPx),
-        inkThreshold: effectiveThreshold,
+        inkThreshold: detail.effectiveThreshold,
+        localPaperBrightness: detail.localPaperBrightness,
+        filledQuadrants: detail.filledQuadrants,
+        strokeLike: detail.strokeLike,
         xMm: centre.xMm, yMm: centre.yMm
       },
       detail,
@@ -278,7 +319,7 @@ export function detectTestId(
   // Detect TENS (0-5)
   const tensFills = (TID.tens.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('tens', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold);
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
     return { digit, fill: detail.fillPercent };
   });
   
