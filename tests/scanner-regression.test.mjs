@@ -11,16 +11,16 @@ import { stripTypeScriptTypes } from 'node:module';
 function loadTS(path, dependencies = {}) {
   const source = readFileSync(resolve(process.cwd(), path), 'utf8');
   const stripped = stripTypeScriptTypes(source, { mode: 'strip' });
-  const exports = [...stripped.matchAll(/^export\\s+(?:async\\s+)?(?:function|const|class)\\s+(\\w+)/gm)]
+  const exports = [...stripped.matchAll(/^export\s+(?:async\s+)?(?:function|const|class)\s+(\w+)/gm)]
     .map(match => match[1]);
   const js = stripped
-    .replace(/^import\\s+type\\s+.*?;\\s*$/gm, '')
-    .replace(/^import\\s+\\{([^}]+)\\}\\s+from\\s+['"]([^'"]+)['"];?\\s*$/gm,
+    .replace(/^import\s+type\s+.*?;\s*$/gm, '')
+    .replace(/^import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"];?\s*$/gm,
       (_all, names, from) => `const { ${names} } = deps[${JSON.stringify(from)}];`)
-    .replace(/^import\\s+(\\w+)\\s+from\\s+['"]([^'"]+)['"];?\\s*$/gm,
+    .replace(/^import\s+(\w+)\s+from\s+['"]([^'"]+)['"];?\s*$/gm,
       (_all, local, from) => `const ${local} = deps[${JSON.stringify(from)}].default;`)
-    .replace(/^export\\s+(?=(?:async\\s+)?(?:function|const|class))/gm, '');
-  return new Function('deps', 'cv', js + `\\nreturn { ${exports.join(', ')} };\\n`)(dependencies, globalThis.cv);
+    .replace(/^export\s+(?=(?:async\s+)?(?:function|const|class))/gm, '');
+  return new Function('deps', 'cv', js + `\nreturn { ${exports.join(', ')} };\n`)(dependencies, globalThis.cv);
 }
 
 const settings = {
