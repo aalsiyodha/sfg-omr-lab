@@ -146,3 +146,30 @@ export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
     return missed('ArUco identification failed: '+String(e));
   }finally{contours.delete();hierarchy.delete();}
 }
+
+
+/**
+ * Geometric midpoint predictions from the four independent ArUco IDs.
+ * Bilinear interpolation/extrapolation is used ONLY to select a nearby
+ * printed 4mm square; final registration still uses its measured centre
+ * and must pass QR plus 50-row timing verification.
+ */
+export function predictMidpointsFromArucos(markers:ArucoRegistration):{
+  top:ImagePoint;bottom:ImagePoint;left:ImagePoint;right:ImagePoint
+}|null{
+  if(!markers.found||[0,1,2,3].some(id=>!markers.points[id]))return null;
+  const upper=(x:number):ImagePoint=>{
+    const t=(x-83.5)/(151.5-83.5),a=markers.points[0],b=markers.points[1];
+    return {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+  };
+  const lower=(x:number):ImagePoint=>{
+    const t=(x-51.5)/(117.5-51.5),a=markers.points[2],b=markers.points[3];
+    return {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+  };
+  const at=(x:number,y:number):ImagePoint=>{
+    const a=upper(x),b=lower(x),t=(y-10)/(287-10);
+    return {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+  };
+  return {top:at(105,8),bottom:at(105,289),
+    left:at(8,148.5),right:at(202,148.5)};
+}
