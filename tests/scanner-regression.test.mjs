@@ -781,3 +781,29 @@ test('v2.1.2: fast ring alignment estimates a printed-ring translation',()=>{
   assert.ok(Math.abs(estimate.dx-dx)<=2 && Math.abs(estimate.dy-dy)<=2,
     JSON.stringify(estimate));
 });
+
+test('v2.1.2: multiple overlay highlights true A+B but not third crossed D',()=>{
+  const {highlightedMultipleOptions}=loadTS('src/scanner/overlayGenerator.ts',{
+    '../config/omrLayout':{
+      OMR_LAYOUT:{answers:{bubbleDiamMm:3.4}},
+      getBubbleCentre:()=>({xMm:0,yMm:0}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      mmToPx:(v)=>v
+    }
+  });
+  const multiple={status:'multiple',measurements:[
+    {option:'A',fillPercent:100,validMark:true},
+    {option:'B',fillPercent:100,validMark:true},
+    {option:'C',fillPercent:14,validMark:false},
+    {option:'D',fillPercent:66.4,validMark:true}
+  ]};
+  assert.deepEqual(highlightedMultipleOptions(multiple),['A','B']);
+  assert.deepEqual(highlightedMultipleOptions({
+    ...multiple, measurements:[
+      {option:'A',fillPercent:92,validMark:true},
+      {option:'B',fillPercent:54,validMark:true},
+      {option:'C',fillPercent:10,validMark:false},
+      {option:'D',fillPercent:4,validMark:false}
+    ]
+  }),['A','B']);
+});
