@@ -3,6 +3,8 @@ import type { MidpointRegistration } from './midpointDetector';
 import { MIDPOINTS_MM } from './midpointDetector';
 import { OMR_LAYOUT, mmToPx } from '../config/omrLayout';
 import { getSettings } from '../config/scannerSettings';
+import type { ArucoRegistration } from './arucoDetector';
+import { ARUCO_MARKERS_MM } from './arucoDetector';
 
 declare const cv: any;
 
@@ -124,5 +126,40 @@ export function correctPerspectiveFromMidpoints(
     srcMat.delete();
     if (input) input.delete();
     if (output) output.delete();
+  }
+}
+
+/**
+ * Four ArUco marker-centre homography for rescue on the new printed sheet.
+ * Never accepted on geometric plausibility alone: scanOrchestrator separately
+ * verifies QR orientation and independent left/right timing rows.
+ */
+export function correctPerspectiveFromArucos(
+  src:HTMLCanvasElement, markers:ArucoRegistration
+):PerspectiveResult {
+  if(!markers.found||ARUCO_MARKERS_MM.some(m=>!markers.points[m.id]))
+    return {corrected:null,correctedDataUrl:'',transform:null,success:false,
+      error:'Four uniquely decoded ArUco markers are required'};
+  const dpi=getSettings().scanDpi;
+  const srcMat=cv.imread(src);
+  let input:any=null,output:any=null,transform:any=null,corrected:any=null;
+  try{
+    const ordered=ARUCO_MARKERS_MM;
+    input=cv.matFromArray(4,1,cv.CV_32FC2,
+      ordered.flatMap(m=>[markers.points[m.id].x,markers.points[m.id].y]));
+    output=cv.matFromArray(4,1,cv.CV_32FC2,
+      ordered.flatMap(m=>[mmToPx(m.x,dpi),mmToPx(m.y,dpi)]));
+    transform=cv.getPerspectiveTransform(input,output);
+    corrected=new cv.Mat();
+    cv.warpPerspective(srcMat,corrected,transform,
+      new cv.Size(Math.round(mmToPx(OMR_LAYOUT.page.widthMm,dpi)),
+        Math.round(mmToPx(OMR_LAYOUT.page.heightMm,dpi))));
+    return {corrected,correctedDataUrl:matToDataUrl(corrected),
+      transform,success:true};
+  }catch(error){
+    corrected?.delete?.();transform?.delete?.();
+    throw error;
+  }finally{
+    srcMat.delete();input?.delete?.();output?.delete?.();
   }
 }
