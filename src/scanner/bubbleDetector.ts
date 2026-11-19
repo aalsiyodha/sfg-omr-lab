@@ -285,7 +285,10 @@ export function detectQuestion(
   const substantialMarks = rawMeasurements.filter(r =>
     r.measurement.fillPercent >= settings.bubbleFillThreshold
   );
-  if (validFills.length >= 2) {
+  // Two strongly shaded options remain multiple even if directional noise
+  // rejects one shape; otherwise v1.8 could regress Q26 to 'uncertain'.
+  // This does NOT promote medium-density background noise (Q24/Q25).
+  if (validFills.length >= 2 || (max >= 85 && second.measurement.fillPercent >= 65)) {
     return { measurements, answer: null, status: 'multiple', confidence: 0 };
   }
   if (max < settings.bubbleFillThreshold) {
