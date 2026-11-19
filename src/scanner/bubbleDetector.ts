@@ -80,31 +80,19 @@ function measureBubbleInterior(
   interiorRadiusPx: number,
   darkThreshold: number = 152
 ): BubbleMeasurementDetail {
-  // Local bubble snapping: search +/-3px window in all directions to center on bubble
-  let bestCx = Math.round(cxPx);
-  let bestCy = Math.round(cyPx);
-  let minMean = 255;
-
-  for (let dy = -3; dy <= 3; dy++) {
-    for (let dx = -3; dx <= 3; dx++) {
-      const tx = Math.round(cxPx + dx);
-      const ty = Math.round(cyPx + dy);
-      if (tx >= 0 && tx < grayMat.cols && ty >= 0 && ty < grayMat.rows) {
-        const val = grayMat.ucharPtr(ty, tx)[0];
-        if (val < minMean) {
-          minMean = val;
-          bestCx = tx;
-          bestCy = ty;
-        }
-      }
-    }
-  }
-
+  // Sample the known homography-mapped centre. Searching for the darkest
+  // single pixel caused the ROI to chase outlines and stray ink.
+  const bestCx = Math.round(cxPx);
+  const bestCy = Math.round(cyPx);
   const r = Math.max(2, Math.round(interiorRadiusPx));
-  const x = Math.max(0, bestCx - r);
-  const y = Math.max(0, bestCy - r);
-  const w = Math.min(r * 2 + 1, grayMat.cols - x);
-  const h = Math.min(r * 2 + 1, grayMat.rows - y);
+  if (bestCx - r < 0 || bestCy - r < 0 ||
+      bestCx + r >= grayMat.cols || bestCy + r >= grayMat.rows) {
+    return { fillPercent: 0, horizontalDisparity: 0, diagonalDisparity: 0, isValid: false, rejectReason: 'out_of_bounds' };
+  }
+  const x = bestCx - r;
+  const y = bestCy - r;
+  const w = r * 2 + 1;
+  const h = r * 2 + 1;
   if (w <= 0 || h <= 0) {
     return { fillPercent: 0, horizontalDisparity: 0, diagonalDisparity: 0, isValid: false, rejectReason: 'out_of_bounds' };
   }
@@ -217,43 +205,33 @@ export function detectQuestion(
   const jump = max - baseline;
   const diff = max - second.measurement.fillPercent;
 
-  // 1. Check for blank: if max fill is below threshold OR jump above baseline is negligible (< 16%)
-  if (max < settings.bubbleFillThreshold || jump < 16) {
-    return { measurements, answer: null, status: 'blank', confidence: Math.max(0, 100 - max) };
-  }
+  // Classify the whole row before choosing a winner. Previously a high
+  // baseline could suppress a genuine second mark (Q26 in regression scans).
+  const validFills = rawMeasurements.filter(r =>
+    r.detail.isValid && r.measurement.fillPercent >= settings.bubbleFillThreshold
+  );
+  const substantialMarks = rawMeasurements.filter(r =>
+    r.measurement.fillPercent >= settings.bubbleFillThreshold
+  );
 
-  // 2. Published OMR Standard Rule: Filter out partial marks (slashes, crosses, crescents, ticks)
-  if (!top.detail.isValid) {
-    return { measurements, answer: null, status: 'blank', confidence: Math.round(max) };
-  }
-
-  // 3. Multiple marks:
-  // Triggered if both top and second options are valid filled bubbles above threshold (>= 45%),
-  // and either they are close in darkness (diff < minDifference) OR the second option is also
-  // clearly filled by the student (second option shows a confident jump >= 14% above unselected bubbles).
-  const unselectedBaseline = (sorted[2].measurement.fillPercent + sorted[3].measurement.fillPercent) / 2;
-  const secondJump = second.measurement.fillPercent - unselectedBaseline;
-  const validFills = rawMeasurements.filter(r => r.detail.isValid && r.measurement.fillPercent >= settings.bubbleFillThreshold);
-
-  if (
-    validFills.length >= 2 &&
-    (diff < settings.bubbleMinDifference || (second.measurement.fillPercent >= settings.bubbleFillThreshold && secondJump >= 14))
-  ) {
+  if (validFills.length >= 2) {
     return { measurements, answer: null, status: 'multiple', confidence: 0 };
   }
-
-  if (diff < settings.bubbleUncertainThreshold) {
-    return {
-      measurements,
-      answer: top.measurement.option as AnswerOption,
-      status: 'uncertain',
-      confidence: Math.min(Math.round(diff * 2.5), 100),
-    };
+  if (max < settings.bubbleFillThreshold) {
+    return { measurements, answer: null, status: 'blank', confidence: Math.max(0, 100 - max) };
+  }
+  if (substantialMarks.length >= 2 || !top.detail.isValid) {
+    // Even if another mark fails morphology, it is not safe to assign an
+    // unambiguous single answer; ask for a manual review instead.
+    return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+  }
+  if (jump < 16 || diff < settings.bubbleUncertainThreshold) {
+    return { measurements, answer: null, status: 'uncertain', confidence: Math.min(Math.round(diff * 2.5), 100) };
   }
 
   return {
     measurements,
-    answer: top.measurement.option as AnswerOption,
+    answer: top.measurement.option,
     status: 'detected',
     confidence: Math.min(Math.round(diff * 3), 100),
   };
