@@ -92,7 +92,8 @@ function measureBubbleInterior(
   interiorRadiusPx: number,
   darkThreshold: number = 152,
   dpi: number = 150,
-  paperOverride?: number
+  paperOverride?: number,
+  inkCeiling?: number
 ): BubbleMeasurementDetail {
   // Sample the known homography-mapped centre. Searching for the darkest
   // single pixel caused the ROI to chase outlines and stray ink.
@@ -132,7 +133,7 @@ function measureBubbleInterior(
   // Retain the established threshold on well-lit paper.
   const referencePaper = paperOverride ?? paper;
   const correction = Math.max(-7, Math.min(7, (referencePaper - 235) * .14));
-  const inkThreshold = Math.max(50, Math.min(173, darkThreshold + correction, referencePaper - 24));
+  const inkThreshold = Math.max(50, Math.min(173, darkThreshold + correction, referencePaper - (inkCeiling === undefined ? 24 : 36), inkCeiling ?? 173));
 
   let totalCirclePx = 0;
   let darkCirclePx = 0;
@@ -251,7 +252,8 @@ export function detectQuestion(
   correctedGray: any,  // grayscale cv.Mat of perspective-corrected image
   question: number,    // 1-based
   dpi: number,
-  darkThreshold?: number
+  darkThreshold?: number,
+  inkCeiling?: number
 ): BubbleReadResult {
   const settings = getSettings();
   const effectiveThreshold = darkThreshold ?? computeAdaptiveDarkThreshold(correctedGray);
@@ -264,7 +266,7 @@ export function detectQuestion(
     return { x: mmToPx(c.xMm,dpi), y: mmToPx(c.yMm,dpi) };
   });
   const preliminary = centres.map(c =>
-    measureBubbleInterior(correctedGray, c.x, c.y, interiorRadiusPx, effectiveThreshold, dpi));
+    measureBubbleInterior(correctedGray, c.x, c.y, interiorRadiusPx, effectiveThreshold, dpi, undefined, inkCeiling));
   // An extended pen mark can flood the 2.05–2.55mm reference annulus.
   // Borrow nearby paper only for an extreme isolated anomaly, not for
   // ordinary localized shadows such as Test 10 Q21–24.
@@ -277,7 +279,7 @@ export function detectQuestion(
     if (localPaper < 105 && reference - localPaper >= 65 &&
         others.filter(v=>v>=145).length >= 2)
       return measureBubbleInterior(correctedGray, centres[idx].x, centres[idx].y,
-        interiorRadiusPx, effectiveThreshold, dpi, reference);
+        interiorRadiusPx, effectiveThreshold, dpi, reference, inkCeiling);
     return sample;
   });
   const rawMeasurements = options.map((opt, idx) => {
@@ -475,12 +477,13 @@ export function detectQuestion(
 
 export function detectAllAnswers(
   correctedGray: any,
-  dpi: number
+  dpi: number,
+  inkCeiling?: number
 ): QuestionResult[] {
   const darkThreshold = computeAdaptiveDarkThreshold(correctedGray);
   return Array.from({ length: 50 }, (_, i) => {
     const q = i + 1;
-    const result = detectQuestion(correctedGray, q, dpi, darkThreshold);
+    const result = detectQuestion(correctedGray, q, dpi, darkThreshold, inkCeiling);
     return {
       question: q,
       measurements: result.measurements,
@@ -494,7 +497,8 @@ export function detectAllAnswers(
 
 export function detectTestId(
   correctedGray: any,
-  dpi: number
+  dpi: number,
+  inkCeiling?: number
 ): { tens: number | null; units: number | null; testId: number | null } {
   const settings = getSettings();
   const darkThreshold = computeAdaptiveDarkThreshold(correctedGray);
@@ -505,7 +509,7 @@ export function detectTestId(
   // Detect TENS (0-5)
   const tensFills = (TID.tens.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('tens', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
     return { digit, fill: detail.fillPercent, valid: detail.isValid };
   });
   
