@@ -144,7 +144,11 @@ export function correctPerspectiveFromArucos(
   const srcMat=cv.imread(src);
   let input:any=null,output:any=null,transform:any=null,corrected:any=null;
   try{
-    const ordered=ARUCO_MARKERS_MM;
+    // cv.getPerspectiveTransform requires TL, TR, BR, BL perimeter order.
+    // ArUco's ID list is 0,1,2,3 = TL,TR,BL,BR. Passing it directly
+    // crossed the last two point correspondences and distorted the warp.
+    const byId=new Map(ARUCO_MARKERS_MM.map(m=>[m.id,m]));
+    const ordered=[0,1,3,2].map(id=>byId.get(id)!);
     input=cv.matFromArray(4,1,cv.CV_32FC2,
       ordered.flatMap(m=>[markers.points[m.id].x,markers.points[m.id].y]));
     output=cv.matFromArray(4,1,cv.CV_32FC2,
