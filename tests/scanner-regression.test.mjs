@@ -42,7 +42,7 @@ const bubbles = loadTS('src/scanner/bubbleDetector.ts', {
     strokeReviewMinFill:38,quadrantCoverage:24,diagonalLineCoverage:67,
     diagonalAxisGap:22,diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
   }},
-  './strayInk': {measureOutlineBand:()=>255,hasInterBubbleInk:()=>false},
+  './strayInk': {measureOutlineBand:()=>255,hasInterBubbleInk:()=>false,hasExternalStroke:()=>false},
   './radialInk': { measureRadialInk: () => ({
     core: 0,middle:0,outer:0,classification:'insufficient_resolution'
   }) }
@@ -371,7 +371,7 @@ test('v1.9 complete classifier rejects central dots and rings while keeping full
       }
     },
     './radialInk':radial,
-    './strayInk': {measureOutlineBand:()=>255,hasInterBubbleInk:()=>false}
+    './strayInk': {measureOutlineBand:()=>255,hasInterBubbleInk:()=>false,hasExternalStroke:()=>false}
   });
   const make = marks => {
     const W=240,H=220,data=new Uint8Array(W*H).fill(235);
@@ -417,7 +417,7 @@ test('v2 shadowed clean paper stays blank while a true filled bubble is detected
       }
     },
     './radialInk':radial,
-    './strayInk':{measureOutlineBand:()=>255,hasInterBubbleInk:()=>false}
+    './strayInk':{measureOutlineBand:()=>255,hasInterBubbleInk:()=>false,hasExternalStroke:()=>false}
   });
   const W=240,H=220;
   const data=new Uint8Array(W*H).fill(126);
@@ -519,4 +519,99 @@ test('v2 grayscale reference flags weak tonal separation as diagnostic', () => {
   const result=measureGrayCalibration(
     {rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]},dpi);
   assert.equal(result.status,'low_contrast');
+});
+
+
+/**
+ * 2.0.1 PHOTO-INSPIRED (synthetic) paired-image fixtures.
+ * These are not a substitute for replaying the actual user photos.
+ */
+function v201Engine() {
+  const px = mm => mm*150/25.4;
+  const radial = loadTS('src/scanner/radialInk.ts');
+  return loadTS('src/scanner/bubbleDetector.ts', {
+    '../config/omrLayout': {
+      mmToPx:px,
+      getBubbleCentre: (_q,option)=>({xMm:(80+option*80)/px(1),yMm:120/px(1)}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings':{
+      getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{
+        minFill:45,nearThresholdFill:42,visiblePartialFill:37,strongFill:85,
+        strongMultipleRunner:65,secondMarkTopMin:70,secondMarkFillMin:36,
+        secondMarkRelative:.4,minJump:16,stabilityReviewSpread:18,
+        thresholdPerturbation:8,strokeReviewMaxFill:88,strokeReviewMinFill:38,
+        quadrantCoverage:24,diagonalLineCoverage:67,diagonalAxisGap:22,
+        diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+      }
+    },
+    './radialInk':radial,
+    './strayInk':{
+      measureOutlineBand:()=>255, hasInterBubbleInk:()=>false,
+      hasExternalStroke:()=>false
+    }
+  });
+}
+
+function v201Image({paper=225,ink=28,shape='solid',option=1,contaminate=false}={}) {
+  const W=460,H=245, data=new Uint8Array(W*H).fill(paper), px=150/25.4;
+  const cx=80+option*80,cy=120;
+  for(let dy=-18;dy<=18;dy++)for(let dx=-18;dx<=18;dx++){
+    const mm=Math.hypot(dx,dy)/px;
+    let mark=false;
+    if (shape==='solid') mark=mm<=1.40;
+    if (shape==='crescent') mark=mm<=1.0 && !(dx>2 && dy>2);
+    if (shape==='cross') mark=mm<=0.95 && (Math.abs(dx)<=0 || Math.abs(dy)<=0);
+    if (shape==='blank') mark=false;
+    if (mark || (contaminate && mm>=2.05 && mm<=2.55))
+      data[(cy+dy)*W+cx+dx]=ink;
+  }
+  return {rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+}
+
+test('2.0.1: high-density incomplete crescent never becomes accepted fill',()=>{
+  const engine=v201Engine();
+  const result=engine.detectQuestion(v201Image({shape:'crescent'}),1,150,152);
+  assert.equal(result.status,'uncertain');
+  assert.equal(result.answer,null);
+  assert.match(result.measurements[1].rejectReason,/partial|crescent|outer/i);
+});
+
+test('2.0.1: thin cross in otherwise empty row requires manual review',()=>{
+  const engine=v201Engine();
+  const result=engine.detectQuestion(v201Image({shape:'cross'}),1,150,152);
+  assert.equal(result.status,'uncertain');
+  assert.equal(result.answer,null);
+});
+
+test('2.0.1: isolated dark annulus does not erase a genuine filled bubble',()=>{
+  const engine=v201Engine();
+  const result=engine.detectQuestion(v201Image({shape:'solid',ink:65,contaminate:true}),1,150,152);
+  assert.equal(result.answer,'B');
+  assert.equal(result.status,'detected');
+  assert.equal(result.measurements[1].paperReferenceContaminated,true);
+});
+
+test('2.0.1: synthetic paired exposures retain solid/blank/cross outcomes',()=>{
+  const engine=v201Engine();
+  for(const shape of ['solid','blank','cross']){
+    const bright=engine.detectQuestion(v201Image({paper:230,ink:25,shape}),1,150,152);
+    const dim=engine.detectQuestion(v201Image({paper:178,ink:44,shape}),1,150,152);
+    assert.equal(dim.status,bright.status,shape+' changes across exposures');
+    assert.equal(dim.answer,bright.answer,shape+' answer changes across exposures');
+  }
+});
+
+test('2.0.1: external thin stroke sensor distinguishes blank from tick',()=>{
+  const stray=loadTS('src/scanner/strayInk.ts');
+  const W=200,H=200,data=new Uint8Array(W*H).fill(220);
+  const cx=95,cy=95,mmPx=150/25.4;
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  assert.equal(stray.hasExternalStroke(mat,cx,cy,150,220),false);
+  for(let y=cy-17;y<=cy-11;y++)for(let x=cx-9;x<=cx+1;x++)
+    if(Math.hypot(x-cx,y-cy)>2.08*mmPx && Math.hypot(x-cx,y-cy)<3.05*mmPx)
+      data[y*W+x]=20;
+  assert.equal(stray.hasExternalStroke(mat,cx,cy,150,220),true);
 });
