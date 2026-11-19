@@ -366,7 +366,14 @@ export function detectQuestion(
         measurements[i].paperReferenceBrightness ?? measurements[i].localPaperBrightness ?? 235));
   const unexpectedInk = tracedOutline || offBubbleInk || externalStroke;
   const reviewUnexpected = (): BubbleReadResult => {
-    const target = rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
+    // A hollow outline may leave every interior score at zero. Attribute the
+    // warning to the actual band outlier rather than arbitrarily to option A.
+    const bandIndex = tracedOutline
+      ? bands.findIndex((value,i)=>measurements[i].fillPercent < settings.bubbleFillThreshold &&
+          value < 85 && Math.max(...bands.filter((_,j)=>j!==i))-value>45)
+      : -1;
+    const target = bandIndex>=0 ? rawMeasurements[bandIndex]
+      : rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
     target.measurement.rejectReason = tracedOutline ? 'Ink traced around a bubble outline'
       : offBubbleInk ? 'Ink detected between answer bubbles' : 'Stroke outside bubble outline';
     return { measurements, answer:null,status:'uncertain',confidence:0 };
@@ -458,8 +465,26 @@ export function detectQuestion(
     second.measurement.rejectReason = 'Possible additional mark just below threshold';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
+  // A confident answer must not silently suppress a deliberate weaker mark
+  // on another option (e.g. a solid B plus an A tick). Do not include the top
+  // option in this check, and require both measured and shape evidence to
+  // reduce paper/printed-outline false alarms.
+  const secondInk = sorted.slice(1).find(r =>
+    r.measurement.fillPercent >= 12 &&
+    r.measurement.fillPercent < settings.bubbleFillThreshold &&
+    ((r.measurement.radialCore ?? 0) >= 12 ||
+     (r.measurement.radialMiddle ?? 0) >= 12 ||
+     r.detail.strokeLike));
+  if (secondInk) {
+    secondInk.measurement.rejectReason = 'Additional ink on another option: manual review';
+    return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+  }
   if (substantialMarks.length >= 2 || !top.detail.isValid || jump < RULES.minJump ||
       diff < settings.bubbleUncertainThreshold) {
+    top.measurement.rejectReason ??= top.detail.rejectReason ??
+      (substantialMarks.length >= 2 ? 'Two marked options' :
+       !top.detail.isValid ? 'Top mark has invalid shape' :
+       'Insufficient separation between options');
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
 
@@ -478,13 +503,17 @@ export function detectQuestion(
     const optionIdx = options.indexOf(top.measurement.option) as 0|1|2|3;
     const centre = getBubbleCentre(question, optionIdx);
     const cx = mmToPx(centre.xMm, dpi)+offset.dx, cy = mmToPx(centre.yMm, dpi)+offset.dy;
+    // The perturbations must use the exact paper/ceiling policy used for the
+    // principal measurement. Otherwise they count gray halos as new ink.
+    const paper = top.measurement.paperReferenceBrightness ??
+      top.measurement.localPaperBrightness;
     const samples = [
-      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - RULES.thresholdPerturbation, dpi),
-      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + RULES.thresholdPerturbation, dpi),
-      measureBubbleInterior(correctedGray, cx - 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
-      measureBubbleInterior(correctedGray, cx + 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
-      measureBubbleInterior(correctedGray, cx, cy - 1, interiorRadiusPx, effectiveThreshold, dpi),
-      measureBubbleInterior(correctedGray, cx, cy + 1, interiorRadiusPx, effectiveThreshold, dpi),
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - RULES.thresholdPerturbation, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + RULES.thresholdPerturbation, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx - 1, cy, interiorRadiusPx, effectiveThreshold, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx + 1, cy, interiorRadiusPx, effectiveThreshold, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx, cy - 1, interiorRadiusPx, effectiveThreshold, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx, cy + 1, interiorRadiusPx, effectiveThreshold, dpi, paper, inkCeiling),
     ];
     const values = [max, ...samples.map(s => s.fillPercent)];
     const range = Math.max(...values) - Math.min(...values);
