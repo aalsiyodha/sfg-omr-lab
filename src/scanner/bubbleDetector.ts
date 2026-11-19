@@ -223,7 +223,7 @@ function measureBubbleInterior(
   let isValid = true;
   let rejectReason: string | undefined;
 
-  if (fillPercent < RULES.minFill) {
+  if (fillPercent < getSettings().bubbleFillThreshold) {
     isValid = false;
     rejectReason = `Low fill (${fillPercent.toFixed(0)}%)`;
   } else if (strokeLike) {
@@ -261,7 +261,7 @@ export function detectQuestion(
     const detail = measureBubbleInterior(correctedGray, cxPx, cyPx, interiorRadiusPx, effectiveThreshold, dpi);
     const radial = measureRadialInk(correctedGray, cxPx, cyPx, dpi, detail.effectiveThreshold ?? effectiveThreshold);
     const clearlyInvalid = radial.classification === 'centre_dot' || radial.classification === 'hollow_ring';
-    const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= RULES.minFill;
+    const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
     if (detail.fillPercent >= RULES.minFill && (clearlyInvalid || unevenOuter)) {
       detail.isValid = false;
       detail.rejectReason = radial.classification === 'centre_dot'
@@ -306,7 +306,8 @@ export function detectQuestion(
   const tracedOutline = bands.some((value,i) =>
     measurements[i].fillPercent < settings.bubbleFillThreshold &&
     value < 120 && Math.max(...bands.filter((_,j)=>j!==i)) - value > 45);
-  const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold);
+  const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
+    measurements.map(m => m.localPaperBrightness ?? 235));
   const unexpectedInk = tracedOutline || offBubbleInk;
   const reviewUnexpected = (): BubbleReadResult => {
     const target = rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
@@ -433,7 +434,7 @@ export function detectTestId(
   const tensFills = (TID.tens.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('tens', digit);
     const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
-    return { digit, fill: detail.fillPercent };
+    return { digit, fill: detail.fillPercent, valid: detail.isValid };
   });
   
   // Detect UNITS (0-9)
@@ -455,11 +456,11 @@ export function detectTestId(
   const unitsDiff = runnerUnits ? bestUnits.fill - runnerUnits.fill : bestUnits.fill;
   
   // Digit detection
-  const tens = (bestTens && bestTens.fill >= settings.bubbleFillThreshold && tensDiff >= RULES.testIdMinSeparation)
+  const tens = (bestTens && bestTens.fill >= settings.bubbleFillThreshold && bestTens.valid && tensDiff >= RULES.testIdMinSeparation)
     ? bestTens.digit
     : null;
     
-  const units = (bestUnits && bestUnits.fill >= settings.bubbleFillThreshold && unitsDiff >= RULES.testIdMinSeparation)
+  const units = (bestUnits && bestUnits.fill >= settings.bubbleFillThreshold && bestUnits.valid && unitsDiff >= RULES.testIdMinSeparation)
     ? bestUnits.digit
     : null;
   
