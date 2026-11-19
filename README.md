@@ -8,6 +8,15 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## 🌟 Key Architecture & Capabilities
 
+### v1.9 stricter mark verification
+
+- Analyses ink coverage across three physical radial zones inside each 3.4mm answer bubble; small central dots and hollow rings are flagged rather than accepted as complete fills.
+- Keeps original 1mm interior darkness measurement for continuity and uses independent radial evidence to reject improper shapes.
+- Centralizes new mark thresholds in `scannerSettings.ts`; retains v1.8 stability and multiple-mark safety rules.
+- Test ID requires sufficient digit separation (20 percentage points), reducing unintended recognition of ambiguous marks.
+- Includes new real-format synthetic controls for dot/ring/solid fills and retains all previous scanner regression cases.
+- Existing physical A4 sheet and registration engine remain unchanged. This is beta-grade software: manually inspect all doubtful marks.
+
 ### v1.8 beta release
 
 - Adds a first-time-user homepage, a straightforward scanner workflow, camera guidance and beta feedback instructions.
@@ -37,7 +46,7 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 - Avoids cascading diagnostic errors after an early registration failure.
 - Retains fail-safe scoring: invalid alignment cannot be submitted.
 
-1. **Self-Calibrating Adaptive Lighting Engine (`v1.8`)**:
+1. **Self-Calibrating Adaptive Lighting Engine (`v1.9`)**:
    - Calculates the exact Otsu binarization point on the perspective-corrected grayscale canvas in $<2\text{ ms}$.
    - Dynamically self-calibrates the dark ink threshold (`~154`), completely preventing false blanks caused by uneven ambient room lighting or mobile camera auto-exposure.
 
@@ -66,7 +75,7 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## Version and deployment identification
 
-The release version comes from `package.json` (currently **v1.8.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
+The release version comes from `package.json` (currently **v1.9.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
 
 For a future release, update both `package.json` and `package-lock.json` (for example, using `npm version patch --no-git-tag-version`), commit, and deploy. Code commits without a version bump retain the release number but display a different build identifier.
 
