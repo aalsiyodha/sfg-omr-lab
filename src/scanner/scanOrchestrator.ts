@@ -159,6 +159,12 @@ export async function runFullScan(
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
     for (const hypothesis of hypotheses) {
+      const m = hypothesis.markers;
+      logger.info('markerDetection', `${hypothesis.name}: candidate coordinates`,
+        hypothesis.kind === 'corner'
+          ? { topLeft:m.topLeft, topRight:m.topRight, bottomLeft:m.bottomLeft,
+              bottomRight:m.bottomRight, validGeometry:m.validGeometry }
+          : { top:m.top, right:m.right, bottom:m.bottom, left:m.left });
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
