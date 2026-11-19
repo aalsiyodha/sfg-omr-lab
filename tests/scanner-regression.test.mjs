@@ -526,7 +526,7 @@ test('v2 grayscale reference flags weak tonal separation as diagnostic', () => {
  * 2.0.1 PHOTO-INSPIRED (synthetic) paired-image fixtures.
  * These are not a substitute for replaying the actual user photos.
  */
-function v201Engine() {
+function v201Engine(externalProbe = () => false) {
   const px = mm => mm*150/25.4;
   const radial = loadTS('src/scanner/radialInk.ts');
   return loadTS('src/scanner/bubbleDetector.ts', {
@@ -550,7 +550,7 @@ function v201Engine() {
     './radialInk':radial,
     './strayInk':{
       measureOutlineBand:()=>255, hasInterBubbleInk:()=>false,
-      hasExternalStroke:()=>false
+      hasExternalStroke:externalProbe
     }
   });
 }
@@ -614,4 +614,27 @@ test('2.0.1: external thin stroke sensor distinguishes blank from tick',()=>{
     if(Math.hypot(x-cx,y-cy)>2.08*mmPx && Math.hypot(x-cx,y-cy)<3.05*mmPx)
       data[y*W+x]=20;
   assert.equal(stray.hasExternalStroke(mat,cx,cy,150,220),true);
+});
+
+test('test-build regression: external-band false positives cannot suppress a solid fill', () => {
+  const engine = v201Engine(() => true); // Simulates printed ring or scan artifact in each outer band
+  const result = engine.detectQuestion(v201Image({shape:'solid',option:1}),1,150,152);
+  assert.equal(result.status,'detected','a fully shaded B must survive incidental dark paper outside other bubbles');
+  assert.equal(result.answer,'B');
+});
+
+test('test-build regression: blank printed outline cannot alone trigger external-stroke review', () => {
+  const engine = v201Engine(() => true); // printed template dark pixels in outer band
+  const result = engine.detectQuestion(v201Image({shape:'blank'}),1,150,152);
+  assert.equal(result.status,'blank','unlinked external probe must not convert clean blank to uncertain');
+});
+
+test('test-build regression: paired exposures resist false external-band uncertainty', () => {
+  const engine = v201Engine(() => true);
+  for (const paper of [178,205,230]) {
+    const filled = engine.detectQuestion(v201Image({shape:'solid',paper}),1,150,152);
+    const blank = engine.detectQuestion(v201Image({shape:'blank',paper}),1,150,152);
+    assert.equal(filled.answer,'B', 'solid B at paper='+paper);
+    assert.equal(blank.status,'blank','clean blank at paper='+paper);
+  }
 });
