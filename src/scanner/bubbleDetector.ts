@@ -3,7 +3,7 @@ import { getBubbleCentre, getTestIdBubbleCentre, mmToPx, OMR_LAYOUT } from '../c
 import { getSettings, MARK_REVIEW_THRESHOLDS } from '../config/scannerSettings';
 const RULES = MARK_REVIEW_THRESHOLDS;
 import { measureRadialInk } from './radialInk';
-import { measureOutlineBand, hasInterBubbleInk } from './strayInk';
+import { measureOutlineBand, hasInterBubbleInk, hasExternalStroke } from './strayInk';
 import type { AnswerOption, BubbleMeasurement, DetectionStatus, QuestionResult } from '../types';
 
 declare const cv: any;
@@ -28,6 +28,8 @@ export interface BubbleMeasurementDetail {
   axisCoverage?: number;
   diagonalCoverage?: number;
   filledSectors?: number;
+  paperReferenceBrightness?: number;
+  paperReferenceContaminated?: boolean;
 }
 
 /**
@@ -89,7 +91,8 @@ function measureBubbleInterior(
   cyPx: number,
   interiorRadiusPx: number,
   darkThreshold: number = 152,
-  dpi: number = 150
+  dpi: number = 150,
+  paperOverride?: number
 ): BubbleMeasurementDetail {
   // Sample the known homography-mapped centre. Searching for the darkest
   // single pixel caused the ROI to chase outlines and stray ink.
@@ -127,8 +130,9 @@ function measureBubbleInterior(
   const paper = ringSamples.length ? ringSamples[Math.floor(ringSamples.length / 2)] : 235;
   // Shadow-resistant threshold: local paper must never itself count as ink.
   // Retain the established threshold on well-lit paper.
-  const correction = Math.max(-7, Math.min(7, (paper - 235) * .14));
-  const inkThreshold = Math.max(50, Math.min(173, darkThreshold + correction, paper - 24));
+  const referencePaper = paperOverride ?? paper;
+  const correction = Math.max(-7, Math.min(7, (referencePaper - 235) * .14));
+  const inkThreshold = Math.max(50, Math.min(173, darkThreshold + correction, referencePaper - 24));
 
   let totalCirclePx = 0;
   let darkCirclePx = 0;
@@ -239,7 +243,8 @@ function measureBubbleInterior(
 
   return { fillPercent, horizontalDisparity, diagonalDisparity, isValid,
     rejectReason, localPaperBrightness: paper, filledQuadrants, strokeLike,
-    effectiveThreshold: inkThreshold, axisCoverage, diagonalCoverage, filledSectors };
+    effectiveThreshold: inkThreshold, axisCoverage, diagonalCoverage, filledSectors,
+    paperReferenceBrightness: referencePaper, paperReferenceContaminated: paperOverride !== undefined };
 }
 
 export function detectQuestion(
@@ -254,11 +259,32 @@ export function detectQuestion(
   // Specification: 3.4 mm answer bubbles have an interior radius of 1.0 mm (leaving the 1.7mm outline outside)
   const interiorRadiusPx = mmToPx(1.0, dpi);
   
+  const centres = options.map((_, idx) => {
+    const c = getBubbleCentre(question, idx as 0|1|2|3);
+    return { x: mmToPx(c.xMm,dpi), y: mmToPx(c.yMm,dpi) };
+  });
+  const preliminary = centres.map(c =>
+    measureBubbleInterior(correctedGray, c.x, c.y, interiorRadiusPx, effectiveThreshold, dpi));
+  // An extended pen mark can flood the 2.05–2.55mm reference annulus.
+  // Borrow nearby paper only for an extreme isolated anomaly, not for
+  // ordinary localized shadows such as Test 10 Q21–24.
+  const details = preliminary.map((sample,idx) => {
+    const localPaper = sample.localPaperBrightness ?? 235;
+    const others = preliminary.filter((_,j)=>j!==idx)
+      .map(d=>d.localPaperBrightness ?? 235)
+      .sort((a,b)=>a-b);
+    const reference = others[1];
+    if (localPaper < 105 && reference - localPaper >= 65 &&
+        others.filter(v=>v>=145).length >= 2)
+      return measureBubbleInterior(correctedGray, centres[idx].x, centres[idx].y,
+        interiorRadiusPx, effectiveThreshold, dpi, reference);
+    return sample;
+  });
   const rawMeasurements = options.map((opt, idx) => {
     const centre = getBubbleCentre(question, idx as 0|1|2|3);
-    const cxPx = mmToPx(centre.xMm, dpi);
-    const cyPx = mmToPx(centre.yMm, dpi);
-    const detail = measureBubbleInterior(correctedGray, cxPx, cyPx, interiorRadiusPx, effectiveThreshold, dpi);
+    const cxPx = centres[idx].x;
+    const cyPx = centres[idx].y;
+    const detail = details[idx];
     const radial = measureRadialInk(correctedGray, cxPx, cyPx, dpi, detail.effectiveThreshold ?? effectiveThreshold);
     const clearlyInvalid = radial.classification === 'centre_dot' || radial.classification === 'hollow_ring';
     const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
@@ -280,6 +306,8 @@ export function detectQuestion(
         sampleXPx: Math.round(cxPx), sampleYPx: Math.round(cyPx),
         inkThreshold: detail.effectiveThreshold,
         localPaperBrightness: detail.localPaperBrightness,
+        paperReferenceBrightness: detail.paperReferenceBrightness,
+        paperReferenceContaminated: detail.paperReferenceContaminated,
         filledQuadrants: detail.filledQuadrants,
         strokeLike: detail.strokeLike,
         axisCoverage: detail.axisCoverage,
@@ -297,10 +325,6 @@ export function detectQuestion(
   });
 
   const measurements = rawMeasurements.map(r => r.measurement);
-  const centres = options.map((_, idx) => {
-    const c = getBubbleCentre(question, idx as 0|1|2|3);
-    return { x: mmToPx(c.xMm,dpi), y: mmToPx(c.yMm,dpi) };
-  });
   // Separate stray-ink signals from answer validity.
   const bands = centres.map(c => measureOutlineBand(correctedGray,c.x,c.y,dpi));
   const tracedOutline = bands.some((value,i) =>
@@ -308,10 +332,14 @@ export function detectQuestion(
     value < 85 && Math.max(...bands.filter((_,j)=>j!==i)) - value > 45);
   const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
     measurements.map(m => m.localPaperBrightness ?? 235));
-  const unexpectedInk = tracedOutline || offBubbleInk;
+  const externalStroke = centres.some((c,i) =>
+    hasExternalStroke(correctedGray,c.x,c.y,dpi,
+      measurements[i].paperReferenceBrightness ?? measurements[i].localPaperBrightness ?? 235));
+  const unexpectedInk = tracedOutline || offBubbleInk || externalStroke;
   const reviewUnexpected = (): BubbleReadResult => {
     const target = rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
-    target.measurement.rejectReason = tracedOutline ? 'Ink traced around a bubble outline' : 'Ink detected between answer bubbles';
+    target.measurement.rejectReason = tracedOutline ? 'Ink traced around a bubble outline'
+      : offBubbleInk ? 'Ink detected between answer bubbles' : 'Stroke outside bubble outline';
     return { measurements, answer:null,status:'uncertain',confidence:0 };
   };
   
@@ -342,6 +370,31 @@ export function detectQuestion(
   }
   if (max < settings.bubbleFillThreshold) {
     if (unexpectedInk) return reviewUnexpected();
+    // A small crossed or ticked bubble can have almost no dark interior
+    // at the standard threshold. Compare the fixed interior against local
+    // paper without promoting any mark to a valid answer.
+    const faintMark = centres.some((c,i) => {
+      const paper = measurements[i].paperReferenceBrightness ??
+        measurements[i].localPaperBrightness ?? 235;
+      const radius = Math.round(mmToPx(1.05,dpi));
+      let total=0, dark=0;
+      const x0=Math.round(c.x), y0=Math.round(c.y);
+      for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+        if(dx*dx+dy*dy>radius*radius)continue;
+        const x=x0+dx,y=y0+dy;
+        if(x<0||y<0||x>=correctedGray.cols||y>=correctedGray.rows)continue;
+        total++;
+        if(correctedGray.ucharPtr(y,x)[0] < paper-38)dark++;
+      }
+      const fraction=total?dark/total:0;
+      // Faint strokes: nontrivial interior evidence but not broad solid ink.
+      return paper>=115 && fraction>=0.075 && fraction<=0.48 &&
+        measurements[i].fillPercent < RULES.visiblePartialFill;
+    });
+    if (faintMark) {
+      top.measurement.rejectReason = 'Faint or thin non-solid ink inside bubble';
+      return {measurements,answer:null,status:'uncertain',confidence:0};
+    }
     if (max >= RULES.nearThresholdFill ||
         (max >= RULES.visiblePartialFill && (top.detail.filledQuadrants ?? 0) >= 2) ||
         (max >= RULES.visiblePartialFill && top.detail.strokeLike) ||
