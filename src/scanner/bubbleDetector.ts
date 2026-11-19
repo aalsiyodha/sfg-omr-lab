@@ -1,6 +1,7 @@
 // src/scanner/bubbleDetector.ts
 import { getBubbleCentre, getTestIdBubbleCentre, mmToPx, OMR_LAYOUT } from '../config/omrLayout';
-import { getSettings, MARK_REVIEW_THRESHOLDS as RULES } from '../config/scannerSettings';
+import { getSettings, MARK_REVIEW_THRESHOLDS } from '../config/scannerSettings';
+const RULES = MARK_REVIEW_THRESHOLDS;
 import { measureRadialInk } from './radialInk';
 import type { AnswerOption, BubbleMeasurement, DetectionStatus, QuestionResult } from '../types';
 
