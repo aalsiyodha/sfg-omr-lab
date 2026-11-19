@@ -516,8 +516,8 @@ export function detectTestId(
   // Detect UNITS (0-9)
   const unitsFills = (TID.units.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('units', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
-    return { digit, fill: detail.fillPercent, valid: detail.isValid };
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
+    return { digit, fill: detail.fillPercent, valid: detail.isValid, paper: detail.paperReferenceBrightness ?? 235 };
   });
   
   const sortedTens = [...tensFills].sort((a,b) => b.fill - a.fill);
