@@ -25,7 +25,7 @@ export function correctPerspective(
 ): PerspectiveResult {
   if (!markers.found || markers.count < 4) {
     return { corrected: null, correctedDataUrl: '', transform: null, success: false,
-      error: 'Cannot correct perspective: fewer than 4 markers detected.' };
+      error: 'Cannot correct perspective: registration markers are missing or geometry failed validation.' };
   }
   
   const { topLeft: TL, topRight: TR, bottomLeft: BL, bottomRight: BR } = markers;
@@ -40,39 +40,39 @@ export function correctPerspective(
   const outH = Math.round(mmToPx(page.heightMm, dpi));
   
   const srcMat = cv.imread(src);
-  
-  // Source points: detected marker centres
-  // Use the INNER corner of each marker for best accuracy
-  const srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
-    TL.x, TL.y,
-    TR.x, TR.y,
-    BR.x, BR.y,
-    BL.x, BL.y,
-  ]);
-  
-  // Destination points: expected positions at target DPI
-  const { markers: ML } = OMR_LAYOUT;
-  const dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
-    mmToPx(ML.topLeft.xMm + ML.topLeft.sizeMm/2, dpi),
-    mmToPx(ML.topLeft.yMm + ML.topLeft.sizeMm/2, dpi),
-    mmToPx(ML.topRight.xMm + ML.topRight.sizeMm/2, dpi),
-    mmToPx(ML.topRight.yMm + ML.topRight.sizeMm/2, dpi),
-    mmToPx(ML.bottomRight.xMm + ML.bottomRight.sizeMm/2, dpi),
-    mmToPx(ML.bottomRight.yMm + ML.bottomRight.sizeMm/2, dpi),
-    mmToPx(ML.bottomLeft.xMm + ML.bottomLeft.sizeMm/2, dpi),
-    mmToPx(ML.bottomLeft.yMm + ML.bottomLeft.sizeMm/2, dpi),
-  ]);
-  
-  const transform = cv.getPerspectiveTransform(srcPoints, dstPoints);
-  const corrected = new cv.Mat();
-  cv.warpPerspective(srcMat, corrected, transform, new cv.Size(outW, outH));
-  
-  srcMat.delete(); srcPoints.delete(); dstPoints.delete();
-  
-  return {
-    corrected,
-    correctedDataUrl: matToDataUrl(corrected),
-    transform,
-    success: true,
-  };
+  let srcPoints: any = null;
+  let dstPoints: any = null;
+  let transform: any = null;
+  let corrected: any = null;
+
+  try {
+    // Source points are actual marker centres, not marker inner corners.
+    srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+      TL.x, TL.y, TR.x, TR.y, BR.x, BR.y, BL.x, BL.y
+    ]);
+
+    const { markers: ML } = OMR_LAYOUT;
+    const center = (m: { xMm: number; yMm: number; sizeMm: number }) => [
+      mmToPx(m.xMm + m.sizeMm / 2, dpi),
+      mmToPx(m.yMm + m.sizeMm / 2, dpi)
+    ];
+    dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+      ...center(ML.topLeft), ...center(ML.topRight),
+      ...center(ML.bottomRight), ...center(ML.bottomLeft)
+    ]);
+
+    transform = cv.getPerspectiveTransform(srcPoints, dstPoints);
+    corrected = new cv.Mat();
+    cv.warpPerspective(srcMat, corrected, transform, new cv.Size(outW, outH));
+    const correctedDataUrl = matToDataUrl(corrected);
+    return { corrected, correctedDataUrl, transform, success: true };
+  } catch (error) {
+    if (corrected) corrected.delete();
+    if (transform) transform.delete();
+    throw error;
+  } finally {
+    srcMat.delete();
+    if (srcPoints) srcPoints.delete();
+    if (dstPoints) dstPoints.delete();
+  }
 }
