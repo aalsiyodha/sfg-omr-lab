@@ -10,4 +10,4 @@ export const APP_BUILD_ID = __APP_BUILD_ID__;
 export const APP_RELEASE_LABEL = APP_BUILD_ID === 'local'
   ? APP_VERSION
   : `${APP_VERSION} · ${APP_BUILD_ID}`;
-export const APP_BUILD_NAME = `SFG OMR Lab ${APP_VERSION} (Orientation Validation • Robust Registration • Multi-Mark Review)`;
+export const APP_BUILD_NAME = `SFG OMR Lab ${APP_VERSION} (Marker Recovery • Timing-Grid Verification • Bubble Diagnostics)`;
