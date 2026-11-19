@@ -134,6 +134,8 @@ export function generateLLMDiagnosticPrompt({
         `ROI=(${m.sampleXPx ?? '?'},${m.sampleYPx ?? '?'}), ` +
         `ink<${m.inkThreshold ?? '?'}, paper=${m.localPaperBrightness ?? '?'}, ` +
         `quadrants=${m.filledQuadrants ?? '?'}/4, stroke=${m.strokeLike ?? '?'}, ` +
+        `axis=${m.axisCoverage?.toFixed(1) ?? '?'}, diag=${m.diagonalCoverage?.toFixed(1) ?? '?'}, ` +
+        `stability=${m.stabilitySpread?.toFixed(1) ?? '?'}, ` +
         `reason=${m.rejectReason || 'none'}`).join(' | '));
   }
 
