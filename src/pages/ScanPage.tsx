@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { AppState } from '../App';
 import type { AnswerOption } from '../types';
 import { ErrorLogBox } from '../components/ErrorLogBox';
-import { generateLLMDiagnosticPrompt } from '../diagnostics/llmPromptGenerator';
+import { generateLLMDiagnosticPrompt, generateBetaFeedbackPrompt } from '../diagnostics/llmPromptGenerator';
 import { APP_VERSION, APP_BUILD_NAME } from '../config/version';
 
 interface Props { appState: AppState; }
@@ -27,6 +27,7 @@ export default function ScanPage({ appState }: Props) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ResultViewTab>('overlay');
   const [llmCopied, setLlmCopied] = useState(false);
+  const [showTechnicalReport, setShowTechnicalReport] = useState(false);
 
   const stopCamera = useCallback(() => {
     cameraStream?.getTracks().forEach(t => t.stop());
@@ -160,6 +161,33 @@ export default function ScanPage({ appState }: Props) {
     }
   };
 
+  const handleCopyBetaReport = async () => {
+    if (!scanResult) return;
+    const report = generateBetaFeedbackPrompt({scanResult});
+    try {
+      await navigator.clipboard.writeText(report);
+    } catch {
+      const input = document.createElement('textarea');
+      input.value = report;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+    setLlmCopied(true);
+    setTimeout(() => setLlmCopied(false), 3500);
+  };
+
+  const downloadOverlay = () => {
+    if (!intermediateImages.bubbleOverlay) return;
+    const link = document.createElement('a');
+    link.href = intermediateImages.bubbleOverlay;
+    link.download = 'sfg-omr-overlay.png';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
   const handleSubmit = () => {
     if (!scanResult || !practice.activeTest) {
       setSubmitError('No active practice test. Please generate a practice test first.');
@@ -196,6 +224,8 @@ export default function ScanPage({ appState }: Props) {
   const hasAnswers = scanResult?.answers && scanResult.answers.length > 0;
   const hasErrorsOrWarnings = (scanResult?.errors && scanResult.errors.length > 0) || !hasAnswers;
 
+  const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult}) : '';
+  const reviewCount = scanResult?.answers.filter(a => ['uncertain','multiple','error'].includes(a.status)).length ?? 0;
   const llmReportPreview = scanResult
     ? generateLLMDiagnosticPrompt({
         scanResult,
@@ -209,8 +239,8 @@ export default function ScanPage({ appState }: Props) {
     <div>
       <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
         <div>
-          <h2 className="mb-0">Scan OMR Sheet</h2>
-          <small className="text-muted">{APP_BUILD_NAME}</small>
+          <h2 className="mb-0 fw-bold">Scan your SFG sheet</h2>
+          <small className="text-muted">Upload a photo, review your answers, share feedback · {APP_BUILD_NAME}</small>
         </div>
         <span className="badge bg-primary px-3 py-2 fs-6 shadow-sm">
           <i className="bi bi-cpu me-1" />{APP_VERSION}
@@ -224,16 +254,21 @@ export default function ScanPage({ appState }: Props) {
         </div>
       )}
 
+      {!scanResult && <div className="beta-scan-intro mb-3">
+        <div><strong>1. Add a clear photo</strong><small>Entire A4 page and QR in frame</small></div>
+        <div><strong>2. Scan &amp; inspect</strong><small>We verify orientation and read the bubbles</small></div>
+        <div><strong>3. Send feedback</strong><small>Copy short report and save coloured overlay</small></div>
+      </div>}
       {/* Input section (hidden once scan result exists) */}
       {!scanResult && (
         <div className="row g-3">
           <div className="col-12">
             <div className="d-flex flex-wrap gap-2 mb-2">
               <button className="btn btn-primary" onClick={triggerNativeCamera} disabled={isScanning}>
-                <i className="bi bi-camera-fill me-2" />Take Photo (Camera + Flash)
+                <i className="bi bi-camera-fill me-2" />Take a photo
               </button>
               <button className="btn btn-outline-primary" onClick={() => fileInputRef.current?.click()} disabled={isScanning}>
-                <i className="bi bi-upload me-2" />Upload Image
+                <i className="bi bi-upload me-2" />Upload a photo
               </button>
               <button className="btn btn-outline-secondary" onClick={openCamera} disabled={isScanning}>
                 <i className="bi bi-webcam me-2" />Live Camera
@@ -260,7 +295,7 @@ export default function ScanPage({ appState }: Props) {
             </div>
             <small className="text-muted d-block mb-3">
               <i className="bi bi-lightning-charge me-1 text-warning" />
-              <strong>Tip for Mobile:</strong> Use <strong>"Take Photo"</strong> to open your phone's native camera with forced hardware flash for crisp bubble shadows.
+              <strong>Photo tip:</strong> Lay the page flat, include all edges, and avoid glare or blur. Flash is optional.
             </small>
           </div>
 
@@ -311,10 +346,10 @@ export default function ScanPage({ appState }: Props) {
                 </div>
 
                 <h5 className="fw-bold mb-1" style={{ color: 'var(--text-main)' }}>
-                  Evaluating OMR Sheet (Dual-Pass Engine)
+                  Reading your OMR sheet
                 </h5>
                 <p className="text-muted small mb-3">
-                  {progress?.stage || 'Meticulously double-checking answers and symmetry…'}
+                  {progress?.stage || 'Finding reference markers and checking bubble shapes…'}
                 </p>
 
                 <div className="progress mb-3" style={{ height: 6, maxWidth: 440, margin: '0 auto' }}>
@@ -329,25 +364,25 @@ export default function ScanPage({ appState }: Props) {
                     <span className="scan-stage-icon">
                       {(progress?.percent || 0) >= 30 ? <i className="bi bi-check-circle-fill text-success" /> : <span className="spinner-border spinner-border-sm" />}
                     </span>
-                    <span>1. Registration Markers & Page Homography</span>
+                    <span>1. Align printed sheet</span>
                   </div>
                   <div className={`scan-stage-item ${(progress?.percent || 0) >= 60 ? 'completed' : (progress?.percent || 0) >= 30 ? 'active' : ''}`}>
                     <span className="scan-stage-icon">
                       {(progress?.percent || 0) >= 60 ? <i className="bi bi-check-circle-fill text-success" /> : (progress?.percent || 0) >= 30 ? <span className="spinner-border spinner-border-sm" /> : <i className="bi bi-circle text-muted" />}
                     </span>
-                    <span>2. Student QR Identity & Test ID Calibration</span>
+                    <span>2. Verify QR orientation and Test ID</span>
                   </div>
                   <div className={`scan-stage-item ${(progress?.percent || 0) >= 80 ? 'completed' : (progress?.percent || 0) >= 60 ? 'active' : ''}`}>
                     <span className="scan-stage-icon">
                       {(progress?.percent || 0) >= 80 ? <i className="bi bi-check-circle-fill text-success" /> : (progress?.percent || 0) >= 60 ? <span className="spinner-border spinner-border-sm" /> : <i className="bi bi-circle text-muted" />}
                     </span>
-                    <span>3. Pass 1: Bubble Darkness Matrix Sweep</span>
+                    <span>3. Read all 50 questions</span>
                   </div>
                   <div className={`scan-stage-item ${(progress?.percent || 0) >= 100 ? 'completed' : (progress?.percent || 0) >= 80 ? 'active' : ''}`}>
                     <span className="scan-stage-icon">
                       {(progress?.percent || 0) >= 100 ? <i className="bi bi-check-circle-fill text-success" /> : (progress?.percent || 0) >= 80 ? <span className="spinner-border spinner-border-sm text-primary" /> : <i className="bi bi-circle text-muted" />}
                     </span>
-                    <span>4. Pass 2: Double-Check Symmetry (Rejects Slashes & Crescents)</span>
+                    <span>4. Flag unclear marks</span>
                   </div>
                 </div>
               </div>
@@ -356,11 +391,11 @@ export default function ScanPage({ appState }: Props) {
 
           {!isScanning && previewUrl && (
             <div className="col-12 col-md-8 col-lg-6">
-              <p className="fw-semibold mb-1">Image Preview:</p>
+              <p className="fw-semibold mb-1">Photo preview:</p>
               <img src={previewUrl} alt="Preview" className="img-fluid border rounded mb-2" style={{ maxHeight: 420 }} />
               <div className="d-flex gap-2">
                 <button className="btn btn-primary" onClick={handleScan} disabled={isScanning || opencv !== 'ready'}>
-                  <i className="bi bi-cpu me-2" />Scan Sheet (Dual-Pass Engine)
+                  <i className="bi bi-upc-scan me-2" />Scan this photo
                 </button>
                 <button className="btn btn-outline-secondary" onClick={() => { setCapturedFile(null); setPreviewUrl(null); }} disabled={isScanning}>
                   Retake / Choose Another
@@ -389,12 +424,11 @@ export default function ScanPage({ appState }: Props) {
             <StatusBadge status={scanResult.overallStatus} />
             <span className="text-muted small">({scanResult.processingTimeMs} ms)</span>
 
-            <button
-              className={`btn btn-sm ${llmCopied ? 'btn-success text-white' : 'btn-primary'} ms-auto`}
-              onClick={handleCopyLLMReport}
-            >
-              <i className={`bi ${llmCopied ? 'bi-check-circle-fill' : 'bi-clipboard-data'} me-1`} />
-              {llmCopied ? 'Copied! Paste to ChatGPT / Chat' : '📋 Copy LLM Debug Report (ChatGPT / Claude)'}
+            <button className={`btn btn-sm ${llmCopied ? 'btn-success' : 'btn-primary'} ms-auto`} onClick={handleCopyBetaReport}>
+              <i className="bi bi-clipboard-check me-1"/>{llmCopied ? 'Copied!' : 'Copy short beta report'}
+            </button>
+            <button className="btn btn-sm btn-outline-primary" onClick={downloadOverlay} disabled={!intermediateImages.bubbleOverlay}>
+              <i className="bi bi-download me-1"/>Save overlay
             </button>
 
             <button className="btn btn-sm btn-outline-secondary" onClick={handleReset}>
@@ -405,9 +439,19 @@ export default function ScanPage({ appState }: Props) {
           {llmCopied && (
             <div className="alert alert-success py-2 small mb-3">
               <i className="bi bi-check2-circle me-1" />
-              <strong>Report Copied!</strong> Paste it directly into ChatGPT, Claude, or this chat window so the LLM can analyze the exact bubble darkness values and geometry.
+              <strong>Report copied!</strong> Send it with your original photo and saved overlay. Blur names or identifying QR codes before sharing images.
             </div>
           )}
+
+          <div className={`beta-review-banner mb-3 ${scanResult.overallStatus === 'failed' ? 'beta-review-failed' : reviewCount ? 'beta-review-attention' : 'beta-review-clear'}`}>
+            <div>
+              <strong>{scanResult.overallStatus === 'failed' ? 'This photo could not be verified' : reviewCount ? `${reviewCount} question(s) need review` : 'Scan complete — please check the answers'}</strong>
+              <p className="mb-0 small">{scanResult.overallStatus === 'failed'
+                ? 'Try another full-page photo; this result cannot be scored.'
+                : 'Green = detected · Red = multiple · Yellow = unclear · Grey = blank. Confirm against the photograph.'}</p>
+            </div>
+            {scanResult.overallStatus !== 'failed' && <button className="btn btn-sm btn-outline-primary" onClick={() => setActiveTab('table')}>Review answers</button>}
+          </div>
 
           {/* Warnings & errors */}
           {scanResult.warnings.map((w, i) => (
@@ -431,7 +475,7 @@ export default function ScanPage({ appState }: Props) {
             </div>
             <div className="col-auto">
               <span className={`badge ${scanResult.markerCount >= 4 ? 'bg-success' : 'bg-warning text-dark'}`}>
-                Corner Markers: {scanResult.markerCount}/4
+                Alignment: {scanResult.registrationMethod || 'unverified'}
               </span>
             </div>
             <div className="col-auto">
@@ -458,7 +502,7 @@ export default function ScanPage({ appState }: Props) {
                     className={`nav-link py-1 px-3 ${activeTab === 'markers' ? 'active' : ''}`}
                     onClick={() => setActiveTab('markers')}
                   >
-                    <i className="bi bi-crop me-1" />Corner Markers View
+                    <i className="bi bi-crop me-1" />Reference markers
                   </button>
                 </li>
                 <li className="nav-item">
@@ -474,7 +518,7 @@ export default function ScanPage({ appState }: Props) {
                     className={`nav-link py-1 px-3 ${activeTab === 'llm' ? 'active' : ''}`}
                     onClick={() => setActiveTab('llm')}
                   >
-                    <i className="bi bi-robot me-1" />LLM Prompt Format
+                    <i className="bi bi-robot me-1" />Share feedback
                   </button>
                 </li>
               </ul>
@@ -507,7 +551,7 @@ export default function ScanPage({ appState }: Props) {
               {activeTab === 'markers' && (
                 <div className="text-center">
                   <p className="small text-muted mb-2">
-                    Cyan boxes indicate where OpenCV located the 4 registration markers on your original photograph:
+                    Highlighted reference points used to align your original photograph:
                   </p>
                   {intermediateImages.markerOverlay ? (
                     <div style={{ maxHeight: '600px', overflow: 'auto' }} className="border rounded bg-dark p-2">
@@ -580,7 +624,7 @@ export default function ScanPage({ appState }: Props) {
                       </table>
                     </div>
                   ) : (
-                    <div className="alert alert-warning small mb-0">No answer answers could be processed.</div>
+                    <div className="alert alert-warning small mb-0">No answers could be processed.</div>
                   )}
                 </div>
               )}
@@ -590,18 +634,22 @@ export default function ScanPage({ appState }: Props) {
                 <div>
                   <div className="d-flex justify-content-between align-items-center mb-2">
                     <span className="small text-muted">
-                      Full structured report ready to copy and send to ChatGPT, Claude, or any LLM:
+                      {showTechnicalReport ? 'Complete technical diagnostic report:' : 'Short report to send with your OMR photo and overlay:'}
                     </span>
-                    <button className="btn btn-sm btn-primary" onClick={handleCopyLLMReport}>
-                      <i className={`bi ${llmCopied ? 'bi-check' : 'bi-clipboard'} me-1`} />
-                      {llmCopied ? 'Copied!' : 'Copy to Clipboard'}
-                    </button>
+                    <div className="d-flex gap-2 flex-wrap">
+                      <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowTechnicalReport(v => !v)}>
+                        {showTechnicalReport ? 'Short report' : 'Technical details'}
+                      </button>
+                      <button className="btn btn-sm btn-primary" onClick={showTechnicalReport ? handleCopyLLMReport : handleCopyBetaReport}>
+                        <i className="bi bi-clipboard me-1"/>{llmCopied ? 'Copied!' : showTechnicalReport ? 'Copy full report' : 'Copy short report'}
+                      </button>
+                    </div>
                   </div>
                   <textarea
                     className="form-control font-monospace small bg-light"
                     rows={12}
                     readOnly
-                    value={llmReportPreview}
+                    value={showTechnicalReport ? llmReportPreview : betaReportPreview}
                     onClick={(e) => (e.target as HTMLTextAreaElement).select()}
                     style={{ fontSize: '0.75rem', lineHeight: '1.3' }}
                   />
@@ -620,7 +668,7 @@ export default function ScanPage({ appState }: Props) {
               {!practice.activeTest && (
                 <span className="text-danger small">
                   <i className="bi bi-info-circle me-1" />
-                  Please generate a practice test first to enable scoring.
+                  No test needed to inspect a scan. Create a practice test only if you want scoring.
                 </span>
               )}
             </div>

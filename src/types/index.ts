@@ -22,6 +22,9 @@ export interface BubbleMeasurement {
   localPaperBrightness?: number;
   filledQuadrants?: number;
   strokeLike?: boolean;
+  axisCoverage?: number;
+  diagonalCoverage?: number;
+  stabilitySpread?: number;
   xMm: number;
   yMm: number;
 }

@@ -22,6 +22,8 @@ export interface BubbleMeasurementDetail {
   filledQuadrants?: number;
   strokeLike?: boolean;
   effectiveThreshold?: number;
+  axisCoverage?: number;
+  diagonalCoverage?: number;
 }
 
 /**
@@ -132,6 +134,7 @@ function measureBubbleInterior(
   let q2Dark = 0, q2Tot = 0; // Top-Right
   let q3Dark = 0, q3Tot = 0; // Bottom-Left
   let q4Dark = 0, q4Tot = 0; // Bottom-Right
+  let axisDark = 0, axisTotal = 0, diagonalDark = 0, diagonalTotal = 0;
 
   const rSq = r * r;
   for (let row = 0; row < h; row++) {
@@ -144,6 +147,14 @@ function measureBubbleInterior(
         const pixelVal = grayMat.ucharPtr(y + row, x + col)[0];
         const isDark = pixelVal < inkThreshold;
         if (isDark) darkCirclePx++;
+        if (Math.abs(dx) <= 1 || Math.abs(dy) <= 1) {
+          axisTotal++;
+          if (isDark) axisDark++;
+        }
+        if (Math.abs(Math.abs(dx) - Math.abs(dy)) <= 1) {
+          diagonalTotal++;
+          if (isDark) diagonalDark++;
+        }
 
         if (dx < 0) {
           leftTot++;
@@ -181,7 +192,15 @@ function measureBubbleInterior(
   // quadrants. A genuinely filled bubble should occupy most quadrants, even
   // when photographed under moderate shadows.
   const filledQuadrants = [q1Pct, q2Pct, q3Pct, q4Pct].filter(v => v >= 24).length;
-  const strokeLike = fillPercent >= 45 && fillPercent < 75 && filledQuadrants <= 2;
+  const axisCoverage = axisTotal ? axisDark * 100 / axisTotal : 0;
+  const diagonalCoverage = diagonalTotal ? diagonalDark * 100 / diagonalTotal : 0;
+  // A thick X can cover all four quadrants and must not become valid at 65%.
+  const strokeLike = fillPercent >= 38 && fillPercent < 88 && (
+    filledQuadrants <= 2 ||
+    (diagonalCoverage >= 67 && diagonalCoverage - axisCoverage >= 22) ||
+    diagonalDisparity > 85 ||
+    horizontalDisparity > 65
+  );
 
   // OMR rejection criteria:
   // 1. Solid fill threshold: at least 45% (crosses ~25%, ticks ~25% fail)
@@ -195,7 +214,7 @@ function measureBubbleInterior(
     rejectReason = `Low fill (${fillPercent.toFixed(0)}%)`;
   } else if (strokeLike) {
     isValid = false;
-    rejectReason = `Sparse stroke shape (${filledQuadrants}/4 filled quadrants)`;
+    rejectReason = `Stroke-like shape (quadrants=${filledQuadrants}/4, diag=${diagonalCoverage.toFixed(0)}%, axis=${axisCoverage.toFixed(0)}%)`;
   } else if (horizontalDisparity > 65 && Math.min(leftPct, rightPct) < 15) {
     isValid = false;
     rejectReason = `Half-filled crescent mark (H-disparity ${horizontalDisparity.toFixed(0)}%)`;
@@ -206,7 +225,7 @@ function measureBubbleInterior(
 
   return { fillPercent, horizontalDisparity, diagonalDisparity, isValid,
     rejectReason, localPaperBrightness: paper, filledQuadrants, strokeLike,
-    effectiveThreshold: inkThreshold };
+    effectiveThreshold: inkThreshold, axisCoverage, diagonalCoverage };
 }
 
 export function detectQuestion(
@@ -238,6 +257,9 @@ export function detectQuestion(
         localPaperBrightness: detail.localPaperBrightness,
         filledQuadrants: detail.filledQuadrants,
         strokeLike: detail.strokeLike,
+        axisCoverage: detail.axisCoverage,
+        diagonalCoverage: detail.diagonalCoverage,
+        stabilitySpread: undefined as number | undefined,
         xMm: centre.xMm, yMm: centre.yMm
       },
       detail,
@@ -255,35 +277,71 @@ export function detectQuestion(
   const jump = max - baseline;
   const diff = max - second.measurement.fillPercent;
 
-  // Classify the whole row before choosing a winner. Previously a high
-  // baseline could suppress a genuine second mark (Q26 in regression scans).
+  // Evaluate all marks, including a second selection just below the
+  // 45% threshold (Test 5 Q29: A=42.5%, C=83.2%).
   const validFills = rawMeasurements.filter(r =>
     r.detail.isValid && r.measurement.fillPercent >= settings.bubbleFillThreshold
   );
   const substantialMarks = rawMeasurements.filter(r =>
     r.measurement.fillPercent >= settings.bubbleFillThreshold
   );
-
-  if (validFills.length >= 2) {
+  // Two strongly shaded options remain multiple even if directional noise
+  // rejects one shape; otherwise v1.8 could regress Q26 to 'uncertain'.
+  // This does NOT promote medium-density background noise (Q24/Q25).
+  if (validFills.length >= 2 || (max >= 85 && second.measurement.fillPercent >= 65)) {
     return { measurements, answer: null, status: 'multiple', confidence: 0 };
   }
   if (max < settings.bubbleFillThreshold) {
+    if (max >= 42 || (max >= 37 && top.detail.strokeLike)) {
+      top.measurement.rejectReason = top.detail.rejectReason || 'Visible mark near the fill threshold';
+      return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+    }
     return { measurements, answer: null, status: 'blank', confidence: Math.max(0, 100 - max) };
   }
-  if (substantialMarks.length >= 2 || !top.detail.isValid) {
-    // Even if another mark fails morphology, it is not safe to assign an
-    // unambiguous single answer; ask for a manual review instead.
+
+  const borderlineSecond = max >= 70 &&
+    second.measurement.fillPercent >= 36 &&
+    second.measurement.fillPercent >= max * 0.4;
+  if (borderlineSecond && substantialMarks.length < 2) {
+    second.measurement.rejectReason = 'Possible additional mark just below threshold';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
-  if (jump < 16 || diff < settings.bubbleUncertainThreshold) {
-    return { measurements, answer: null, status: 'uncertain', confidence: Math.min(Math.round(diff * 2.5), 100) };
+  if (substantialMarks.length >= 2 || !top.detail.isValid || jump < 16 ||
+      diff < settings.bubbleUncertainThreshold) {
+    return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
 
+  // Only borderline selections need perturbation analysis; clear 90%-filled
+  // answers remain fast. Recheck neighbouring ink thresholds and ROI centres.
+  if (max < 85) {
+    const optionIdx = options.indexOf(top.measurement.option) as 0|1|2|3;
+    const centre = getBubbleCentre(question, optionIdx);
+    const cx = mmToPx(centre.xMm, dpi), cy = mmToPx(centre.yMm, dpi);
+    const samples = [
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - 8, dpi),
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + 8, dpi),
+      measureBubbleInterior(correctedGray, cx - 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
+      measureBubbleInterior(correctedGray, cx + 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
+      measureBubbleInterior(correctedGray, cx, cy - 1, interiorRadiusPx, effectiveThreshold, dpi),
+      measureBubbleInterior(correctedGray, cx, cy + 1, interiorRadiusPx, effectiveThreshold, dpi),
+    ];
+    const values = [max, ...samples.map(s => s.fillPercent)];
+    const range = Math.max(...values) - Math.min(...values);
+    top.measurement.stabilitySpread = Number(range.toFixed(1));
+    if (range >= 18 || samples.filter(s => s.strokeLike).length >= 2) {
+      top.measurement.rejectReason = 'Unstable or stroke-like mark (variation ' + range.toFixed(0) + '%)';
+      return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+    }
+  }
+
+  // Difference from other options is a separation score, not the likelihood
+  // of a valid filled bubble. Cap confidence for borderline marks.
+  const cap = max < 60 ? 75 : max < 75 ? 87 : max < 85 ? 95 : 99;
   return {
     measurements,
     answer: top.measurement.option,
     status: 'detected',
-    confidence: Math.min(Math.round(diff * 3), 100),
+    confidence: Math.min(cap, Math.round(diff * 3)),
   };
 }
 
@@ -326,7 +384,7 @@ export function detectTestId(
   // Detect UNITS (0-9)
   const unitsFills = (TID.units.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('units', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold);
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
     return { digit, fill: detail.fillPercent };
   });
   

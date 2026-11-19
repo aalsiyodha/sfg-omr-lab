@@ -134,6 +134,8 @@ export function generateLLMDiagnosticPrompt({
         `ROI=(${m.sampleXPx ?? '?'},${m.sampleYPx ?? '?'}), ` +
         `ink<${m.inkThreshold ?? '?'}, paper=${m.localPaperBrightness ?? '?'}, ` +
         `quadrants=${m.filledQuadrants ?? '?'}/4, stroke=${m.strokeLike ?? '?'}, ` +
+        `axis=${m.axisCoverage?.toFixed(1) ?? '?'}, diag=${m.diagonalCoverage?.toFixed(1) ?? '?'}, ` +
+        `stability=${m.stabilitySpread?.toFixed(1) ?? '?'}, ` +
         `reason=${m.rejectReason || 'none'}`).join(' | '));
   }
 
@@ -172,5 +174,68 @@ export function generateLLMDiagnosticPrompt({
   lines.push('- If possible, describe lighting, pen/pencil, camera angle, and whether the sheet was printed at 100% scale.');
   lines.push('- Privacy: obscure student names, QR code and any personal details in shared images if necessary.');
 
+  return lines.join('\n');
+}
+
+
+/**
+ * Compact, privacy-safe beta report for friends. Original photo and
+ * optional coloured overlay should be attached separately, never embedded.
+ * Includes the answer map plus measurements only for suspicious rows.
+ */
+export function generateBetaFeedbackPrompt({ scanResult }: LLMReportOptions): string {
+  const formatQ = (n: number) => 'Q' + String(n).padStart(2, '0');
+  const counts = (['detected', 'blank', 'multiple', 'uncertain', 'error'] as const)
+    .map(status => status + '=' + scanResult.answers.filter(q => q.status === status).length).join(', ');
+  const suspicious = scanResult.answers.filter(q => {
+    if (q.status === 'uncertain' || q.status === 'multiple' || q.status === 'error') return true;
+    const sorted = [...q.measurements].sort((a, b) => b.fillPercent - a.fillPercent);
+    const first = sorted[0], second = sorted[1];
+    return q.status === 'detected' && (
+      (first && first.fillPercent < 85) ||
+      (second && second.fillPercent >= 33) ||
+      q.measurements.some(m => !!m.strokeLike || (m.stabilitySpread ?? 0) >= 12)
+    );
+  });
+  const lines = [
+    'SFG OMR Lab ' + APP_VERSION + ' — Beta scan feedback',
+    'Please compare the attached photo and coloured overlay with this result.',
+    'Status: ' + scanResult.overallStatus.toUpperCase() +
+      ' | Test ID: ' + (scanResult.testId === null ? 'unknown' : String(scanResult.testId).padStart(2, '0')) +
+      ' | QR: ' + (scanResult.qrValid ? 'valid' : 'unverified'),
+    'Alignment: ' + (scanResult.registrationMethod || 'unverified') +
+      ' | timing: ' + (scanResult.alignmentMatched ?? '—') + '/50' +
+      ' | rotated: ' + (scanResult.orientationRotated ? 'yes' : 'no'),
+    'Results: ' + scanResult.answers.length + '/50 | ' + counts,
+    'Answer map (—=blank, ?=review, X=multiple):',
+  ];
+  for (let start = 1; start <= 50; start += 10) {
+    const items = Array.from({length: 10}, (_, i) => {
+      const q = scanResult.answers.find(item => item.question === start + i);
+      if (!q) return formatQ(start+i) + ':—';
+      const result = q.status === 'multiple' ? 'X' :
+        q.status === 'uncertain' || q.status === 'error' ? '?' :
+        q.detectedAnswer || '—';
+      return String(start+i).padStart(2, '0') + ':' + result;
+    });
+    lines.push(items.join(' '));
+  }
+  lines.push('Check these ' + suspicious.length + ' suspicious/borderline questions:');
+  if (!suspicious.length) lines.push('None flagged automatically; please still check visually.');
+  for (const q of suspicious) {
+    const candidates = [...q.measurements].sort((a,b) => b.fillPercent-a.fillPercent);
+    const details = candidates.slice(0, 2).map(m => m.option + '=' +
+      m.fillPercent.toFixed(1) + '%' +
+      (m.strokeLike ? '/stroke' : '') +
+      (m.stabilitySpread !== undefined ? '/spread' + m.stabilitySpread.toFixed(0) : '') +
+      (m.rejectReason ? '/' + m.rejectReason.slice(0, 60) : '')
+    ).join(', ');
+    lines.push(formatQ(q.question) + ' ' + q.status +
+      ' (' + (q.detectedAnswer || '—') + '): ' + details);
+  }
+  if (scanResult.errors.length) lines.push('Scan errors: ' + scanResult.errors.slice(0,2).join('; '));
+  lines.push('Tester notes (optional): What did it get wrong? ______');
+  lines.push('Please send the original OMR photo and the coloured bubble overlay separately.');
+  lines.push('Student ID and QR payload omitted. Hide personal details in any image before sharing.');
   return lines.join('\n');
 }
