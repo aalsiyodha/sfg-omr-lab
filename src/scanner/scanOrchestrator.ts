@@ -6,7 +6,10 @@ import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetect
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import type { AlignmentCheck } from './alignmentValidator';
-import { correctPerspective, correctPerspectiveFromMidpoints } from './perspectiveCorrection';
+import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
+import { detectArucoMarkers } from './arucoDetector';
+import type { ArucoRegistration } from './arucoDetector';
+import { applySevenToneCorrection } from './grayToneCorrection';
 import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion } from './qrDecoder';
 import { detectAllAnswers, detectTestId } from './bubbleDetector';
@@ -29,7 +32,8 @@ export interface ScanProgress {
 type QRStatus = ReturnType<typeof decodeQRFromRegion>;
 type Hypothesis =
   | { kind: 'corner'; name: string; markers: MarkerDetectionResult }
-  | { kind: 'midpoint'; name: string; markers: MidpointRegistration };
+  | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
+  | { kind: 'aruco'; name: string; markers: ArucoRegistration };
 interface AcceptedAlignment {
   hypothesis: Hypothesis;
   perspective: PerspectiveResult;
@@ -61,7 +65,9 @@ function evaluateHypothesis(
   try {
     persp = hypothesis.kind === 'corner'
       ? correctPerspective(source, hypothesis.markers)
-      : correctPerspectiveFromMidpoints(source, hypothesis.markers);
+      : hypothesis.kind === 'midpoint'
+      ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
+      : correctPerspectiveFromArucos(source,hypothesis.markers);
     if (!persp.success || !persp.corrected) return null;
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
@@ -136,6 +142,10 @@ export async function runFullScan(
     onProgress?.({ stage: 'Finding reference markers (corner and edge midpoint)…', percent: 30 });
 
     const hypotheses: Hypothesis[] = [];
+    const arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
+    logger.info('markerDetection','ArUco 4x4 marker identification (adaptive)',{
+      identified:arucoAdaptive.count,ids:Object.keys(arucoAdaptive.points),
+      readyForRescue:arucoAdaptive.found});
     const primary = detectMarkers(preprocessed.thresholded, loaded.width, loaded.height);
     if (primary.found) hypotheses.push({ kind: 'corner', name: 'corner/adaptive', markers: primary });
 
@@ -151,6 +161,12 @@ export async function runFullScan(
       const midOtsu = detectMidpointMarkers(alternate, loaded.width, loaded.height);
       if (cornerOtsu.found) hypotheses.push({ kind: 'corner', name: 'corner/Otsu', markers: cornerOtsu });
       if (midOtsu.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/Otsu', markers: midOtsu });
+      const arucoOtsu=detectArucoMarkers(preprocessed.gray,alternate);
+      logger.info('markerDetection','ArUco identification (Otsu)',{
+        identified:arucoOtsu.count,ids:Object.keys(arucoOtsu.points),
+        readyForRescue:arucoOtsu.found});
+      if(arucoAdaptive.found)hypotheses.push({kind:'aruco',name:'aruco/adaptive',markers:arucoAdaptive});
+      else if(arucoOtsu.found)hypotheses.push({kind:'aruco',name:'aruco/Otsu',markers:arucoOtsu});
     } finally {
       cleanupMats(alternate);
     }
@@ -166,11 +182,13 @@ export async function runFullScan(
         hypothesis.kind === 'corner'
           ? { topLeft:hypothesis.markers.topLeft, topRight:hypothesis.markers.topRight, bottomLeft:hypothesis.markers.bottomLeft,
               bottomRight:hypothesis.markers.bottomRight, validGeometry:hypothesis.markers.validGeometry }
-          : { top:hypothesis.markers.top, right:hypothesis.markers.right, bottom:hypothesis.markers.bottom, left:hypothesis.markers.left });
+          : hypothesis.kind === 'midpoint'
+          ? { top:hypothesis.markers.top, right:hypothesis.markers.right, bottom:hypothesis.markers.bottom, left:hypothesis.markers.left }
+          : { ids:Object.keys(hypothesis.markers.points),points:hypothesis.markers.points });
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
-      if (selected && selected.check.matched >= 40 && hypothesis.name.endsWith('/Otsu')) break;
+      if (selected && selected.check.matched >= 40 && hypothesis.name.endsWith('/Otsu') && hypothesis.kind !== 'aruco') continue;
       const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
@@ -215,9 +233,9 @@ export async function runFullScan(
       logger.info('perspective', `Selected ${registrationMethod} registration`,
         { timingMarks: alignmentMatched, rotated });
       images.perspectiveCorrected = chosen.canvas.toDataURL('image/png');
-      images.markerOverlay = chosen.hypothesis.kind === 'corner'
-        ? generateMarkerOverlay(loaded.canvas, chosen.hypothesis.markers)
-        : generateMidpointOverlay(loaded.canvas, chosen.hypothesis.markers);
+      if(chosen.hypothesis.kind==='corner')images.markerOverlay=generateMarkerOverlay(loaded.canvas,chosen.hypothesis.markers);
+      else if(chosen.hypothesis.kind==='midpoint')images.markerOverlay=generateMidpointOverlay(loaded.canvas,chosen.hypothesis.markers);
+      // For ArUco rescue keep the original source overlay; marker IDs are in logs.
 
       grayCalibration = measureGrayCalibration(chosen.gray, dpi);
       const inkCeiling = grayStripInkCeiling(grayCalibration);
@@ -253,7 +271,19 @@ export async function runFullScan(
       }
       testId = detectedId.testId;
       logger.info('testIdDetection', `Test ID: ${testId}`, detectedId);
-      answers = detectAllAnswers(chosen.gray, dpi, inkCeiling ?? undefined, q => offsetForQuestion(grid,q));
+      // The baseline/registration path remains on original grayscale.
+      // Apply calibrated image values only to answer classification, making
+      // the new seven-tone references an active but bounded experiment.
+      const tone=applySevenToneCorrection(chosen.gray,grayCalibration);
+      logger.info('bubbleDetection','Seven-tone image correction',{
+        applied:tone.applied,topBottomDelta:tone.topBottomDelta,
+        description:tone.description});
+      try {
+        answers=detectAllAnswers(tone.corrected,dpi,inkCeiling??undefined,
+          q=>offsetForQuestion(grid,q));
+      } finally {
+        cleanupMats(tone.corrected);
+      }
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
       images.bubbleOverlay = generateBubbleOverlay(
