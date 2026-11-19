@@ -19,6 +19,9 @@ export interface BubbleMeasurement {
   sampleXPx?: number;
   sampleYPx?: number;
   inkThreshold?: number;
+  localPaperBrightness?: number;
+  filledQuadrants?: number;
+  strokeLike?: boolean;
   xMm: number;
   yMm: number;
 }
@@ -41,6 +44,9 @@ export interface ScanResult {
   markerCount: number;
   perspectiveCorrected: boolean;
   alignmentVerified?: boolean;
+  alignmentMatched?: number;
+  registrationMethod?: string | null;
+  orientationRotated?: boolean;
   processingTimeMs: number;
   stageLogs: LogEntry[];
   warnings: string[];
