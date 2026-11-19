@@ -392,6 +392,15 @@ export function detectQuestion(
   }
   if (max < settings.bubbleFillThreshold) {
     if (unexpectedInk) return reviewUnexpected();
+    // v2.1.2: printed-ring/compression debris produces faint annular pixels
+    // even in an empty row. Without central evidence or an independent
+    // external-stroke signal, do not turn tiny noise into manual review.
+    // A visible centre slash/cross still follows the conservative review path.
+    const noCoreInk = rawMeasurements.every(r =>
+      (r.measurement.radialCore ?? 0) < 8 &&
+      (r.measurement.radialMiddle ?? 0) < 20);
+    if(max < 12 && noCoreInk)
+      return { measurements, answer:null, status:'blank', confidence:Math.max(0,100-max) };
     // A small crossed or ticked bubble can have almost no dark interior
     // at the standard threshold. Compare the fixed interior against local
     // paper without promoting any mark to a valid answer.
