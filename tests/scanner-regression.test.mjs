@@ -190,3 +190,62 @@ test('failed perspective reports root cause without cascading errors', () => {
   });
   assert.equal(report.errors.length, 1);
 });
+
+test('Test 4: midpoint markers recover the real reference squares despite damaged corners', () => {
+  mockCv([
+    // Four fixed 4x4 mm edge-midpoint squares from the photographed PDF:
+    { x: 355, y: 20, width: 14, height: 16 },
+    { x: 356, y: 1028, width: 14, height: 14 },
+    { x: 21, y: 525, width: 14, height: 15 },
+    { x: 692, y: 528, width: 14, height: 16 },
+    // Side timing marks are smaller and must not replace the large fiducials:
+    { x: 42, y: 504, width: 8, height: 6 },
+    { x: 676, y: 508, width: 9, height: 6 }
+  ]);
+  const { detectMidpointMarkers } = loadTS('src/scanner/midpointDetector.ts', {
+    '../config/omrLayout': { OMR_LAYOUT: { page: { widthMm: 210, heightMm: 297 } } }
+  });
+  const recovered = detectMidpointMarkers(null, 720, 1061);
+  assert.equal(recovered.found, true);
+  assert.deepEqual(recovered.top, { x: 362, y: 28 });
+  assert.deepEqual(recovered.bottom, { x: 363, y: 1035 });
+  assert.deepEqual(recovered.left, { x: 28, y: 532.5 });
+  assert.deepEqual(recovered.right, { x: 699, y: 536 });
+});
+
+test('midpoint geometry rejects cropped or missing side markers', () => {
+  mockCv([
+    { x: 355, y: 20, width: 14, height: 16 },
+    { x: 356, y: 1028, width: 14, height: 14 },
+    { x: 21, y: 525, width: 14, height: 15 }
+  ]);
+  const { detectMidpointMarkers } = loadTS('src/scanner/midpointDetector.ts', {
+    '../config/omrLayout': { OMR_LAYOUT: { page: { widthMm: 210, heightMm: 297 } } }
+  });
+  const partial = detectMidpointMarkers(null, 720, 1061);
+  assert.equal(partial.found, false);
+  assert.equal(partial.count, 3);
+});
+
+test('bubble measurements include local background and spatial ink features', () => {
+  const result = bubbles.detectQuestion(fakeImage([0, 0, 1, 0]), 1, 150, 152);
+  const selected = result.measurements.find(m => m.option === 'C');
+  assert.equal(result.status, 'detected');
+  assert.ok(selected.localPaperBrightness >= 220);
+  assert.ok(selected.filledQuadrants >= 3);
+  assert.equal(typeof selected.inkThreshold, 'number');
+});
+
+test('a thin crossed mark is not confidently accepted as a filled bubble', () => {
+  const data = new Uint8Array(120 * 100).fill(255);
+  // Draw an X-shaped partial mark across bubble A. The reference image
+  // contributes an empty ring, so only the pen stroke should be evaluated.
+  const cx = 20, cy = 30;
+  for (let i = -4; i <= 4; i++) {
+    data[(cy + i) * 120 + cx + i] = 0;
+    data[(cy + i) * 120 + cx - i] = 0;
+  }
+  const mat = { cols: 120, rows: 100, ucharPtr: (y,x) => [data[y * 120 + x]] };
+  const r = bubbles.detectQuestion(mat, 1, 150, 152);
+  assert.notEqual(r.status, 'detected');
+});

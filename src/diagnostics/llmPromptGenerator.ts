@@ -50,6 +50,9 @@ export function generateLLMDiagnosticPrompt({
   lines.push(`- **Corner Registration Markers Found:** ${scanResult.markerCount} / 4 (Perspective Corrected: \`${scanResult.perspectiveCorrected}\`)`);
   lines.push(`- **Student QR Code:** \`${scanResult.qrValid ? 'VALID' : 'INVALID / MISSING'}\` (raw payload and student ID omitted)`);
   lines.push(`- **Side timing marks verified:** \`${scanResult.alignmentVerified === true ? 'YES' : scanResult.alignmentVerified === false ? 'NO' : 'UNKNOWN'}\``);
+  lines.push(`- **Registration method:** \`${scanResult.registrationMethod || 'none'}\``);
+  lines.push(`- **Timing marks matched:** ${scanResult.alignmentMatched ?? 'unknown'}/50`);
+  lines.push(`- **Rotation applied:** ${scanResult.orientationRotated ? '180°' : 'No'}`);
   lines.push(`- **Detected Test ID:** \`${scanResult.testId ? String(scanResult.testId).padStart(2, '0') : 'NULL / NOT DETECTED'}\``);
   if (activeTestId) {
     lines.push(`- **Active Practice Test ID:** \`${String(activeTestId).padStart(2, '0')}\``);
@@ -129,7 +132,8 @@ export function generateLLMDiagnosticPrompt({
         `D=${m.diagonalDisparity?.toFixed(1) ?? '?'}, ` +
         `valid=${m.validMark ?? '?'}, ` +
         `ROI=(${m.sampleXPx ?? '?'},${m.sampleYPx ?? '?'}), ` +
-        `ink<${m.inkThreshold ?? '?'}, ` +
+        `ink<${m.inkThreshold ?? '?'}, paper=${m.localPaperBrightness ?? '?'}, ` +
+        `quadrants=${m.filledQuadrants ?? '?'}/4, stroke=${m.strokeLike ?? '?'}, ` +
         `reason=${m.rejectReason || 'none'}`).join(' | '));
   }
 

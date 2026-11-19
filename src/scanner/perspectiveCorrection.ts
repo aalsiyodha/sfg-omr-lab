@@ -1,4 +1,6 @@
 import type { MarkerDetectionResult } from '../types';
+import type { MidpointRegistration } from './midpointDetector';
+import { MIDPOINTS_MM } from './midpointDetector';
 import { OMR_LAYOUT, mmToPx } from '../config/omrLayout';
 import { getSettings } from '../config/scannerSettings';
 
@@ -74,5 +76,53 @@ export function correctPerspective(
     srcMat.delete();
     if (srcPoints) srcPoints.delete();
     if (dstPoints) dstPoints.delete();
+  }
+}
+
+/**
+ * Recover the fixed page coordinate system from its four 4x4mm edge markers
+ * when the corner markers are corrupted. Must subsequently pass both QR
+ * orientation and independent side timing-mark checks.
+ */
+export function correctPerspectiveFromMidpoints(
+  src: HTMLCanvasElement,
+  markers: MidpointRegistration
+): PerspectiveResult {
+  const missing = { corrected: null, correctedDataUrl: '', transform: null, success: false,
+    error: markers.error || 'Four edge-midpoint reference squares could not be verified.' };
+  if (!markers.found || !markers.top || !markers.right || !markers.bottom || !markers.left) {
+    return missing;
+  }
+
+  const dpi = getSettings().scanDpi;
+  const w = Math.round(mmToPx(OMR_LAYOUT.page.widthMm, dpi));
+  const h = Math.round(mmToPx(OMR_LAYOUT.page.heightMm, dpi));
+  const srcMat = cv.imread(src);
+  let input: any = null, output: any = null, transform: any = null, corrected: any = null;
+  try {
+    const { top, right, bottom, left } = markers;
+    input = cv.matFromArray(4, 1, cv.CV_32FC2, [
+      top.x, top.y, right.x, right.y, bottom.x, bottom.y, left.x, left.y
+    ]);
+    const px = (p: { x: number; y: number }) => [mmToPx(p.x, dpi), mmToPx(p.y, dpi)];
+    output = cv.matFromArray(4, 1, cv.CV_32FC2, [
+      ...px(MIDPOINTS_MM.top), ...px(MIDPOINTS_MM.right),
+      ...px(MIDPOINTS_MM.bottom), ...px(MIDPOINTS_MM.left)
+    ]);
+    transform = cv.getPerspectiveTransform(input, output);
+    corrected = new cv.Mat();
+    cv.warpPerspective(srcMat, corrected, transform, new cv.Size(w,h));
+    return {
+      corrected, correctedDataUrl: matToDataUrl(corrected),
+      transform, success: true
+    };
+  } catch (error) {
+    if (corrected) corrected.delete();
+    if (transform) transform.delete();
+    throw error;
+  } finally {
+    srcMat.delete();
+    if (input) input.delete();
+    if (output) output.delete();
   }
 }
