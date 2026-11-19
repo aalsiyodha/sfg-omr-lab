@@ -1,9 +1,9 @@
 name: Scanner reliability checks
 on:
   push:
-    branches: [scanner-reliability-orientation-registration]
+    branches: [test-build]
   pull_request:
-    branches: [main]
+    branches: [test-build, main]
 
 jobs:
   build-and-regression:
