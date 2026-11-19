@@ -137,3 +137,56 @@ test('regional QR check must not silently decode the full sheet (Test 5)', () =>
     globalThis.document = previousDocument;
   }
 });
+
+test('selects true corner anchors over inward square distractors', () => {
+  const actual = [box(40, 40), box(840, 40), box(40, 1200), box(840, 1200)];
+  const distractors = [box(110, 60), box(760, 70), box(105, 1100), box(755, 1095)];
+  const result = getMarkers([...distractors, ...actual], 900, 1300);
+  assert.equal(result.found, true);
+  assert.equal(result.topLeft.x, 50);
+  assert.equal(result.bottomRight.x, 850);
+});
+
+test('timing marks verify independent left and right registration', () => {
+  const layout = {
+    answers: { questionsPerCol: 25, rowStartY: 83, rowSpacingY: 7.4 }
+  };
+  const alignment = loadTS('src/scanner/alignmentValidator.ts', {
+    '../config/omrLayout': { OMR_LAYOUT: layout, mmToPx: mm => mm * 150 / 25.4 },
+    './bubbleDetector': { computeAdaptiveDarkThreshold: () => 150 }
+  });
+  const W = 1241, H = 1754;
+  const data = new Uint8Array(W * H).fill(255);
+  const mark = (cx, cy) => {
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++)
+      data[(cy + dy) * W + cx + dx] = 0;
+  };
+  for (let row = 0; row < 25; row++) {
+    const y = Math.round((83 + row * 7.4) * 150 / 25.4);
+    mark(Math.round(13.3 * 150 / 25.4), y);
+    mark(Math.round(196.7 * 150 / 25.4), y);
+  }
+  const mat = { cols: W, rows: H, ucharPtr: (y, x) => [data[y * W + x]] };
+  const ok = alignment.verifyTimingMarks(mat, 150);
+  assert.equal(ok.passed, true);
+  assert.equal(ok.matched, 50);
+
+  // An unrelated dark band on only one side must not validate the grid.
+  for (let row = 0; row < 25; row++) {
+    const y = Math.round((83 + row * 7.4) * 150 / 25.4);
+    const x = Math.round(196.7 * 150 / 25.4);
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++)
+      data[(y + dy) * W + x + dx] = 255;
+  }
+  assert.equal(alignment.verifyTimingMarks(mat, 150).passed, false);
+});
+
+test('failed perspective reports root cause without cascading errors', () => {
+  const { validateScanResult } = loadTS('src/scanner/scanValidator.ts');
+  const report = validateScanResult({
+    warnings: [], errors: ['Four trustworthy corner markers could not be matched.'],
+    perspectiveCorrected: false, qrValid: false, alignmentVerified: false,
+    testId: null, answers: [], markerCount: 4
+  });
+  assert.equal(report.errors.length, 1);
+});
