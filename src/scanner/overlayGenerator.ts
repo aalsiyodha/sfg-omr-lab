@@ -30,9 +30,11 @@ export function generateBubbleOverlay(
       const cy = mmToPx(c.yMm, dpi);
 
       const m = q.measurements.find((meas) => meas.option === opt);
-      const isDetected = q.detectedAnswer === opt && (q.status === 'detected' || q.status === 'uncertain');
+      const isDetected = q.detectedAnswer === opt && q.status === 'detected';
+      const maxFill = Math.max(...q.measurements.map(x => x.fillPercent));
       const isMultiple = q.status === 'multiple' && (m?.fillPercent ?? 0) >= 30;
-      const isUncertain = q.status === 'uncertain' && q.detectedAnswer === opt;
+      const isUncertain = q.status === 'uncertain' && !!m &&
+        (m.fillPercent >= Math.max(20, maxFill - 12)) && maxFill >= 20;
 
       ctx.beginPath();
       ctx.arc(cx, cy, radiusPx * 1.15, 0, Math.PI * 2);
