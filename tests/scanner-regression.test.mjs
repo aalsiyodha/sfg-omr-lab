@@ -344,3 +344,51 @@ test('v1.9 low resolution radial samples ask for review rather than inventing a 
   const result=radial.measureRadialInk(mat,25,25,35,152);
   assert.equal(result.classification,'insufficient_resolution');
 });
+
+test('v1.9 complete classifier rejects central dots and rings while keeping full fills', () => {
+  const radial = loadTS('src/scanner/radialInk.ts');
+  const px = mm => mm * 150 / 25.4;
+  const realistic = loadTS('src/scanner/bubbleDetector.ts', {
+    '../config/omrLayout': {
+      mmToPx: px,
+      getBubbleCentre: (_question, option) => ({
+        xMm: (50+option*45)*25.4/150, yMm:100*25.4/150
+      }),
+      getTestIdBubbleCentre: () => ({xMm:0,yMm:0}),
+      OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings': {
+      getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{
+        minFill:45,nearThresholdFill:42,visiblePartialFill:37,
+        strongFill:85,strongMultipleRunner:65,secondMarkTopMin:70,
+        secondMarkFillMin:36,secondMarkRelative:.4,minJump:16,
+        stabilityReviewSpread:18,thresholdPerturbation:8,
+        strokeReviewMaxFill:88,strokeReviewMinFill:38,
+        quadrantCoverage:24,diagonalLineCoverage:67,diagonalAxisGap:22,
+        diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+      }
+    },
+    './radialInk':radial
+  });
+  const make = marks => {
+    const W=240,H=220,data=new Uint8Array(W*H).fill(235);
+    for (let option=0; option<4; option++) {
+      const shape=marks[option] || 'blank';
+      const cx=50+option*45,cy=100;
+      for(let dy=-12;dy<=12;dy++)for(let dx=-12;dx<=12;dx++){
+        const dist=Math.hypot(dx,dy)/px(1);
+        const ink=shape==='fill' ? dist<1.46 :
+          shape==='dot' ? dist<.86 :
+          shape==='ring' ? dist>1.07 && dist<1.44 : false;
+        if(ink)data[(cy+dy)*W+(cx+dx)]=20;
+      }
+    }
+    return {rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  };
+  assert.equal(realistic.detectQuestion(make(['blank','blank','fill','blank']),1,150,152).answer,'C');
+  assert.notEqual(realistic.detectQuestion(make(['dot','blank','blank','blank']),1,150,152).status,'detected');
+  assert.notEqual(realistic.detectQuestion(make(['blank','blank','ring','blank']),1,150,152).status,'detected');
+  assert.equal(realistic.detectQuestion(make(['fill','fill','blank','blank']),1,150,152).status,'multiple');
+  assert.notEqual(realistic.detectQuestion(make(['fill','blank','blank','dot']),1,150,152).status,'multiple');
+});
