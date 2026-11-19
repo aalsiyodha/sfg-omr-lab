@@ -307,7 +307,7 @@ export function detectQuestion(
   // This does NOT promote medium-density background noise (Q24/Q25).
   if (validFills.length >= 2 || (max >= RULES.strongFill && second.measurement.fillPercent >= RULES.strongMultipleRunner &&
     validFills.length >= 1 && rawMeasurements.filter(r => r.measurement.fillPercent >= RULES.strongMultipleRunner &&
-      r.measurement.radialShape !== 'centre_dot' && r.measurement.radialShape !== 'hollow_ring').length >= 2)) {
+      (r.detail.isValid || r.measurement.radialShape === 'insufficient_resolution')).length >= 2)) {
     return { measurements, answer: null, status: 'multiple', confidence: 0 };
   }
   if (max < settings.bubbleFillThreshold) {
