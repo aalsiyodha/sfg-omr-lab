@@ -157,6 +157,33 @@ export default function DiagnosticsPage({ appState }: Props) {
         </div>
       </div>
 
+      {/* Printed grayscale reference; diagnostic only, never used for grading */}
+      {scanResult?.grayCalibration && (
+        <div className="card mb-4 calibration-card">
+          <div className="card-header d-flex align-items-center justify-content-between">
+            <span><i className="bi bi-brightness-high me-2" />Grayscale Reference Check</span>
+            <span className={`badge ${scanResult.grayCalibration.status === 'ok' ? 'bg-success' :
+              scanResult.grayCalibration.status === 'low_contrast' ? 'bg-warning text-dark' : 'bg-secondary'}`}>
+              {scanResult.grayCalibration.status.replace('_', ' ')}
+            </span>
+          </div>
+          <div className="card-body">
+            <p className="small text-muted mb-2">{scanResult.grayCalibration.note}</p>
+            <div className="d-flex flex-wrap align-items-center gap-2 mb-2" aria-label="Measured calibration patches">
+              {scanResult.grayCalibration.patchMedians.map((value, idx) => (
+                <div className="calibration-patch" key={idx}>
+                  <div className="calibration-patch-swatch" style={{backgroundColor: `rgb(${value},${value},${value})`}} />
+                  <span className="small text-muted">{value}</span>
+                </div>
+              ))}
+            </div>
+            <small className="text-muted">Contrast: {scanResult.grayCalibration.contrast ?? 'N/A'} gray levels.
+              Reference-only: these readings do not affect registration, recognized answers or scores.
+            </small>
+          </div>
+        </div>
+      )}
+
       {/* B: Synthetic Benchmark Suite (NEW) */}
       <div className="card mb-4 border-primary">
         <div className="card-header bg-primary text-white fw-semibold d-flex justify-content-between align-items-center">
