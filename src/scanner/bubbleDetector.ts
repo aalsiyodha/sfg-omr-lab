@@ -288,7 +288,18 @@ export function detectQuestion(
     const radial = measureRadialInk(correctedGray, cxPx, cyPx, dpi, detail.effectiveThreshold ?? effectiveThreshold);
     const clearlyInvalid = radial.classification === 'centre_dot' || radial.classification === 'hollow_ring';
     const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
-    if (detail.fillPercent >= RULES.minFill && (clearlyInvalid || unevenOuter)) {
+    // Q38-D-type crescent can darken most of the *interior* while leaving
+    // an incomplete outer fill. Check radial consistency even above 85%.
+    const highFillCrescent = detail.fillPercent >= 75 &&
+      detail.fillPercent < 97 &&
+      radial.core >= 75 &&
+      radial.outer < 42 &&
+      radial.core - radial.outer > 42;
+    if (highFillCrescent) {
+      detail.isValid = false;
+      detail.rejectReason = 'High-density partial/crescent: outer coverage insufficient';
+    }
+    if (!highFillCrescent && detail.fillPercent >= settings.bubbleFillThreshold && (clearlyInvalid || unevenOuter)) {
       detail.isValid = false;
       detail.rejectReason = radial.classification === 'centre_dot'
         ? 'Small central dot, not a completely filled bubble'
