@@ -343,9 +343,17 @@ export function detectQuestion(
     value < 85 && Math.max(...bands.filter((_,j)=>j!==i)) - value > 45);
   const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
     measurements.map(m => m.localPaperBrightness ?? 235));
-  const externalStroke = centres.some((c,i) =>
-    hasExternalStroke(correctedGray,c.x,c.y,dpi,
-      measurements[i].paperReferenceBrightness ?? measurements[i].localPaperBrightness ?? 235));
+  // The 2.0.1 external-band probe sees printed text/rings and JPEG artifacts,
+  // so it is not trustworthy when a clear solid answer is present. Constrain
+  // it to *otherwise unfilled* rows that also have local interior evidence of
+  // a genuine stray mark. Never reject a clear fill based on this probe alone.
+  const strongestFill = Math.max(...measurements.map(m => m.fillPercent));
+  const externalStroke = strongestFill < settings.bubbleFillThreshold &&
+    centres.some((c,i) =>
+      measurements[i].fillPercent >= 18 &&
+      measurements[i].fillPercent < settings.bubbleFillThreshold &&
+      hasExternalStroke(correctedGray,c.x,c.y,dpi,
+        measurements[i].paperReferenceBrightness ?? measurements[i].localPaperBrightness ?? 235));
   const unexpectedInk = tracedOutline || offBubbleInk || externalStroke;
   const reviewUnexpected = (): BubbleReadResult => {
     const target = rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
