@@ -1,0 +1,4 @@
+# SFG OMR Lab beta — discourage compliant web crawlers.
+# This does not stop malicious bots or restrict direct access.
+User-agent: *
+Disallow: /
