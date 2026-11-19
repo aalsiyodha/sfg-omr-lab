@@ -21,7 +21,8 @@
   "git": {
     "deploymentEnabled": {
       "test-build": false,
-      "hybrid-experiment": false
+      "hybrid-experiment": false,
+      "omr-v2-experiment": false
     }
   }
 }
