@@ -441,7 +441,7 @@ export function detectTestId(
   const unitsFills = (TID.units.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('units', digit);
     const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
-    return { digit, fill: detail.fillPercent };
+    return { digit, fill: detail.fillPercent, valid: detail.isValid };
   });
   
   const sortedTens = [...tensFills].sort((a,b) => b.fill - a.fill);
