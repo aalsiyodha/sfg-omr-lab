@@ -8,7 +8,16 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## 🌟 Key Architecture & Capabilities
 
-1. **Self-Calibrating Adaptive Lighting Engine (`v1.5`)**:
+### v1.6 scanner reliability changes
+
+- Tries alternate Otsu marker extraction if adaptive thresholding fails.
+- Scores combinations of corner-marker candidates against A4 geometry rather than blindly choosing extremes.
+- Requires an independent minimum match of left and right timing marks after perspective correction.
+- Exports per-bubble sampling coordinates, shape disparities and rejection reasons for ambiguous rows.
+- Avoids cascading diagnostic errors after an early registration failure.
+- Retains fail-safe scoring: invalid alignment cannot be submitted.
+
+1. **Self-Calibrating Adaptive Lighting Engine (`v1.6`)**:
    - Calculates the exact Otsu binarization point on the perspective-corrected grayscale canvas in $<2\text{ ms}$.
    - Dynamically self-calibrates the dark ink threshold (`~154`), completely preventing false blanks caused by uneven ambient room lighting or mobile camera auto-exposure.
 
@@ -37,7 +46,7 @@ Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vis
 
 ## Version and deployment identification
 
-The release version comes from `package.json` (currently **v1.5.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
+The release version comes from `package.json` (currently **v1.6.0**); the app's navigation, diagnostic exports and page title use that same value. A short Git commit identifier is also shown in the footer for GitHub/Vercel builds, so successive deployments are distinguishable without manually editing more version strings.
 
 For a future release, update both `package.json` and `package-lock.json` (for example, using `npm version patch --no-git-tag-version`), commit, and deploy. Code commits without a version bump retain the release number but display a different build identifier.
 

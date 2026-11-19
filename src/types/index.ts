@@ -12,6 +12,13 @@ export interface BubbleMeasurement {
   question: number;
   option: AnswerOption;
   fillPercent: number;
+  horizontalDisparity?: number;
+  diagonalDisparity?: number;
+  validMark?: boolean;
+  rejectReason?: string;
+  sampleXPx?: number;
+  sampleYPx?: number;
+  inkThreshold?: number;
   xMm: number;
   yMm: number;
 }
@@ -33,6 +40,7 @@ export interface ScanResult {
   qrValid: boolean;
   markerCount: number;
   perspectiveCorrected: boolean;
+  alignmentVerified?: boolean;
   processingTimeMs: number;
   stageLogs: LogEntry[];
   warnings: string[];

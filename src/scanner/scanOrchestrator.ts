@@ -2,6 +2,7 @@ import type { ScanResult, IntermediateImages, QuestionResult } from '../types';
 import { loadImageFromFile, validateImage } from './imageLoader';
 import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
+import { verifyTimingMarks } from './alignmentValidator';
 import { correctPerspective } from './perspectiveCorrection';
 import { decodeQRFromRegion } from './qrDecoder';
 import { detectAllAnswers, detectTestId } from './bubbleDetector';
@@ -54,7 +55,24 @@ export async function runFullScan(
   onProgress?.({ stage: 'Pass 1: Anchoring 4 corner registration markers…', percent: 30 });
   
   // Stage 3: Marker detection
-  const markerResult = detectMarkers(preprocessed.thresholded, loaded.width, loaded.height);
+  let markerResult = detectMarkers(preprocessed.thresholded, loaded.width, loaded.height);
+  // A global Otsu retry often recovers degraded corner squares missed by
+  // adaptive thresholding. Never accept it without geometry + QR verification.
+  if (!markerResult.found) {
+    const alternate = new cv.Mat();
+    try {
+      cv.threshold(preprocessed.gray, alternate, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
+      const recovered = detectMarkers(alternate, loaded.width, loaded.height);
+      if (recovered.found) {
+        markerResult = recovered;
+        logger.info('markerDetection', 'Recovered registration markers using an alternate Otsu threshold');
+      } else {
+        logger.warning('markerDetection', 'Adaptive and Otsu marker searches failed geometry checks');
+      }
+    } finally {
+      cleanupMats(alternate);
+    }
+  }
   images.markerOverlay = generateMarkerOverlay(loaded.canvas, markerResult);
   logger.info('markerDetection', `Markers found: ${markerResult.count}/4`, { markerResult });
   onProgress?.({ stage: 'Pass 1: Correcting perspective & extracting QR…', percent: 45 });
@@ -116,9 +134,18 @@ export async function runFullScan(
     logger.info('testIdDetection', `Test ID: ${testIdResult.testId}`, testIdResult);
   }
   
-  // Stage 7: Pass 1 Primary Answer detection
+  // Independent geometric verification: the side timing marks must be near
+  // their configured rows on the corrected upright sheet.
+  const alignmentCheck = correctedGray && qrResult.valid
+    ? verifyTimingMarks(correctedGray, dpi)
+    : null;
+  if (alignmentCheck) {
+    logger.info('perspective', 'Timing-mark geometry check', { ...alignmentCheck });
+  }
+
+  // Stage 7: Primary Answer detection
   let answers: QuestionResult[] = [];
-  if (correctedGray) {
+  if (correctedGray && qrResult.valid && alignmentCheck?.passed) {
     answers = detectAllAnswers(correctedGray, dpi);
     logger.info('bubbleDetection', `Pass 1: Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
   }
@@ -146,12 +173,14 @@ export async function runFullScan(
     qrValid: qrResult.valid,
     markerCount: markerResult.count,
     perspectiveCorrected: perspResult.success,
+    alignmentVerified: alignmentCheck?.passed ?? false,
     processingTimeMs: Date.now() - start,
     stageLogs: logger.getAll(),
     warnings: [],
     errors: [
       ...(!markerResult.found ? [markerResult.error || 'Registration geometry is not reliable.'] : []),
-      ...(!qrResult.valid ? ['Could not verify page orientation from the QR location.'] : []),
+      ...(!qrResult.valid && markerResult.found ? ['Could not verify page orientation from the QR location.'] : []),
+      ...(alignmentCheck && !alignmentCheck.passed ? [alignmentCheck.reason || 'Side timing mark alignment failed.'] : []),
     ],
     overallStatus: 'success',
   };
