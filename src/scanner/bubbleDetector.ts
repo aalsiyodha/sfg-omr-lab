@@ -1,6 +1,7 @@
 // src/scanner/bubbleDetector.ts
 import { getBubbleCentre, getTestIdBubbleCentre, mmToPx, OMR_LAYOUT } from '../config/omrLayout';
-import { getSettings } from '../config/scannerSettings';
+import { getSettings, MARK_REVIEW_THRESHOLDS as RULES } from '../config/scannerSettings';
+import { measureRadialInk } from './radialInk';
 import type { AnswerOption, BubbleMeasurement, DetectionStatus, QuestionResult } from '../types';
 
 declare const cv: any;
@@ -191,15 +192,15 @@ function measureBubbleInterior(
   // Shape-aware rejection: thin slashes/ticks often darken only one or two
   // quadrants. A genuinely filled bubble should occupy most quadrants, even
   // when photographed under moderate shadows.
-  const filledQuadrants = [q1Pct, q2Pct, q3Pct, q4Pct].filter(v => v >= 24).length;
+  const filledQuadrants = [q1Pct, q2Pct, q3Pct, q4Pct].filter(v => v >= RULES.quadrantCoverage).length;
   const axisCoverage = axisTotal ? axisDark * 100 / axisTotal : 0;
   const diagonalCoverage = diagonalTotal ? diagonalDark * 100 / diagonalTotal : 0;
   // A thick X can cover all four quadrants and must not become valid at 65%.
-  const strokeLike = fillPercent >= 38 && fillPercent < 88 && (
+  const strokeLike = fillPercent >= RULES.strokeReviewMinFill && fillPercent < RULES.strokeReviewMaxFill && (
     filledQuadrants <= 2 ||
-    (diagonalCoverage >= 67 && diagonalCoverage - axisCoverage >= 22) ||
-    diagonalDisparity > 85 ||
-    horizontalDisparity > 65
+    (diagonalCoverage >= RULES.diagonalLineCoverage && diagonalCoverage - axisCoverage >= RULES.diagonalAxisGap) ||
+    diagonalDisparity > RULES.diagonalDisparity ||
+    horizontalDisparity > RULES.horizontalDisparity
   );
 
   // OMR rejection criteria:
@@ -209,7 +210,7 @@ function measureBubbleInterior(
   let isValid = true;
   let rejectReason: string | undefined;
 
-  if (fillPercent < 45) {
+  if (fillPercent < RULES.minFill) {
     isValid = false;
     rejectReason = `Low fill (${fillPercent.toFixed(0)}%)`;
   } else if (strokeLike) {
@@ -245,6 +246,17 @@ export function detectQuestion(
     const cxPx = mmToPx(centre.xMm, dpi);
     const cyPx = mmToPx(centre.yMm, dpi);
     const detail = measureBubbleInterior(correctedGray, cxPx, cyPx, interiorRadiusPx, effectiveThreshold, dpi);
+    const radial = measureRadialInk(correctedGray, cxPx, cyPx, dpi, detail.effectiveThreshold ?? effectiveThreshold);
+    const clearlyInvalid = radial.classification === 'centre_dot' || radial.classification === 'hollow_ring';
+    const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= RULES.minFill;
+    if (detail.fillPercent >= RULES.minFill && (clearlyInvalid || unevenOuter)) {
+      detail.isValid = false;
+      detail.rejectReason = radial.classification === 'centre_dot'
+        ? 'Small central dot, not a completely filled bubble'
+        : radial.classification === 'hollow_ring'
+        ? 'Hollow ring: bubble interior is not filled'
+        : 'Ink distribution does not resemble a complete fill';
+    }
     return {
       measurement: {
         question, option: opt, fillPercent: detail.fillPercent,
@@ -260,6 +272,10 @@ export function detectQuestion(
         axisCoverage: detail.axisCoverage,
         diagonalCoverage: detail.diagonalCoverage,
         stabilitySpread: undefined as number | undefined,
+        radialCore: Number(radial.core.toFixed(1)),
+        radialMiddle: Number(radial.middle.toFixed(1)),
+        radialOuter: Number(radial.outer.toFixed(1)),
+        radialShape: radial.classification,
         xMm: centre.xMm, yMm: centre.yMm
       },
       detail,
@@ -288,38 +304,43 @@ export function detectQuestion(
   // Two strongly shaded options remain multiple even if directional noise
   // rejects one shape; otherwise v1.8 could regress Q26 to 'uncertain'.
   // This does NOT promote medium-density background noise (Q24/Q25).
-  if (validFills.length >= 2 || (max >= 85 && second.measurement.fillPercent >= 65)) {
+  if (validFills.length >= 2 || (max >= RULES.strongFill && second.measurement.fillPercent >= RULES.strongMultipleRunner &&
+    validFills.length >= 1 && rawMeasurements.filter(r => r.measurement.fillPercent >= RULES.strongMultipleRunner &&
+      r.measurement.radialShape !== 'centre_dot' && r.measurement.radialShape !== 'hollow_ring').length >= 2)) {
     return { measurements, answer: null, status: 'multiple', confidence: 0 };
   }
   if (max < settings.bubbleFillThreshold) {
-    if (max >= 42 || (max >= 37 && top.detail.strokeLike)) {
+    if (max >= RULES.nearThresholdFill ||
+        (max >= RULES.visiblePartialFill && top.detail.strokeLike) ||
+        rawMeasurements.some(r => r.measurement.radialShape === 'hollow_ring' &&
+          r.measurement.radialOuter >= 55)) {
       top.measurement.rejectReason = top.detail.rejectReason || 'Visible mark near the fill threshold';
       return { measurements, answer: null, status: 'uncertain', confidence: 0 };
     }
     return { measurements, answer: null, status: 'blank', confidence: Math.max(0, 100 - max) };
   }
 
-  const borderlineSecond = max >= 70 &&
-    second.measurement.fillPercent >= 36 &&
-    second.measurement.fillPercent >= max * 0.4;
+  const borderlineSecond = max >= RULES.secondMarkTopMin &&
+    second.measurement.fillPercent >= RULES.secondMarkFillMin &&
+    second.measurement.fillPercent >= max * RULES.secondMarkRelative;
   if (borderlineSecond && substantialMarks.length < 2) {
     second.measurement.rejectReason = 'Possible additional mark just below threshold';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
-  if (substantialMarks.length >= 2 || !top.detail.isValid || jump < 16 ||
+  if (substantialMarks.length >= 2 || !top.detail.isValid || jump < RULES.minJump ||
       diff < settings.bubbleUncertainThreshold) {
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
 
   // Only borderline selections need perturbation analysis; clear 90%-filled
   // answers remain fast. Recheck neighbouring ink thresholds and ROI centres.
-  if (max < 85) {
+  if (max < RULES.strongFill) {
     const optionIdx = options.indexOf(top.measurement.option) as 0|1|2|3;
     const centre = getBubbleCentre(question, optionIdx);
     const cx = mmToPx(centre.xMm, dpi), cy = mmToPx(centre.yMm, dpi);
     const samples = [
-      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - 8, dpi),
-      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + 8, dpi),
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - RULES.thresholdPerturbation, dpi),
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + RULES.thresholdPerturbation, dpi),
       measureBubbleInterior(correctedGray, cx - 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
       measureBubbleInterior(correctedGray, cx + 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
       measureBubbleInterior(correctedGray, cx, cy - 1, interiorRadiusPx, effectiveThreshold, dpi),
@@ -328,7 +349,7 @@ export function detectQuestion(
     const values = [max, ...samples.map(s => s.fillPercent)];
     const range = Math.max(...values) - Math.min(...values);
     top.measurement.stabilitySpread = Number(range.toFixed(1));
-    if (range >= 18 || samples.filter(s => s.strokeLike).length >= 2) {
+    if (range >= RULES.stabilityReviewSpread || samples.filter(s => s.strokeLike).length >= 2) {
       top.measurement.rejectReason = 'Unstable or stroke-like mark (variation ' + range.toFixed(0) + '%)';
       return { measurements, answer: null, status: 'uncertain', confidence: 0 };
     }
@@ -400,11 +421,11 @@ export function detectTestId(
   const unitsDiff = runnerUnits ? bestUnits.fill - runnerUnits.fill : bestUnits.fill;
   
   // Digit detection
-  const tens = (bestTens && (bestTens.fill >= settings.bubbleFillThreshold || (bestTens.fill >= 25 && tensDiff >= 12)))
+  const tens = (bestTens && bestTens.fill >= settings.bubbleFillThreshold && tensDiff >= RULES.testIdMinSeparation)
     ? bestTens.digit
     : null;
     
-  const units = (bestUnits && (bestUnits.fill >= settings.bubbleFillThreshold || (bestUnits.fill >= 25 && unitsDiff >= 12)))
+  const units = (bestUnits && bestUnits.fill >= settings.bubbleFillThreshold && unitsDiff >= RULES.testIdMinSeparation)
     ? bestUnits.digit
     : null;
   
