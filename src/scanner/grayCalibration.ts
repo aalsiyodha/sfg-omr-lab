@@ -1,7 +1,7 @@
 /**
  * Bottom-right four-patch grayscale reference strip.
- * Diagnostic-only: these samples NEVER alter registration, ink thresholds,
- * the mark classifier, or scoring. Patch centres are physical A4 millimetres,
+ * Diagnostics plus conservative opt-in tonal guidance. Invalid reference strips
+ * never change ink thresholds or scoring. Patch centres are physical A4 millimetres,
  * estimated from the existing SFG template and photographed overlay.
  */
 export interface GrayCalibration {
@@ -55,4 +55,20 @@ export function measureGrayCalibration(
       note:'Low tonal separation in the reference strip; review lighting and focus'};
   return {status:'ok',patchMedians:medians,contrast,ordered,
     note:'Grayscale strip has usable tonal separation (diagnostic only)'};
+}
+
+/**
+ * A deliberately conservative global ink ceiling from the printed strip.
+ * The strip is usable only if four ordered, well-separated patches are found.
+ * Never brighten a threshold: doing so would turn shadows into marked bubbles.
+ */
+export function grayStripInkCeiling(calibration: GrayCalibration): number | null {
+  if (calibration.status !== 'ok' || !calibration.ordered ||
+      calibration.patchMedians.length !== 4) return null;
+  const [black, dark, mid, white] = calibration.patchMedians;
+  if (black > 90 || dark < black - 10 || mid < dark - 10 ||
+      white < 125 || white - black < 90) return null;
+  // Paper reference can be much brighter than the white patch under uneven
+  // illumination. Cap the classifier only, never use this as a paper estimate.
+  return Math.max(100, Math.min(158, Math.round(white - (white-black)*0.22)));
 }
