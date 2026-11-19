@@ -901,3 +901,32 @@ test('OMR 2.1: lone solid answer still follows the fast path',()=>{
   assert.equal(result.status,'detected');
   assert.equal(result.answer,'B');
 });
+
+
+test('OMR 2.1 ArUco: four printed IDs decode and rotations preserve identity',()=>{
+  const {decodeArucoCells,ARUCO_BITS}=loadTS('src/scanner/arucoDetector.ts');
+  const rotate=b=>b.map((_,y)=>b.map((_,x)=>b[5-x][y]));
+  for(let id=0;id<4;id++){
+    let bits=ARUCO_BITS[id].map(row=>row.split('').map(v=>v==='#'?1:0));
+    for(let quarter=0;quarter<4;quarter++){
+      const decoded=decodeArucoCells(bits);
+      assert.equal(decoded?.id,id,`ID ${id} rotated ${quarter*90} degrees`);
+      bits=rotate(bits);
+    }
+  }
+  assert.equal(decodeArucoCells(Array.from({length:6},()=>Array(6).fill(0))),null);
+});
+
+test('OMR 2.1 grayscale: all seven patches influence bounded pixel mapping',()=>{
+  const {buildSevenToneLut}=loadTS('src/scanner/grayToneCorrection.ts');
+  const calibration={status:'ok',ordered:true,
+    patchMedians:[26,31,44,68,116,151,201],contrast:175,whiteReferences:[209,201]};
+  const lut=buildSevenToneLut(calibration);
+  assert.ok(lut);
+  for(let i=0;i<256;i++){
+    assert.ok(Math.abs(lut[i]-i)<=15,`bounded correction at ${i}`);
+    if(i>0)assert.ok(lut[i]>=lut[i-1]-1,`monotonic tone adjustment ${i}`);
+  }
+  assert.notEqual(lut[68],68);
+  assert.equal(buildSevenToneLut({...calibration,status:'unavailable'}),null);
+});
