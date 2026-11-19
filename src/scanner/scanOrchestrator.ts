@@ -159,6 +159,10 @@ export async function runFullScan(
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
     for (const hypothesis of hypotheses) {
+      // Clean photos should not pay for two extra full-resolution warps.
+      // We still compare the independent adaptive midpoint candidate before
+      // skipping Otsu alternatives, and retry Otsu for marginal alignments.
+      if (selected && selected.check.matched >= 40 && hypothesis.name.endsWith('/Otsu')) break;
       const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
