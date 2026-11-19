@@ -46,24 +46,32 @@ export function estimateGridOffset(
   gray:Gray,dpi:number,anchors:{x:number;y:number}[],ringRadiusMm=1.7,
 ):GridOffset {
   if(anchors.length<4)return {...ZERO};
+  // v2.1.2: Score a modest, distributed set of template rings instead of
+  // evaluating all 52 rings at 400+ shifts. Two-stage coarse/fine search cuts
+  // millions of per-pixel calls without giving up sub-mm refinement.
+  const sampled=anchors.filter((_,i)=>i%Math.max(1,Math.floor(anchors.length/12))===0).slice(0,16);
   const max=Math.round(mmToPx(1.6,dpi));
-  const step=1;
-  const scores:{dx:number;dy:number;score:number}[]=[];
-  for(let dy=-max;dy<=max;dy+=step){
+  const scored=(dx:number,dy:number):number=>{
+    const values=sampled.map(p=>ringScore(gray,p.x+dx,p.y+dy,dpi,ringRadiusMm)).sort((a,b)=>a-b);
+    const middle=values.slice(Math.floor(values.length/4),Math.ceil(values.length*3/4));
+    return middle.reduce((a,b)=>a+b,0)/Math.max(1,middle.length)-0.35*Math.hypot(dx,dy);
+  };
+  const baseline=scored(0,0);
+  let best={dx:0,dy:0,score:baseline};
+  // Include the actual boundaries and zero. Stride 3 makes the coarse search
+  // 7x7 rather than 21x21 at the current 150 DPI setting.
+  const step=3;
+  for(let dy=-max;dy<=max;dy+=step)
     for(let dx=-max;dx<=max;dx+=step){
-      const sample=anchors.map(p=>ringScore(gray,p.x+dx,p.y+dy,dpi,ringRadiusMm))
-        .sort((a,b)=>a-b);
-      // middle half of anchors: ignore strongly inked answer rings / glare.
-      const start=Math.floor(sample.length/4),end=Math.ceil(sample.length*3/4);
-      const core=sample.slice(start,end);
-      const mean=core.reduce((a,b)=>a+b,0)/Math.max(1,core.length);
-      scores.push({dx,dy,score:mean-0.35*Math.hypot(dx,dy)});
+      const score=scored(dx,dy);
+      if(score>best.score)best={dx,dy,score};
     }
-  }
-  scores.sort((a,b)=>b.score-a.score);
-  const best=scores[0];
-  const baseline=scores.find(p=>p.dx===0&&p.dy===0)?.score ?? 0;
-  // No correction for an unambiguous unshifted grid or poor evidence.
+  const coarse={...best};
+  for(let dy=Math.max(-max,coarse.dy-3);dy<=Math.min(max,coarse.dy+3);dy++)
+    for(let dx=Math.max(-max,coarse.dx-3);dx<=Math.min(max,coarse.dx+3);dx++){
+      const score=scored(dx,dy);
+      if(score>best.score)best={dx,dy,score};
+    }
   const gain=best.score-baseline;
   const applied=(best.dx!==0||best.dy!==0)&&best.score>=15&&gain>=6;
   return {dx:applied?best.dx:0,dy:applied?best.dy:0,
