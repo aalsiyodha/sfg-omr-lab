@@ -74,7 +74,7 @@ export function hasInterBubbleInk(
       let columnDark = 0;
       for (let dy = -halfHeight; dy <= halfHeight; dy++) {
         const y = cy + dy;
-        if (y >= 0 && y < mat.rows && grayAt(mat,x,y) < threshold) columnDark++;
+        if (y >= 0 && y < mat.rows && grayAt(mat,x,y) < localCutoff) columnDark++;
       }
       if (columnDark >= 3) activeCols++;
     }
@@ -83,4 +83,38 @@ export function hasInterBubbleInk(
         activeCols >= Math.max(3, Math.round(0.75 * scale))) return true;
   }
   return false;
+}
+
+/**
+ * Review-only scan just outside the printed 3.4mm bubble outline.
+ * Only inspect top/bottom/left arcs: the option letter begins to the right,
+ * and the printed ring itself ends at approximately 1.7mm radius.
+ * Require an extended dark stroke rather than isolated compression specks.
+ */
+export function hasExternalStroke(
+  mat: InkMat, cx: number, cy: number, dpi: number, paper: number,
+): boolean {
+  if (paper < 95) return false; // unreliable contrast reference
+  const scale = dpi / 25.4;
+  const innerSq = (2.08 * scale) ** 2;
+  const outerSq = (3.05 * scale) ** 2;
+  const r = Math.ceil(3.05 * scale);
+  const ox = Math.round(cx), oy = Math.round(cy);
+  const threshold = Math.min(135, paper - 48);
+  const darkPoints: {x:number;y:number}[] = [];
+  for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++) {
+    const d2=dx*dx+dy*dy;
+    // Avoid the printed option letter at +3.3mm.
+    if (d2 < innerSq || d2 > outerSq || dx > 1.45*scale) continue;
+    const x=ox+dx,y=oy+dy;
+    if(x<0||y<0||x>=mat.cols||y>=mat.rows)continue;
+    if(grayAt(mat,x,y)<threshold)darkPoints.push({x:dx,y:dy});
+  }
+  if(darkPoints.length<7)return false;
+  const xs=darkPoints.map(p=>p.x),ys=darkPoints.map(p=>p.y);
+  const width=Math.max(...xs)-Math.min(...xs);
+  const height=Math.max(...ys)-Math.min(...ys);
+  // A 1-pixel blob is not a crossed/ticked mark.
+  return (width>=2 && height>=4 && darkPoints.length>=9) ||
+    (height>=2 && width>=5 && darkPoints.length>=9);
 }
