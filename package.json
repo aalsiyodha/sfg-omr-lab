@@ -1,7 +1,7 @@
 {
   "name": "sfg-omr-lab",
   "private": true,
-  "version": "2.2.0-omr2.1",
+  "version": "2.2.1-aruco-gray.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
