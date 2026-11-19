@@ -344,6 +344,7 @@ export function detectQuestion(
   const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
     measurements.map(m => m.localPaperBrightness ?? 235));
   const externalStroke = centres.some((c,i) =>
+    measurements[i].fillPercent < settings.bubbleFillThreshold &&
     hasExternalStroke(correctedGray,c.x,c.y,dpi,
       measurements[i].paperReferenceBrightness ?? measurements[i].localPaperBrightness ?? 235));
   const unexpectedInk = tracedOutline || offBubbleInk || externalStroke;
