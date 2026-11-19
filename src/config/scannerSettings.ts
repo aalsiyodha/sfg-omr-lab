@@ -62,7 +62,3 @@ export const MARK_REVIEW_THRESHOLDS = {
   horizontalDisparity: 65,
   testIdMinSeparation: 20,
 } as const;
-
-/** Offline A/B comparison build: skip extra stray-ink probes, keep geometry,
- * grayscale, radial validity, and strong multiple selection detection. */
-export const SIMPLIFIED_SCAN_EXPERIMENT = true;
