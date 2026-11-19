@@ -2,6 +2,14 @@
 import { OMR_LAYOUT, getBubbleCentre, getTestIdBubbleCentre, mmToPx } from '../config/omrLayout';
 import type { QuestionResult, MarkerDetectionResult } from '../types';
 
+/** A displayed multiple must not include a third, weaker crossed bubble. */
+export function highlightedMultipleOptions(q: QuestionResult): string[] {
+  if (q.status !== 'multiple') return [];
+  const solid = q.measurements.filter(m=>m.validMark && m.fillPercent>=75);
+  const cutoff = solid.length >= 2 ? 75 : 45;
+  return q.measurements.filter(m=>m.validMark && m.fillPercent>=cutoff).map(m=>m.option);
+}
+
 /**
  * Generate a visual overlay canvas showing detected bubbles, statuses, and fill percentages
  */
@@ -25,6 +33,7 @@ export function generateBubbleOverlay(
 
   // 2. Draw all 50 questions
   answers.forEach((q) => {
+    const multipleOptions=highlightedMultipleOptions(q);
     optLetters.forEach((opt, optIdx) => {
       const c = getBubbleCentre(q.question, optIdx as 0 | 1 | 2 | 3);
       const m = q.measurements.find((meas) => meas.option === opt);
@@ -32,11 +41,7 @@ export function generateBubbleOverlay(
       const cy = m?.sampleYPx ?? mmToPx(c.yMm, dpi);
       const isDetected = q.detectedAnswer === opt && q.status === 'detected';
       const maxFill = Math.max(...q.measurements.map(x => x.fillPercent));
-      // Highlight only the strongest confirmed selections; e.g. Q26 has
-      // solid A+B plus a stray slash over D. D is not a third accepted mark.
-      const confirmed=q.measurements.filter(x=>x.validMark && x.fillPercent>=75);
-      const multipleCutoff=confirmed.length>=2?75:45;
-      const isMultiple = q.status === 'multiple' && !!m && !!m.validMark && m.fillPercent >= multipleCutoff;
+      const isMultiple=multipleOptions.includes(opt);
       const isUncertain = q.status === 'uncertain' && !!m &&
         (m.fillPercent >= Math.max(20, maxFill - 12)) && maxFill >= 20;
 
