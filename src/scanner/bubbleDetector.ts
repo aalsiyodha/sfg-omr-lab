@@ -305,7 +305,7 @@ export function detectQuestion(
   const bands = centres.map(c => measureOutlineBand(correctedGray,c.x,c.y,dpi));
   const tracedOutline = bands.some((value,i) =>
     measurements[i].fillPercent < settings.bubbleFillThreshold &&
-    value < 120 && Math.max(...bands.filter((_,j)=>j!==i)) - value > 45);
+    value < 85 && Math.max(...bands.filter((_,j)=>j!==i)) - value > 45);
   const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
     measurements.map(m => m.localPaperBrightness ?? 235));
   const unexpectedInk = tracedOutline || offBubbleInk;
