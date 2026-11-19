@@ -8,7 +8,7 @@ import DiagnosticsPage from './pages/DiagnosticsPage';
 import { usePracticeTest } from './hooks/usePracticeTest';
 import { useScanResult } from './hooks/useScanResult';
 
-import { APP_VERSION } from './config/version';
+import { APP_VERSION, APP_RELEASE_LABEL } from './config/version';
 
 export type AppState = {
   opencv: 'loading' | 'ready' | 'error';
@@ -82,7 +82,7 @@ export default function App() {
           <div className="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ maxWidth: 1100 }}>
             <div className="d-flex align-items-center gap-2">
               <span className="fw-semibold text-dark">SFG OMR LAB</span>
-              <span className="badge bg-light text-secondary border">{APP_VERSION}</span>
+              <span className="badge bg-light text-secondary border">{APP_RELEASE_LABEL}</span>
             </div>
             <div>
               High-Precision Dual-Pass Optical Mark Recognition &bull; Calibrated for UPSC SFG 2027
