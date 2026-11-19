@@ -43,6 +43,14 @@ export interface QuestionResult {
   isManuallyEdited: boolean;
 }
 
+export interface GrayCalibrationResult {
+  status: 'ok' | 'low_contrast' | 'unavailable';
+  patchMedians: number[];
+  contrast: number | null;
+  ordered: boolean;
+  note: string;
+}
+
 export interface ScanResult {
   studentId: string | null;
   testId: number | null;
@@ -56,6 +64,7 @@ export interface ScanResult {
   registrationMethod?: string | null;
   orientationRotated?: boolean;
   processingTimeMs: number;
+  grayCalibration?: GrayCalibrationResult;
   stageLogs: LogEntry[];
   warnings: string[];
   errors: string[];
