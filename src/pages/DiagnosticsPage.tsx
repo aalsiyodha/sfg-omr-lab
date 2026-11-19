@@ -326,7 +326,7 @@ export default function DiagnosticsPage({ appState }: Props) {
       {/* E: Scanner Parameters */}
       <div className="card mb-4">
         <div className="card-header fw-semibold d-flex justify-content-between">
-          E — Scanner Parameters (Real-time tuning)
+          E — Scanner Parameters (Experimental tuning)
           <button className="btn btn-sm btn-outline-secondary" onClick={handleReset}>Reset Defaults</button>
         </div>
         <div className="card-body">

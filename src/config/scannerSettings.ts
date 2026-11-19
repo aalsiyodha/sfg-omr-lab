@@ -8,7 +8,6 @@ export interface ScannerSettings {
   markerMaxAreaPx: number;
   markerAspectTolerance: number;
   bubbleFillThreshold: number;
-  bubbleMinDifference: number;
   bubbleUncertainThreshold: number;
   scanDpi: number;
   debugMode: boolean;
@@ -22,7 +21,6 @@ export const DEFAULT_SETTINGS: ScannerSettings = {
   markerMaxAreaPx: 8000,
   markerAspectTolerance: 0.45,
   bubbleFillThreshold: 45,
-  bubbleMinDifference: 12,
   bubbleUncertainThreshold: 18,
   scanDpi: 150,
   debugMode: false,

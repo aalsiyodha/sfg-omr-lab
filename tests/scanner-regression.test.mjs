@@ -42,6 +42,7 @@ const bubbles = loadTS('src/scanner/bubbleDetector.ts', {
     strokeReviewMinFill:38,quadrantCoverage:24,diagonalLineCoverage:67,
     diagonalAxisGap:22,diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
   }},
+  './strayInk': {measureOutlineBand:()=>255,hasInterBubbleInk:()=>false},
   './radialInk': { measureRadialInk: () => ({
     core: 0,middle:0,outer:0,classification:'insufficient_resolution'
   }) }
@@ -369,7 +370,8 @@ test('v1.9 complete classifier rejects central dots and rings while keeping full
         diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
       }
     },
-    './radialInk':radial
+    './radialInk':radial,
+    './strayInk': {measureOutlineBand:()=>255,hasInterBubbleInk:()=>false}
   });
   const make = marks => {
     const W=240,H=220,data=new Uint8Array(W*H).fill(235);
@@ -391,4 +393,90 @@ test('v1.9 complete classifier rejects central dots and rings while keeping full
   assert.notEqual(realistic.detectQuestion(make(['blank','blank','ring','blank']),1,150,152).status,'detected');
   assert.equal(realistic.detectQuestion(make(['fill','fill','blank','blank']),1,150,152).status,'multiple');
   assert.notEqual(realistic.detectQuestion(make(['fill','blank','blank','dot']),1,150,152).status,'multiple');
+});
+
+test('v2 shadowed clean paper stays blank while a true filled bubble is detected', () => {
+  const radial = loadTS('src/scanner/radialInk.ts');
+  const px = mm => mm * 150 / 25.4;
+  const engine = loadTS('src/scanner/bubbleDetector.ts', {
+    '../config/omrLayout': {
+      mmToPx:px,
+      getBubbleCentre: (_q,option) => ({xMm:(50+option*45)/px(1),yMm:100/px(1)}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings': {
+      getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{
+        minFill:45,nearThresholdFill:42,visiblePartialFill:37,strongFill:85,
+        strongMultipleRunner:65,secondMarkTopMin:70,secondMarkFillMin:36,
+        secondMarkRelative:.4,minJump:16,stabilityReviewSpread:18,
+        thresholdPerturbation:8,strokeReviewMaxFill:88,strokeReviewMinFill:38,
+        quadrantCoverage:24,diagonalLineCoverage:67,diagonalAxisGap:22,
+        diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+      }
+    },
+    './radialInk':radial,
+    './strayInk':{measureOutlineBand:()=>255,hasInterBubbleInk:()=>false}
+  });
+  const W=240,H=220;
+  const data=new Uint8Array(W*H).fill(126);
+  const cx=95,cy=100;
+  for(let dy=-9;dy<=9;dy++)for(let dx=-9;dx<=9;dx++){
+    if(Math.hypot(dx,dy)<8.5)data[(cy+dy)*W+cx+dx]=20;
+  }
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  const result=engine.detectQuestion(mat,1,150,145);
+  assert.equal(result.status,'detected');
+  assert.equal(result.answer,'B');
+  const a=result.measurements.find(x=>x.option==='A');
+  assert.ok(a.fillPercent < 10, 'shadowed unmarked paper is not ink');
+});
+
+test('v2 off-bubble corridor distinguishes stray ink from clean paper', () => {
+  const stray=loadTS('src/scanner/strayInk.ts');
+  const W=280,H=180, data=new Uint8Array(W*H).fill(235);
+  const centres=[50,135,220].map(x=>({x,y:90}));
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  assert.equal(stray.hasInterBubbleInk(mat,centres,150,145),false);
+  // About 3mm after the B option-letter exclusion, within the corridor.
+  for(let y=87;y<=93;y++)for(let x=91;x<=106;x++)data[y*W+x]=20;
+  assert.equal(stray.hasInterBubbleInk(mat,centres,150,145),true);
+});
+
+test('v2 measured outline separates a traced ring from an untouched region', () => {
+  const stray=loadTS('src/scanner/strayInk.ts');
+  const W=180,H=180,data=new Uint8Array(W*H).fill(205);
+  const px=150/25.4;
+  for(let dy=-13;dy<=13;dy++)for(let dx=-13;dx<=13;dx++){
+    const radius=Math.hypot(dx,dy)/px;
+    if(radius>=1.48 && radius<=1.95)data[(90+dy)*W+90+dx]=20;
+  }
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  assert.ok(stray.measureOutlineBand(mat,90,90,150)<100);
+  assert.ok(stray.measureOutlineBand(mat,40,90,150)>190);
+});
+
+test('v2 midpoint candidate regions tolerate extra framing margins', () => {
+  mockCv([
+    {x:500,y:255,width:20,height:20},
+    {x:500,y:1215,width:20,height:20},
+    {x:200,y:745,width:20,height:20},
+    {x:835,y:745,width:20,height:20}
+  ]);
+  const detector=loadTS('src/scanner/midpointDetector.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}}}
+  });
+  const result=detector.detectMidpointMarkers(null,1035,1460);
+  assert.equal(result.found,true);
+});
+
+test('v2 corridor sensor ignores a uniformly dark shadow', () => {
+  const stray=loadTS('src/scanner/strayInk.ts');
+  const W=280,H=180, data=new Uint8Array(W*H).fill(132);
+  const centres=[50,135,220].map(x=>({x,y:90}));
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  assert.equal(stray.hasInterBubbleInk(mat,centres,150,142,[133,133,133]),false);
+  for(let y=87;y<=93;y++)for(let x=91;x<=106;x++)data[y*W+x]=20;
+  assert.equal(stray.hasInterBubbleInk(mat,centres,150,142,[133,133,133]),true);
 });

@@ -64,10 +64,10 @@ export function detectMidpointMarkers(binary: any, W: number, H: number): Midpoi
     }
 
     const regions: Record<Side, Candidate[]> = {
-      top: candidates.filter(c => c.x > W * .32 && c.x < W * .68 && c.y < H * .14),
-      bottom: candidates.filter(c => c.x > W * .32 && c.x < W * .68 && c.y > H * .86),
-      left: candidates.filter(c => c.x < W * .15 && c.y > H * .34 && c.y < H * .66),
-      right: candidates.filter(c => c.x > W * .85 && c.y > H * .34 && c.y < H * .66),
+      top: candidates.filter(c => c.x > W * .32 && c.x < W * .68 && c.y < H * .28),
+      bottom: candidates.filter(c => c.x > W * .32 && c.x < W * .68 && c.y > H * .72),
+      left: candidates.filter(c => c.x < W * .29 && c.y > H * .25 && c.y < H * .75),
+      right: candidates.filter(c => c.x > W * .71 && c.y > H * .25 && c.y < H * .75),
     };
     const count = sides.filter(side => regions[side].length > 0).length;
     if (count < 4) {
@@ -96,7 +96,7 @@ export function detectMidpointMarkers(binary: any, W: number, H: number): Midpoi
     const topBottom = Math.hypot(selected.bottom.x-selected.top.x, selected.bottom.y-selected.top.y);
     const leftRight = Math.hypot(selected.right.x-selected.left.x, selected.right.y-selected.left.y);
     const symmetric =
-      topBottom > H * .62 && leftRight > W * .60 &&
+      topBottom > H * .53 && leftRight > W * .52 &&
       Math.abs(selected.top.x-selected.bottom.x) < W * .22 &&
       Math.abs(selected.left.y-selected.right.y) < H * .22;
     const expectedAspect = (202-8)/(289-8);

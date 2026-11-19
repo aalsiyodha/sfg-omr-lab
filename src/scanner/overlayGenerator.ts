@@ -30,9 +30,11 @@ export function generateBubbleOverlay(
       const cy = mmToPx(c.yMm, dpi);
 
       const m = q.measurements.find((meas) => meas.option === opt);
-      const isDetected = q.detectedAnswer === opt && (q.status === 'detected' || q.status === 'uncertain');
+      const isDetected = q.detectedAnswer === opt && q.status === 'detected';
+      const maxFill = Math.max(...q.measurements.map(x => x.fillPercent));
       const isMultiple = q.status === 'multiple' && (m?.fillPercent ?? 0) >= 30;
-      const isUncertain = q.status === 'uncertain' && q.detectedAnswer === opt;
+      const isUncertain = q.status === 'uncertain' && !!m &&
+        (m.fillPercent >= Math.max(20, maxFill - 12)) && maxFill >= 20;
 
       ctx.beginPath();
       ctx.arc(cx, cy, radiusPx * 1.15, 0, Math.PI * 2);
@@ -61,6 +63,16 @@ export function generateBubbleOverlay(
         ctx.stroke();
       }
     });
+    // Stray ink can produce uncertainty without any dark bubble interior.
+    // Show a conspicuous review cue at the row, not a fabricated answer.
+    if (q.status === 'uncertain' && q.measurements.every(m => m.fillPercent < 20)) {
+      const a = getBubbleCentre(q.question, 0);
+      const x = mmToPx(a.xMm - 5.5, dpi);
+      const y = mmToPx(a.yMm, dpi);
+      ctx.fillStyle = '#b77900';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText('!', x, y + 6);
+    }
   });
 
   // 3. Draw Test ID bubbles

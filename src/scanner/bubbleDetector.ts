@@ -3,6 +3,7 @@ import { getBubbleCentre, getTestIdBubbleCentre, mmToPx, OMR_LAYOUT } from '../c
 import { getSettings, MARK_REVIEW_THRESHOLDS } from '../config/scannerSettings';
 const RULES = MARK_REVIEW_THRESHOLDS;
 import { measureRadialInk } from './radialInk';
+import { measureOutlineBand, hasInterBubbleInk } from './strayInk';
 import type { AnswerOption, BubbleMeasurement, DetectionStatus, QuestionResult } from '../types';
 
 declare const cv: any;
@@ -26,6 +27,7 @@ export interface BubbleMeasurementDetail {
   effectiveThreshold?: number;
   axisCoverage?: number;
   diagonalCoverage?: number;
+  filledSectors?: number;
 }
 
 /**
@@ -123,10 +125,10 @@ function measureBubbleInterior(
   }
   ringSamples.sort((a,b) => a-b);
   const paper = ringSamples.length ? ringSamples[Math.floor(ringSamples.length / 2)] : 235;
-  // Cap the local adjustment at +/-7 grayscale levels: strong changes in
-  // illumination should not redefine a marked bubble as background.
+  // Shadow-resistant threshold: local paper must never itself count as ink.
+  // Retain the established threshold on well-lit paper.
   const correction = Math.max(-7, Math.min(7, (paper - 235) * .14));
-  const inkThreshold = Math.max(135, Math.min(173, darkThreshold + correction));
+  const inkThreshold = Math.max(50, Math.min(173, darkThreshold + correction, paper - 24));
 
   let totalCirclePx = 0;
   let darkCirclePx = 0;
@@ -137,6 +139,8 @@ function measureBubbleInterior(
   let q3Dark = 0, q3Tot = 0; // Bottom-Left
   let q4Dark = 0, q4Tot = 0; // Bottom-Right
   let axisDark = 0, axisTotal = 0, diagonalDark = 0, diagonalTotal = 0;
+  const sectorDark = Array(8).fill(0) as number[];
+  const sectorTotal = Array(8).fill(0) as number[];
 
   const rSq = r * r;
   for (let row = 0; row < h; row++) {
@@ -149,6 +153,11 @@ function measureBubbleInterior(
         const pixelVal = grayMat.ucharPtr(y + row, x + col)[0];
         const isDark = pixelVal < inkThreshold;
         if (isDark) darkCirclePx++;
+        if (r >= 5 && dx * dx + dy * dy >= rSq * 0.25) {
+          const sector = Math.min(7, Math.floor((Math.atan2(dy, dx) + Math.PI) / (2 * Math.PI) * 8));
+          sectorTotal[sector]++;
+          if (isDark) sectorDark[sector]++;
+        }
         if (Math.abs(dx) <= 1 || Math.abs(dy) <= 1) {
           axisTotal++;
           if (isDark) axisDark++;
@@ -196,12 +205,15 @@ function measureBubbleInterior(
   const filledQuadrants = [q1Pct, q2Pct, q3Pct, q4Pct].filter(v => v >= RULES.quadrantCoverage).length;
   const axisCoverage = axisTotal ? axisDark * 100 / axisTotal : 0;
   const diagonalCoverage = diagonalTotal ? diagonalDark * 100 / diagonalTotal : 0;
+  const filledSectors = sectorTotal.filter((n,i) => n >= 3 && sectorDark[i] / n >= 0.30).length;
   // A thick X can cover all four quadrants and must not become valid at 65%.
   const strokeLike = fillPercent >= RULES.strokeReviewMinFill && fillPercent < RULES.strokeReviewMaxFill && (
     filledQuadrants <= 2 ||
     (diagonalCoverage >= RULES.diagonalLineCoverage && diagonalCoverage - axisCoverage >= RULES.diagonalAxisGap) ||
     diagonalDisparity > RULES.diagonalDisparity ||
-    horizontalDisparity > RULES.horizontalDisparity
+    horizontalDisparity > RULES.horizontalDisparity ||
+    (r >= 5 && filledSectors < 5 && fillPercent < 85) ||
+    (fillPercent < 85 && diagonalDisparity > 65 && horizontalDisparity >= 30)
   );
 
   // OMR rejection criteria:
@@ -211,7 +223,7 @@ function measureBubbleInterior(
   let isValid = true;
   let rejectReason: string | undefined;
 
-  if (fillPercent < RULES.minFill) {
+  if (fillPercent < getSettings().bubbleFillThreshold) {
     isValid = false;
     rejectReason = `Low fill (${fillPercent.toFixed(0)}%)`;
   } else if (strokeLike) {
@@ -227,7 +239,7 @@ function measureBubbleInterior(
 
   return { fillPercent, horizontalDisparity, diagonalDisparity, isValid,
     rejectReason, localPaperBrightness: paper, filledQuadrants, strokeLike,
-    effectiveThreshold: inkThreshold, axisCoverage, diagonalCoverage };
+    effectiveThreshold: inkThreshold, axisCoverage, diagonalCoverage, filledSectors };
 }
 
 export function detectQuestion(
@@ -249,7 +261,7 @@ export function detectQuestion(
     const detail = measureBubbleInterior(correctedGray, cxPx, cyPx, interiorRadiusPx, effectiveThreshold, dpi);
     const radial = measureRadialInk(correctedGray, cxPx, cyPx, dpi, detail.effectiveThreshold ?? effectiveThreshold);
     const clearlyInvalid = radial.classification === 'centre_dot' || radial.classification === 'hollow_ring';
-    const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= RULES.minFill;
+    const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
     if (detail.fillPercent >= RULES.minFill && (clearlyInvalid || unevenOuter)) {
       detail.isValid = false;
       detail.rejectReason = radial.classification === 'centre_dot'
@@ -277,6 +289,7 @@ export function detectQuestion(
         radialMiddle: Number(radial.middle.toFixed(1)),
         radialOuter: Number(radial.outer.toFixed(1)),
         radialShape: radial.classification,
+        filledSectors: detail.filledSectors,
         xMm: centre.xMm, yMm: centre.yMm
       },
       detail,
@@ -284,6 +297,23 @@ export function detectQuestion(
   });
 
   const measurements = rawMeasurements.map(r => r.measurement);
+  const centres = options.map((_, idx) => {
+    const c = getBubbleCentre(question, idx as 0|1|2|3);
+    return { x: mmToPx(c.xMm,dpi), y: mmToPx(c.yMm,dpi) };
+  });
+  // Separate stray-ink signals from answer validity.
+  const bands = centres.map(c => measureOutlineBand(correctedGray,c.x,c.y,dpi));
+  const tracedOutline = bands.some((value,i) =>
+    measurements[i].fillPercent < settings.bubbleFillThreshold &&
+    value < 85 && Math.max(...bands.filter((_,j)=>j!==i)) - value > 45);
+  const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
+    measurements.map(m => m.localPaperBrightness ?? 235));
+  const unexpectedInk = tracedOutline || offBubbleInk;
+  const reviewUnexpected = (): BubbleReadResult => {
+    const target = rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
+    target.measurement.rejectReason = tracedOutline ? 'Ink traced around a bubble outline' : 'Ink detected between answer bubbles';
+    return { measurements, answer:null,status:'uncertain',confidence:0 };
+  };
   
   // Sort by fill descending
   const sorted = [...rawMeasurements].sort((a, b) => b.measurement.fillPercent - a.measurement.fillPercent);
@@ -311,7 +341,9 @@ export function detectQuestion(
     return { measurements, answer: null, status: 'multiple', confidence: 0 };
   }
   if (max < settings.bubbleFillThreshold) {
+    if (unexpectedInk) return reviewUnexpected();
     if (max >= RULES.nearThresholdFill ||
+        (max >= RULES.visiblePartialFill && (top.detail.filledQuadrants ?? 0) >= 2) ||
         (max >= RULES.visiblePartialFill && top.detail.strokeLike) ||
         rawMeasurements.some(r => r.measurement.radialShape === 'hollow_ring' &&
           r.measurement.radialOuter >= 55)) {
@@ -355,6 +387,8 @@ export function detectQuestion(
       return { measurements, answer: null, status: 'uncertain', confidence: 0 };
     }
   }
+
+  if (unexpectedInk) return reviewUnexpected();
 
   // Difference from other options is a separation score, not the likelihood
   // of a valid filled bubble. Cap confidence for borderline marks.
@@ -400,14 +434,14 @@ export function detectTestId(
   const tensFills = (TID.tens.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('tens', digit);
     const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
-    return { digit, fill: detail.fillPercent };
+    return { digit, fill: detail.fillPercent, valid: detail.isValid };
   });
   
   // Detect UNITS (0-9)
   const unitsFills = (TID.units.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('units', digit);
     const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
-    return { digit, fill: detail.fillPercent };
+    return { digit, fill: detail.fillPercent, valid: detail.isValid };
   });
   
   const sortedTens = [...tensFills].sort((a,b) => b.fill - a.fill);
@@ -422,11 +456,11 @@ export function detectTestId(
   const unitsDiff = runnerUnits ? bestUnits.fill - runnerUnits.fill : bestUnits.fill;
   
   // Digit detection
-  const tens = (bestTens && bestTens.fill >= settings.bubbleFillThreshold && tensDiff >= RULES.testIdMinSeparation)
+  const tens = (bestTens && bestTens.fill >= settings.bubbleFillThreshold && bestTens.valid && tensDiff >= RULES.testIdMinSeparation)
     ? bestTens.digit
     : null;
     
-  const units = (bestUnits && bestUnits.fill >= settings.bubbleFillThreshold && unitsDiff >= RULES.testIdMinSeparation)
+  const units = (bestUnits && bestUnits.fill >= settings.bubbleFillThreshold && bestUnits.valid && unitsDiff >= RULES.testIdMinSeparation)
     ? bestUnits.digit
     : null;
   
