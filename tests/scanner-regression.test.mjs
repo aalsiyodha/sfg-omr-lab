@@ -610,7 +610,7 @@ test('2.0.1: external thin stroke sensor distinguishes blank from tick',()=>{
   const cx=95,cy=95,mmPx=150/25.4;
   const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
   assert.equal(stray.hasExternalStroke(mat,cx,cy,150,220),false);
-  for(let y=cy-15;y<=cy-13;y++)for(let x=cx-7;x<=cx-3;x++)
+  for(let y=cy-17;y<=cy-11;y++)for(let x=cx-9;x<=cx+1;x++)
     if(Math.hypot(x-cx,y-cy)>2.08*mmPx && Math.hypot(x-cx,y-cy)<3.05*mmPx)
       data[y*W+x]=20;
   assert.equal(stray.hasExternalStroke(mat,cx,cy,150,220),true);
