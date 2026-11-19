@@ -1,7 +1,7 @@
 name: Scanner reliability checks
 on:
   push:
-    branches: [test-build, hybrid-experiment]
+    branches: [test-build, hybrid-experiment, omr-v2-experiment]
   pull_request:
     branches: [test-build, main]
 
