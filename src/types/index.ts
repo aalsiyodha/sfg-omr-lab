@@ -20,6 +20,8 @@ export interface BubbleMeasurement {
   sampleYPx?: number;
   inkThreshold?: number;
   localPaperBrightness?: number;
+  paperReferenceBrightness?: number;
+  paperReferenceContaminated?: boolean;
   filledQuadrants?: number;
   filledSectors?: number;
   strokeLike?: boolean;
