@@ -510,7 +510,7 @@ export function detectTestId(
   const tensFills = (TID.tens.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('tens', digit);
     const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
-    return { digit, fill: detail.fillPercent, valid: detail.isValid };
+    return { digit, fill: detail.fillPercent, valid: detail.isValid, paper: detail.paperReferenceBrightness ?? 235 };
   });
   
   // Detect UNITS (0-9)
@@ -531,14 +531,24 @@ export function detectTestId(
   const runnerUnits = sortedUnits[1];
   const unitsDiff = runnerUnits ? bestUnits.fill - runnerUnits.fill : bestUnits.fill;
   
-  // Digit detection
-  const tens = (bestTens && bestTens.fill >= settings.bubbleFillThreshold && bestTens.valid && tensDiff >= RULES.testIdMinSeparation)
-    ? bestTens.digit
-    : null;
-    
-  const units = (bestUnits && bestUnits.fill >= settings.bubbleFillThreshold && bestUnits.valid && unitsDiff >= RULES.testIdMinSeparation)
-    ? bestUnits.digit
-    : null;
+  // The ID rows contain only one valid mark each. Allow a strongly
+  // isolated mark even if the generic answer-shape classifier rejects it
+  // due to photographic artifacts. Never choose a digit on a close tie.
+  const isolatedDigit = (
+    best: {digit:number;fill:number;valid:boolean;paper:number} | undefined,
+    runner: {fill:number} | undefined,
+    separation: number,
+  ): number | null => {
+    if (!best || separation < RULES.testIdMinSeparation) return null;
+    const strong = best.fill >= 70 && separation >= 30;
+    const moderate = best.fill >= settings.bubbleFillThreshold &&
+      best.valid && separation >= RULES.testIdMinSeparation;
+    const lowLightRescue = best.fill >= 40 && best.valid &&
+      separation >= 32 && (runner?.fill ?? 0) < 18;
+    return strong || moderate || lowLightRescue ? best.digit : null;
+  };
+  const tens = isolatedDigit(bestTens, runnerTens, tensDiff);
+  const units = isolatedDigit(bestUnits, runnerUnits, unitsDiff);
   
   const testId = (tens !== null && units !== null) ? tens * 10 + units : null;
   const validRange = testId !== null && testId >= 1 && testId <= 40;
