@@ -25,7 +25,8 @@ export default function ScanPage({ appState }: Props) {
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ResultViewTab>('overlay');
+  const [activeTab, setActiveTab] = useState<ResultViewTab>('table');
+  const [reviewFilter, setReviewFilter] = useState<'flagged' | 'all'>('flagged');
   const [llmCopied, setLlmCopied] = useState(false);
   const [showTechnicalReport, setShowTechnicalReport] = useState(false);
 
@@ -133,7 +134,8 @@ export default function ScanPage({ appState }: Props) {
     setCapturedFile(null);
     setPreviewUrl(null);
     setSubmitError(null);
-    setActiveTab('overlay');
+    setActiveTab('table');
+    setReviewFilter('flagged');
     setLlmCopied(false);
   };
 
@@ -225,7 +227,14 @@ export default function ScanPage({ appState }: Props) {
   const hasErrorsOrWarnings = (scanResult?.errors && scanResult.errors.length > 0) || !hasAnswers;
 
   const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult}) : '';
-  const reviewCount = scanResult?.answers.filter(a => ['uncertain','multiple','error'].includes(a.status)).length ?? 0;
+  // Strict-invalid marks (ticks, crescents, dots and partials) are blanks,
+  // not review cases. A manual edit resolves a previously flagged question.
+  const requiresReview = (a: {status: string; isManuallyEdited?: boolean}) =>
+    !a.isManuallyEdited && ['uncertain','multiple','error'].includes(a.status);
+  const reviewCount = scanResult?.answers.filter(requiresReview).length ?? 0;
+  const resolvedCount = (scanResult?.answers.length ?? 0) - reviewCount;
+  const visibleAnswers = (scanResult?.answers ?? []).filter(a =>
+    reviewFilter === 'all' || requiresReview(a));
   const llmReportPreview = scanResult
     ? generateLLMDiagnosticPrompt({
         scanResult,
@@ -505,7 +514,7 @@ export default function ScanPage({ appState }: Props) {
                     className={`nav-link py-1 px-3 ${activeTab === 'table' ? 'active' : ''}`}
                     onClick={() => setActiveTab('table')}
                   >
-                    <i className="bi bi-table me-1" />Answer Table (Edit)
+                    <i className="bi bi-clipboard-check me-1" />Review answers {reviewCount > 0 && <span className="review-nav-count">{reviewCount}</span>}
                   </button>
                 </li>
                 <li className="nav-item ms-auto">
@@ -558,70 +567,83 @@ export default function ScanPage({ appState }: Props) {
                 </div>
               )}
 
-              {/* Tab 3: Answer Grid Table */}
+              {/* Tab 3: Review-first answer table. Complete answers are visible on demand. */}
               {activeTab === 'table' && (
-                <div>
-                  {hasAnswers ? (
+                <section className="review-workspace" aria-label="Answer review">
+                  <div className="review-summary">
+                    <div>
+                      <h5 className="mb-1 fw-bold">Review your answers</h5>
+                      <p className="mb-0">Only questions that need attention appear by default. You can inspect all 50 at any time.</p>
+                    </div>
+                    <div className="review-summary-counts" aria-live="polite">
+                      <span className="review-count-pill resolved"><i className="bi bi-check-circle me-1" />{resolvedCount} resolved</span>
+                      <span className="review-count-pill flagged"><i className="bi bi-exclamation-circle me-1" />{reviewCount} to review</span>
+                    </div>
+                  </div>
+                  <div className="review-filter-bar" role="group" aria-label="Filter reviewed answers">
+                    <button type="button" aria-pressed={reviewFilter === 'flagged'}
+                      className={`review-filter-btn ${reviewFilter === 'flagged' ? 'active' : ''}`}
+                      onClick={() => setReviewFilter('flagged')}>
+                      <i className="bi bi-flag me-1" /> Needs review ({reviewCount})
+                    </button>
+                    <button type="button" aria-pressed={reviewFilter === 'all'}
+                      className={`review-filter-btn ${reviewFilter === 'all' ? 'active' : ''}`}
+                      onClick={() => setReviewFilter('all')}>
+                      <i className="bi bi-grid-3x3-gap me-1" /> All questions ({scanResult.answers.length})
+                    </button>
+                  </div>
+                  {!hasAnswers ? (
+                    <div className="review-empty-state">No answers could be processed.</div>
+                  ) : reviewFilter === 'flagged' && reviewCount === 0 ? (
+                    <div className="review-empty-state">
+                      <i className="bi bi-check-circle-fill" aria-hidden="true" />
+                      <strong>No questions need review</strong>
+                      <span>Every question is resolved. Check the full sheet if you want to double-check.</span>
+                      <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => setReviewFilter('all')}>View all answers</button>
+                    </div>
+                  ) : (
                     <div className="table-responsive answer-grid-table">
-                      <table className="table table-sm table-bordered mb-0" style={{ fontSize: '0.8rem' }}>
-                        <thead>
-                          <tr className="table-light">
-                            <th>Q</th><th>Det.</th><th>Status</th><th>Conf.</th><th>Edit</th>
-                            <th>Q</th><th>Det.</th><th>Status</th><th>Conf.</th><th>Edit</th>
-                          </tr>
-                        </thead>
+                      <table className="table review-answer-table mb-0">
+                        <thead><tr><th scope="col">Question</th><th scope="col">Reading</th><th scope="col">Status</th><th scope="col">Confidence</th><th scope="col">Confirm or change answer</th></tr></thead>
                         <tbody>
-                          {Array.from({length: 25}, (_, i) => i).map(i => {
-                            const left = scanResult.answers[i];
-                            const right = scanResult.answers[i + 25];
-                            const renderRow = (a: typeof left) => {
-                              if (!a) return <td colSpan={5} className="text-muted">—</td>;
-                              return (
-                                <>
-                                  <td className="fw-bold">{a.question}</td>
-                                  <td className="fw-bold" style={{ color: a.isManuallyEdited ? 'var(--accent)' : undefined }}>
-                                    {a.detectedAnswer || '—'}
-                                  </td>
-                                  <td>
-                                    <span className={`badge ${
-                                      a.status==='detected' ? 'bg-success' :
-                                      a.status==='multiple' ? 'bg-danger' :
-                                      a.status==='uncertain' ? 'bg-warning text-dark' : 'bg-secondary'
-                                    }`} style={{ fontSize: '0.65rem' }}>{a.status}</span>
-                                  </td>
-                                  <td>{a.confidence.toFixed(0)}%</td>
-                                  <td>
-                                    <div className="d-flex gap-1">
-                                      {(['A','B','C','D'] as AnswerOption[]).map(opt => (
-                                        <button key={opt}
-                                          className={`btn btn-xs ${a.detectedAnswer === opt ? 'btn-primary' : 'btn-outline-secondary'}`}
-                                          style={{ padding: '1px 5px', fontSize: '0.65rem' }}
-                                          onClick={() => updateAnswer(a.question, opt)}
-                                        >{opt}</button>
-                                      ))}
-                                      <button className="btn btn-xs btn-outline-secondary"
-                                        style={{ padding: '1px 5px', fontSize: '0.65rem' }}
-                                        onClick={() => updateAnswer(a.question, null)}
-                                      >—</button>
-                                    </div>
-                                  </td>
-                                </>
-                              );
-                            };
+                          {visibleAnswers.map(answer => {
+                            const flagged = requiresReview(answer);
                             return (
-                              <tr key={i}>
-                                {renderRow(left)}
-                                {right && renderRow(right)}
+                              <tr key={answer.question} className={flagged ? 'review-answer-flagged' : 'review-answer-resolved'}>
+                                <th scope="row" className="review-question-number">Q{String(answer.question).padStart(2,'0')}</th>
+                                <td className="review-current-answer">{answer.detectedAnswer || '—'}</td>
+                                <td><span className={`review-status-pill ${answer.status}`}>
+                                  {flagged && <i className="bi bi-exclamation-circle me-1" />}
+                                  {answer.isManuallyEdited ? 'Confirmed' : answer.status}
+                                </span></td>
+                                <td className="review-confidence">{answer.confidence.toFixed(0)}%</td>
+                                <td>
+                                  <div className="review-answer-actions" role="group" aria-label={`Set answer for question ${answer.question}`}>
+                                    {(['A','B','C','D'] as AnswerOption[]).map(opt => (
+                                      <button key={opt} type="button"
+                                        aria-label={`Question ${answer.question}: set ${opt}`}
+                                        aria-pressed={answer.detectedAnswer === opt}
+                                        className={`review-choice ${answer.detectedAnswer === opt ? 'selected' : ''}`}
+                                        onClick={() => updateAnswer(answer.question,opt)}>{opt}</button>
+                                    ))}
+                                    <button type="button" aria-label={`Question ${answer.question}: mark blank`}
+                                      aria-pressed={answer.status === 'blank'}
+                                      className={`review-choice review-blank-choice ${answer.status === 'blank' ? 'selected' : ''}`}
+                                      onClick={() => updateAnswer(answer.question,null)}>Blank</button>
+                                  </div>
+                                </td>
                               </tr>
                             );
                           })}
                         </tbody>
                       </table>
                     </div>
-                  ) : (
-                    <div className="alert alert-warning small mb-0">No answers could be processed.</div>
                   )}
-                </div>
+                  <p className="review-help-text"><i className="bi bi-info-circle me-1" />
+                    A tick, slash, dot, crescent or incomplete fill is blank under SFG rules. Only uncertain, multiple or error readings require review.
+                    Changes are saved in this scan.
+                  </p>
+                </section>
               )}
 
               {/* Tab 4: LLM Prompt Format */}
