@@ -84,6 +84,8 @@ export function generateLLMDiagnosticPrompt({
         ' valid='+String(m.validMark ?? '?')+
         ' H='+f(m.horizontalDisparity)+' D='+f(m.diagonalDisparity)+
         ' quad='+String(m.filledQuadrants??'?')+
+        ' hatchRows='+String(m.hatchGapRows??'?')+
+        (m.hatchLike?' hatchLike=true':'')+
         ' sectors='+String(m.filledSectors??'?')+
         ' axis='+f(m.axisCoverage)+' diag='+f(m.diagonalCoverage)+
         ' radial='+String(m.radialShape??'?')+
