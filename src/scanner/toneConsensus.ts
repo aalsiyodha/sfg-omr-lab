@@ -34,15 +34,18 @@ export function reconcileToneAnswers(
     const a=strongest(baseline),b=strongest(row);
     let action='retain_corrected';
     let final=row;
-    // A tone LUT must never manufacture a selected answer from a raw
-    // reading below the validated 45% fill floor. This is a safety veto,
-    // not evidence that an incomplete mark should count as an answer.
-    if (row.status==='detected' && a.fillPercent<45) {
-      final={...row, detectedAnswer:null, status:'blank', confidence:0,
-        measurements:row.measurements.map(m=>({...m}))};
+    // The original grayscale is an independent safety witness. Tone
+    // correction may confirm an already-detected solid fill, but cannot
+    // create a new automatic selection from a raw blank or uncertain row.
+    // Keep deliberate invalid markings unattempted under SFG strict-fill rules.
+    if (row.status==='detected' && baseline.status!=='detected') {
+      final={...row, detectedAnswer:null,
+        status:baseline.status==='blank'?'blank':'uncertain',
+        confidence:0, measurements:row.measurements.map(m=>({...m}))};
       const m=final.measurements.find(x=>x.option===b.option);
-      if(m)m.rejectReason='Tone-only selection rejected: original grayscale has insufficient ink';
-      action='reject_tone_only_promotion';
+      if(m)m.rejectReason='Tone-only selection vetoed by original grayscale';
+      action=a.fillPercent<45
+        ? 'reject_tone_only_low_raw_ink':'reject_tone_only_conflict';
     }
     // A manual-review indication may not be silently downgraded to blank
     // only because the tone calibration lowered its measured fill.
