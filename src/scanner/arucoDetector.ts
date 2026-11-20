@@ -118,7 +118,9 @@ export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
         if(area<Math.max(45,expected*.20)||area>expected*4)continue;
         const rect=cv.boundingRect(contour);
         if(rect.width<13||rect.height<13)continue;
-        if(rect.y>gray.rows*.35&&rect.y<gray.rows*.65)continue;
+        // Do not filter by portrait-only y position. A sideways (90/270°)
+        // photograph moves the printed top/bottom ArUco IDs into the
+        // middle image band. The ID decoder itself validates the pattern.
         if(Math.abs(rect.width/rect.height-1)>.7)continue;
         approx=new cv.Mat();
         cv.approxPolyDP(contour,approx,cv.arcLength(contour,true)*.045,true);
