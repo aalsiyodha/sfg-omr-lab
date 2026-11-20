@@ -96,15 +96,15 @@ export function generateLLMDiagnosticPrompt({
   lines.push('Important stage logs ('+significant.length+'/'+logs.length+'):');
   if (!significant.length) lines.push('None.');
   const redact=(s:string)=>s
-    .replace(/SFGOMR1:[^\\s"'|,}]+/gi,'[REDACTED_QR]')
-    .replace(/("?(?:studentId|qrRaw|raw)"?\\s*:\\s*)"[^"]*"/gi,'$1"[REDACTED]"');
+    .replace(/SFGOMR1:[^\s"'|,}]+/gi,'[REDACTED_QR]')
+    .replace(/("?(?:studentId|qrRaw|raw)"?\s*:\s*)"[^"]*"/gi,'$1"[REDACTED]"');
   for (const log of significant)
     lines.push(redact('['+log.level+'/'+log.stage+'] '+log.message+
       (log.data?' '+JSON.stringify(log.data):'')));
 
   lines.push('Original photograph and optional bubble overlay should be attached separately.');
   lines.push('Filename is included for image/report matching; student and QR identities are omitted.');
-  return lines.join('\\n');
+  return lines.join('\n');
 }
 
 /**
