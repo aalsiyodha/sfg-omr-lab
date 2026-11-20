@@ -238,12 +238,12 @@ export default function ScanPage({ appState }: Props) {
       </div>
 
       <div className="alert alert-info border mb-3" role="note">
-        <strong><i className="bi bi-stars me-2" />What's new in v2.2.5</strong>
+        <strong><i className="bi bi-stars me-2" />LITE v2.2.6 — 5175 experiment</strong>
         <div className="small mt-1">
-          Strict partial-mark rejection (ticks, hatching, dots and half-fills);
-          fully shaded multiple options are flagged and scored as incorrect
-          (−0.66 for a 2-mark practice question). High-ink rejected bubbles
-          now appear in diagnostics. Results remain beta: inspect doubtful marks.
+          Faster candidate alignment: stop when QR and both timing bands verify
+          at 50/50. Reuse hatch-shape measurements instead of recalculating them.
+          Strict partial-mark and multiple-answer policies are unchanged.
+          Compare identical photos against ANTIGRAVITY on port 5173.
         </div>
       </div>
 
