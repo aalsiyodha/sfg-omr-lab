@@ -1463,3 +1463,31 @@ test('diagnostics keep filenames and remove repetitive full-report instructions'
   const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
   assert.ok(scan.includes('scanResult, file: capturedFile, activeTestId'));
 });
+
+
+test('v2.2.5: multiple-filled answer incurs the wrong-answer penalty', () => {
+  const { calculateScore } = loadTS('src/scoring/scoringEngine.ts');
+  const answerKey = Array(50).fill('A');
+  const answers = Array.from({ length: 50 }, (_, i) => ({
+    question: i + 1, status: 'blank', detectedAnswer: null,
+    measurements: [], confidence: 100, isManuallyEdited: false
+  }));
+  answers[43] = { ...answers[43], status: 'multiple', detectedAnswer: null };
+  const result = calculateScore(answers, answerKey, 4);
+  assert.equal(result.incorrect, 1);
+  assert.equal(result.unanswered, 49);
+  assert.equal(result.totalMarks, -0.66);
+});
+
+test('v2.2.5: policy-rejected partial marks are unanswered without penalty', () => {
+  const { calculateScore } = loadTS('src/scoring/scoringEngine.ts');
+  const answers = Array.from({ length: 50 }, (_, i) => ({
+    question: i + 1, status: 'blank', detectedAnswer: null,
+    policyRejectedBlank: i === 45,
+    measurements: [], confidence: 100, isManuallyEdited: false
+  }));
+  const result = calculateScore(answers, Array(50).fill('A'), 4);
+  assert.equal(result.unanswered, 50);
+  assert.equal(result.incorrect, 0);
+  assert.equal(result.totalMarks, 0);
+});
