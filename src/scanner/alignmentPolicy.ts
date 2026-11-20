@@ -21,5 +21,6 @@ export function skipRedundantFallback(
   kind: RegistrationKind
 ): boolean {
   return bestTimingMatched !== null && bestTimingMatched >= 44 &&
-    candidateName.endsWith('/Otsu') && kind !== 'aruco';
+    (candidateName.endsWith('/Otsu') || candidateName.endsWith('-Otsu')) &&
+    kind !== 'aruco';
 }
