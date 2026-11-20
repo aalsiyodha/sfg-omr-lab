@@ -2,6 +2,8 @@
 import { useState } from 'react';
 import { logger } from '../diagnostics/diagnosticLogger';
 import { getSettings } from '../config/scannerSettings';
+import { getBuildIdentity } from '../config/version';
+import { copyText } from '../utils/copyText';
 import type { ScanResult } from '../types';
 
 interface Props {
@@ -13,6 +15,7 @@ interface Props {
 
 export function ErrorLogBox({ title = 'Scan Error & Diagnostics', errorMessage, scanResult, file }: Props) {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   const [expanded, setExpanded] = useState(true);
 
   const generateDiagnosticText = (): string => {
@@ -21,13 +24,14 @@ export function ErrorLogBox({ title = 'Scan Error & Diagnostics', errorMessage, 
     lines.push('SFG OMR LAB — DIAGNOSTIC ERROR REPORT');
     lines.push('==================================================');
     lines.push(`Generated: ${new Date().toISOString()}`);
-    lines.push(`Browser: ${navigator.userAgent}`);
+    lines.push(getBuildIdentity());
+    lines.push('Browser user-agent omitted for privacy');
     lines.push(`Platform: ${navigator.platform}`);
     lines.push(`Screen: ${window.screen.width}x${window.screen.height}`);
 
     lines.push('\n--- FILE & IMAGE DETAILS ---');
     if (file) {
-      lines.push(`File Name: ${file.name}`);
+      lines.push('File Name: omitted for privacy');
       lines.push(`File Size: ${(file.size / 1024).toFixed(1)} KB`);
       lines.push(`File Type: ${file.type}`);
     } else {
@@ -43,7 +47,7 @@ export function ErrorLogBox({ title = 'Scan Error & Diagnostics', errorMessage, 
       lines.push(`Processing Time: ${scanResult.processingTimeMs} ms`);
       lines.push(`Markers Detected: ${scanResult.markerCount} / 4`);
       lines.push(`Perspective Corrected: ${scanResult.perspectiveCorrected}`);
-      lines.push(`QR Code Valid: ${scanResult.qrValid} (raw: ${scanResult.qrRaw || 'null'})`);
+      lines.push(`QR Code Valid: ${scanResult.qrValid} (QR payload omitted)`);
       lines.push(`Test ID: ${scanResult.testId || 'null'}`);
       lines.push(`Answers Count: ${scanResult.answers?.length || 0}`);
       if (scanResult.errors.length > 0) {
@@ -58,7 +62,7 @@ export function ErrorLogBox({ title = 'Scan Error & Diagnostics', errorMessage, 
     lines.push(JSON.stringify(getSettings(), null, 2));
 
     lines.push('\n--- DETAILED EXECUTION LOGS ---');
-    const logs = logger.getAll();
+    const logs = scanResult?.stageLogs ?? logger.getAll();
     if (logs.length === 0) {
       lines.push('No log entries recorded.');
     } else {
@@ -66,7 +70,7 @@ export function ErrorLogBox({ title = 'Scan Error & Diagnostics', errorMessage, 
         lines.push(
           `[${l.timestamp.slice(11, 23)}] [${l.level}] [${l.stage}] ${l.message}${
             l.data ? ' | ' + JSON.stringify(l.data) : ''
-          }`
+          }`.replace(/SFGOMR1:[^\\s"'|,}]+/gi, '[REDACTED_QR]').replace(/("?(?:studentId|qrRaw|fileName)"?\\s*:\\s*)"[^"]*"/gi, '$1"[REDACTED]"')
         );
       });
     }
@@ -79,22 +83,9 @@ export function ErrorLogBox({ title = 'Scan Error & Diagnostics', errorMessage, 
   };
 
   const handleCopy = async () => {
-    const text = generateDiagnosticText();
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 3000);
-    } catch {
-      // Fallback if clipboard API is restricted
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 3000);
-    }
+    const ok = await copyText(generateDiagnosticText());
+    setCopied(ok);
+    setCopyError(!ok);
   };
 
   const handleDownload = () => {
@@ -136,6 +127,7 @@ export function ErrorLogBox({ title = 'Scan Error & Diagnostics', errorMessage, 
       </div>
 
       <div className="card-body p-3 bg-light">
+        {copyError && <p role="alert" className="small text-danger">Clipboard access failed. Select the report below and copy it manually.</p>}
         {errorMessage && (
           <div className="alert alert-danger py-2 small mb-2">
             <strong>Error:</strong> {errorMessage}
