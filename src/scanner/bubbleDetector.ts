@@ -325,11 +325,15 @@ export function detectQuestion(
     const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
     // Q38-D-type crescent can darken most of the *interior* while leaving
     // an incomplete outer fill. Check radial consistency even above 85%.
+    // A dark central ROI is not sufficient when the outer part of the
+    // printed bubble is only half shaded (v5 Q24). At a perspective angle
+    // the small 1mm ROI can look 85%+ full while the 1.04–1.40mm annulus
+    // is substantially incomplete. Keep broad textured fills recoverable.
     const highFillCrescent = detail.fillPercent >= 75 &&
-      detail.fillPercent < 97 &&
-      radial.core >= 75 &&
-      radial.outer < 42 &&
-      radial.core - radial.outer > 42;
+      detail.fillPercent < 96 &&
+      radial.core >= 70 &&
+      radial.outer < 60 &&
+      radial.core - radial.outer > 25;
     if (highFillCrescent) {
       detail.isValid = false;
       detail.rejectReason = 'High-density partial/crescent: outer coverage insufficient';
