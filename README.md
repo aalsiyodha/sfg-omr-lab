@@ -1,5 +1,23 @@
 # SFG OMR LAB — Browser-Based OMR Scanner & Evaluation Laboratory
 
+## v2.2.2 — Multi-method alignment release candidate
+
+The scanner prioritizes the usual top-facing photograph. It evaluates candidate
+homographies generated from corner squares, four midpoint squares, ArUco ID
+markers, ArUco-guided midpoint squares, and independent adaptive/Otsu thresholds.
+An independently decoded QR identity and **both** timing-mark bands are required
+before any candidate can read answers. Failed timing alignment can trigger bounded
+second-stage correction using four printed timing squares, regardless of initial
+marker family. Successful candidates are ranked by verified timing coverage.
+ArUco/Otsu remains a fallback even after a strong corner-based result.
+
+**Limitations:** This does not make invalid or unreadable QR data acceptable,
+nor does it guarantee accurate recovery of cropped or severely blurry images.
+The four ArUco IDs must be physically present on a printed sheet to be detected.
+A release is only verified after running automated regressions and replaying
+actual camera samples, especially v5.jpeg and upright baseline images.
+
+
 A high-precision, 100% client-side Optical Mark Recognition (OMR) testing laboratory built with **React**, **Vite**, **TypeScript**, **Bootstrap 5.3**, **OpenCV.js**, **jsQR**, and **jsPDF**.
 
 Designed specifically for UPSC practice sheets (SFG 2027 standard), computer vision diagnostics, and reproducible evaluation of paper-based examination scanning without requiring any backend servers.
