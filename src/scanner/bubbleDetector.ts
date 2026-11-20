@@ -501,12 +501,16 @@ export function detectQuestion(
   // on another option (e.g. a solid B plus an A tick). Do not include the top
   // option in this check, and require both measured and shape evidence to
   // reduce paper/printed-outline false alarms.
+  // A strong selection must not be invalidated by a few peripheral JPEG
+  // pixels in another bubble. On v5 Q38/Q40/Q43 the neighbouring options
+  // had 14–16% apparent darkness but ZERO ink in their radial cores.
+  // Require connected core evidence, or a demonstrable thin stroke with
+  // substantial intensity (preserves genuine secondary ticks/crosses).
   const secondInk = sorted.slice(1).find(r =>
     r.measurement.fillPercent >= 12 &&
     r.measurement.fillPercent < settings.bubbleFillThreshold &&
-    ((r.measurement.radialCore ?? 0) >= 12 ||
-     (r.measurement.radialMiddle ?? 0) >= 12 ||
-     r.detail.strokeLike));
+    ((r.measurement.radialCore ?? 0) >= 15 ||
+      (r.detail.strokeLike && r.measurement.fillPercent >= 22)));
   if (secondInk) {
     secondInk.measurement.rejectReason = 'Additional ink on another option: manual review';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
@@ -548,7 +552,14 @@ export function detectQuestion(
       (substantialMarks.length >= 2 ? 'Two marked options' :
        !top.detail.isValid ? 'Top mark has invalid shape' :
        'Insufficient separation between options');
-    return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+    // Reject a single incomplete mark as blank; do not suppress conflicts
+    // between two genuinely marked options as mere blanks.
+    const invalidOnly = substantialMarks.length === 1 &&
+      !top.detail.isValid && !solidTextureRescue &&
+      second.measurement.fillPercent < 12;
+    return { measurements, answer: null,
+      status: invalidOnly ? 'blank' : 'uncertain',
+      confidence: invalidOnly ? Math.max(0,100-max) : 0 };
   }
 
   // Only borderline selections need perturbation analysis; clear 90%-filled
@@ -562,7 +573,7 @@ export function detectQuestion(
   const topIndex=options.indexOf(top.measurement.option);
   const hatch=interiorHatchEvidence(correctedGray,centres[topIndex].x,
     centres[topIndex].y,dpi,top.detail.effectiveThreshold??effectiveThreshold);
-  const oneSidedFill=max>=60 && max<92 &&
+  const oneSidedFill=max>=60 && max<96 &&
     top.detail.horizontalDisparity>=38 &&
     (top.measurement.radialOuter??0)<85;
   const hatchedFill=max>=45 && max<90 && hatch.hatchLike && !solidTextureRescue;
@@ -570,7 +581,8 @@ export function detectQuestion(
     top.measurement.rejectReason=oneSidedFill
       ? 'Asymmetric partial fill: left/right ink coverage differs'
       : 'Hatched/striped ink: repeated unfilled channels inside bubble';
-    return {measurements,answer:null,status:'uncertain',confidence:0};
+    // A single obviously incomplete bubble is unattempted, per SFG policy.
+    return {measurements,answer:null,status:'blank',confidence:Math.max(0,100-max)};
   }
   const stableSolidShape = solidTextureRescue || (
     (top.detail.filledQuadrants ?? 0) === 4 &&
