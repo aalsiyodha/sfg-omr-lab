@@ -55,7 +55,19 @@ export default function App() {
               <span className="product-brand-name">SFG <span>OMR Lab</span></span>
               <span className="product-version-tag">{APP_VERSION}</span>
             </NavLink>
-            <button className="navbar-toggler product-navbar-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"><span className="navbar-toggler-icon" /></button>
+            <div className="product-header-controls">
+              <button type="button" className="product-theme-toggle" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={theme === 'dark'}>
+                <i className={`bi ${theme === 'dark' ? 'bi-sun' : 'bi-moon-stars'}`} aria-hidden="true" />
+                <span className="product-theme-caption">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+              </button>
+              <button className="navbar-toggler product-navbar-toggle" type="button"
+                data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span className="navbar-toggler-icon" />
+              </button>
+            </div>
             <div className="collapse navbar-collapse" id="navbarNav">
               <ul className="navbar-nav ms-auto align-items-md-center gap-1">
                 {[
@@ -65,15 +77,6 @@ export default function App() {
                     <NavLink to={to} end={to==='/'} className={({isActive})=>`nav-link product-nav-link ${isActive?'active':''}`}>{label}</NavLink>
                   </li>
                 ))}
-                <li className="nav-item ms-md-2">
-                  <button type="button" className="product-theme-toggle" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
-                    aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                    title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                    aria-pressed={theme === 'dark'}>
-                    <i className={`bi ${theme === 'dark' ? 'bi-sun' : 'bi-moon-stars'}`} aria-hidden="true" />
-                    <span className="product-theme-caption">{theme === 'dark' ? 'Light' : 'Dark'}</span>
-                  </button>
-                </li>
                 <li className="nav-item ms-md-2"><NavLink to="/scan" className="btn btn-primary product-nav-cta"><i className="bi bi-upc-scan me-2" />Scan a sheet</NavLink></li>
               </ul>
             </div>
