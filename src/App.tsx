@@ -48,6 +48,30 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="min-vh-100 d-flex flex-column">
+        {/* Deliberately conspicuous comparison-mode identity: this banner is
+            ONLY on the Antigravity branch. main remains unchanged. */}
+        <div role="status" aria-label="Experimental Antigravity build" style={{
+          background: '#111827', color: '#ffffff', borderBottom: '6px solid #facc15',
+          padding: '14px 18px', position: 'relative', zIndex: 1040,
+        }}>
+          <div style={{ maxWidth: 1160, margin: '0 auto', display: 'flex',
+            flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+            <div>
+              <div style={{ color: '#fde047', fontWeight: 900, fontSize: 'clamp(17px, 3vw, 25px)',
+                letterSpacing: '0.07em', lineHeight: 1.3 }}>
+                ⚠ ANTIGRAVITY · EXPERIMENTAL SCANNER
+              </div>
+              <div style={{ fontSize: '13px', marginTop: 4, fontWeight: 600 }}>
+                TEST BRANCH ONLY · STRICT MARKING RULES · NOT PRODUCTION MAIN
+              </div>
+            </div>
+            <div style={{ background: '#facc15', color: '#111827', borderRadius: '9px',
+              padding: '9px 13px', fontWeight: 900, lineHeight: 1.45, textAlign: 'center' }}>
+              <div>v{APP_BUILD_META.version} · {APP_BUILD_META.buildId}</div>
+              <div style={{ fontSize: '12px' }}>LOCAL PORT {window.location.port || 'default'}</div>
+            </div>
+          </div>
+        </div>
         <nav className="navbar navbar-expand-md sticky-top product-navbar">
           <div className="container-fluid" style={{ maxWidth: 1160 }}>
             <NavLink to="/" className="product-brand text-decoration-none d-flex align-items-center gap-2">
