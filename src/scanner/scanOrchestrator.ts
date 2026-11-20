@@ -5,7 +5,7 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
-import { registrationScore, skipRedundantFallback } from './alignmentPolicy';
+import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
@@ -104,7 +104,11 @@ function evaluateHypothesis(
     let check = verifyTimingMarks(gray, dpi);
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
-    if (!check.passed) {
+    // Even a QR-valid ArUco candidate with 45–49 matched timing marks may
+    // have measurable warp drift in the distant right column. Recheck with
+    // four extreme printed timing squares, but only adopt a strictly better
+    // independently verified result. Perfect 50/50 warps stay untouched.
+    if (!check.passed || (hypothesis.kind === 'aruco' && check.matched < 50)) {
       // v2.2.2: Any registration method can have a sound QR position but
       // a slightly displaced timing lattice. Try four *independent* printed
       // timing squares as a bounded second correction. Never trust a refined
@@ -129,7 +133,7 @@ function evaluateHypothesis(
               left:updatedCheck.leftMatched,right:updatedCheck.rightMatched,
               qrReverified:verifiedQR.valid,
             });
-            if(updatedCheck.passed && updatedCheck.matched>=check.matched+8){
+            if(shouldAdoptTimingRefinement(check,updatedCheck)){
               cleanupMats(gray,persp.corrected);
               persp.corrected=rescued.corrected;
               persp.correctedDataUrl=candidate.toDataURL('image/png');
