@@ -48,24 +48,23 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="min-vh-100 d-flex flex-column">
-        {/* Deliberately conspicuous comparison-mode identity: this banner is
-            ONLY on the Antigravity branch. main remains unchanged. */}
-        <div role="status" aria-label="Experimental Antigravity build" style={{
-          background: '#111827', color: '#ffffff', borderBottom: '6px solid #facc15',
+        {/* Conspicuous LITE branch identity, independent of the Antigravity reference. */}
+        <div role="status" aria-label="Experimental Lite build" style={{
+          background: '#064e3b', color: '#ffffff', borderBottom: '6px solid #2dd4bf',
           padding: '14px 18px', position: 'relative', zIndex: 1040,
         }}>
           <div style={{ maxWidth: 1160, margin: '0 auto', display: 'flex',
             flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
             <div>
-              <div style={{ color: '#fde047', fontWeight: 900, fontSize: 'clamp(17px, 3vw, 25px)',
+              <div style={{ color: '#a7f3d0', fontWeight: 900, fontSize: 'clamp(17px, 3vw, 25px)',
                 letterSpacing: '0.07em', lineHeight: 1.3 }}>
-                ⚠ ANTIGRAVITY · EXPERIMENTAL SCANNER
+                ⚡ LITE ENGINE · EXPERIMENTAL 5175
               </div>
               <div style={{ fontSize: '13px', marginTop: 4, fontWeight: 600 }}>
-                TEST BRANCH ONLY · STRICT MARKING RULES · NOT PRODUCTION MAIN
+                FAST REGISTRATION · REUSED HATCH ANALYSIS · NOT ANTIGRAVITY 5173
               </div>
             </div>
-            <div style={{ background: '#facc15', color: '#111827', borderRadius: '9px',
+            <div style={{ background: '#a7f3d0', color: '#064e3b', borderRadius: '9px',
               padding: '9px 13px', fontWeight: 900, lineHeight: 1.45, textAlign: 'center' }}>
               <div>v{APP_BUILD_META.version} · {APP_BUILD_META.buildId}</div>
               <div style={{ fontSize: '12px' }}>LOCAL PORT {window.location.port || 'default'}</div>
