@@ -34,9 +34,22 @@ export function reconcileToneAnswers(
     const a=strongest(baseline),b=strongest(row);
     let action='retain_corrected';
     let final=row;
+    // The original grayscale is an independent safety witness. Tone
+    // correction may confirm an already-detected solid fill, but cannot
+    // create a new automatic selection from a raw blank or uncertain row.
+    // Keep deliberate invalid markings unattempted under SFG strict-fill rules.
+    if (row.status==='detected' && baseline.status!=='detected') {
+      final={...row, detectedAnswer:null,
+        status:baseline.status==='blank'?'blank':'uncertain',
+        confidence:0, measurements:row.measurements.map(m=>({...m}))};
+      const m=final.measurements.find(x=>x.option===b.option);
+      if(m)m.rejectReason='Tone-only selection vetoed by original grayscale';
+      action=a.fillPercent<45
+        ? 'reject_tone_only_low_raw_ink':'reject_tone_only_conflict';
+    }
     // A manual-review indication may not be silently downgraded to blank
     // only because the tone calibration lowered its measured fill.
-    if(row.status==='blank' && strongInk(baseline)) {
+    if(action==='retain_corrected' && row.status==='blank' && strongInk(baseline)) {
       final={...row,detectedAnswer:null,status:'uncertain',
         confidence:0,measurements:row.measurements.map(m=>({...m}))};
       const m=final.measurements.find(x=>x.option===a.option);
@@ -45,7 +58,7 @@ export function reconcileToneAnswers(
     }
     // When a partially marked bubble is uncertain on original grayscale,
     // a tonal adjustment must not promote it into a confirmed selection.
-    else if(row.status==='detected' && baseline.status==='uncertain' &&
+    else if(action==='retain_corrected' && row.status==='detected' && baseline.status==='uncertain' &&
       a.option===b.option && a.fillPercent>=45) {
       final={...row,detectedAnswer:null,status:'uncertain',confidence:0};
       action='avoid_tonal_promotion';

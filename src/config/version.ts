@@ -1,6 +1,8 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
-export const APP_VERSION = version === '2.2.2'
+export const APP_VERSION = version === '2.2.3'
+  ? 'v2.2.3 Scanner Reliability • Fail-Closed Detection'
+  : version === '2.2.2'
   ? 'v2.2.2 Multi-Method Alignment • Cross-Verification'
   : version.startsWith('2.2.1-aruco-gray')
   ? 'v2.2.1 ArUco + Grayscale Experiment • Orientation + V5 Rescue'

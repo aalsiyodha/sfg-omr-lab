@@ -9,8 +9,8 @@ export interface RegistrationEvidence {
 }
 /** Geometry is only eligible after both independent timing bands and QR verify. */
 export function registrationScore(e: RegistrationEvidence): number {
-  if (!e.qrVerified || e.timingMatched < 20 ||
-      e.leftMatched < 6 || e.rightMatched < 6) return -Infinity;
+  if (!e.qrVerified || e.timingMatched < 35 ||
+      e.leftMatched < 10 || e.rightMatched < 10) return -Infinity;
   // Prefer more independent timing marks, then direct corner geometry.
   return e.timingMatched + 1 + (e.kind === 'corner' ? 0.25 : 0);
 }
@@ -20,7 +20,7 @@ export function skipRedundantFallback(
   candidateName: string,
   kind: RegistrationKind
 ): boolean {
-  return bestTimingMatched !== null && bestTimingMatched >= 44 &&
+  return bestTimingMatched !== null && bestTimingMatched >= 48 &&
     (candidateName.endsWith('/Otsu') || candidateName.endsWith('-Otsu')) &&
     kind !== 'aruco';
 }
@@ -34,7 +34,9 @@ export function shouldAdoptTimingRefinement(
   before: {passed:boolean;matched:number;leftMatched:number;rightMatched:number},
   after: {passed:boolean;matched:number;leftMatched:number;rightMatched:number},
 ): boolean {
-  if (!after.passed || before.matched >= 50) return false;
+  if (!after.passed || after.matched < 35 ||
+      after.leftMatched < 10 || after.rightMatched < 10 ||
+      before.matched >= 50) return false;
   if (before.passed) {
     return after.matched > before.matched &&
       after.leftMatched >= before.leftMatched &&

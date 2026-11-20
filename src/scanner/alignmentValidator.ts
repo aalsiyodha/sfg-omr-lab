@@ -45,8 +45,8 @@ export function verifyTimingMarks(grayMat: any, dpi: number): AlignmentCheck {
   const matched = leftMatched + rightMatched;
   // This is deliberately lenient for photographed/compressed marks. Require
   // evidence from BOTH sides rather than trusting one accidentally dark band.
-  const required = 20;
-  const passed = matched >= required && leftMatched >= 6 && rightMatched >= 6;
+  const required = 35;
+  const passed = matched >= required && leftMatched >= 10 && rightMatched >= 10;
   return {
     passed, matched, total: rowCount * 2, required, leftMatched, rightMatched,
     reason: passed ? undefined :
