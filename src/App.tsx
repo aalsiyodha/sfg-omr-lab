@@ -58,7 +58,7 @@ export default function App() {
             <div>
               <div style={{ color: '#a7f3d0', fontWeight: 900, fontSize: 'clamp(17px, 3vw, 25px)',
                 letterSpacing: '0.07em', lineHeight: 1.3 }}>
-                ⚡ LITE ENGINE · EXPERIMENTAL 5175
+                ⚡ SFG OMR LAB LITE · EXPERIMENTAL
               </div>
               <div style={{ fontSize: '13px', marginTop: 4, fontWeight: 600 }}>
                 FAST REGISTRATION · REUSED HATCH ANALYSIS · NOT ANTIGRAVITY 5173
@@ -75,7 +75,11 @@ export default function App() {
           <div className="container-fluid" style={{ maxWidth: 1160 }}>
             <NavLink to="/" className="product-brand text-decoration-none d-flex align-items-center gap-2">
               <span className="product-brand-icon"><i className="bi bi-upc-scan" /></span>
-              <span className="product-brand-name">SFG <span>OMR Lab</span></span>
+              <span className="product-brand-name">SFG <span>OMR Lab <span style={{ color: '#0d9488', fontWeight: 900 }}>Lite</span></span></span>
+              <span style={{ background: 'linear-gradient(125deg,#059669,#0d9488)',
+                color:'#ffffff', borderRadius:999, padding:'4px 11px',
+                fontSize:11, fontWeight:900, letterSpacing:'0.09em',
+                boxShadow:'0 3px 10px rgba(13,148,136,.22)' }}>LITE</span>
               <span className="product-version-tag">{APP_VERSION}</span>
             </NavLink>
             <div className="product-header-controls">
@@ -118,7 +122,7 @@ export default function App() {
 
         <footer className="mt-auto product-footer">
           <div className="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ maxWidth: 1160 }}>
-            <span className="product-footer-brand">SFG OMR LAB <span>· {APP_RELEASE_LABEL}</span></span>
+            <span className="product-footer-brand">SFG OMR LAB LITE <span>· {APP_RELEASE_LABEL}</span></span>
             <span>Built for thoughtful practice. Processed on your device.</span>
             <span className="product-deployment-label" title={`Commit: ${APP_BUILD_META.sha} · Built: ${APP_BUILD_META.builtAt}`}>{APP_DEPLOY_LABEL} · commit {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}</span>
             <span>Beta · Verify before scoring</span>
