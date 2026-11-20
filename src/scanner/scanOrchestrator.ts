@@ -5,6 +5,7 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
+import { canStopRegistrationSearch } from './litePolicy';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import type { AlignmentCheck } from './alignmentValidator';
@@ -298,8 +299,10 @@ export async function runFullScan(
       // bands reach a perfect 50/50, no later hypothesis can improve
       // timing coverage. Avoid remaining costly perspective/QR warps.
       // Do NOT stop at 47–49: the reference photos needed fallback.
-      if (selected?.qr.valid && selected.check.matched === 50 &&
-          selected.check.leftMatched === 25 && selected.check.rightMatched === 25) {
+      if (selected && canStopRegistrationSearch(
+        selected.qr.valid, selected.check.matched,
+        selected.check.leftMatched, selected.check.rightMatched
+      )) {
         logger.info('perspective',
           'LITE fast-path: stopped registration after perfect QR + 50/50 timing',
           {selected:selected.hypothesis.name,skipped:Math.max(0,
