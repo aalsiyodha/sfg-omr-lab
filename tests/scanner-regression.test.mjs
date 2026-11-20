@@ -1302,3 +1302,29 @@ test('v2.2.3: reject too-small sources but permit existing v4/v5 image dimension
   assert.equal(validateImage({width:600,height:1100}).valid,false);
   assert.equal(validateImage({width:690,height:1100}).valid,true);
 });
+
+test('review UI: show only uncertain, multiple and error questions by default', () => {
+  const { needsReview, filterReviewAnswers } = loadTS('src/review/reviewPolicy.ts');
+  const input = [
+    { question:1,status:'detected' },
+    { question:2,status:'blank' },
+    { question:3,status:'uncertain' },
+    { question:4,status:'multiple' },
+    { question:5,status:'error' },
+    { question:6,status:'uncertain',isManuallyEdited:true },
+  ];
+  assert.deepEqual(filterReviewAnswers(input,'flagged').map(a=>a.question),[3,4,5]);
+  assert.equal(filterReviewAnswers(input,'all').length,6);
+  assert.equal(needsReview({status:'blank',isManuallyEdited:false}),false);
+  assert.equal(needsReview({status:'multiple',isManuallyEdited:true}),false);
+});
+
+test('review UI: correcting a flagged answer resolves it without changing other marks', () => {
+  const { filterReviewAnswers } = loadTS('src/review/reviewPolicy.ts');
+  const input=[{question:22,status:'multiple'},{question:24,status:'blank'},
+    {question:40,status:'uncertain'}];
+  const corrected=input.map(a=>a.question===22?{...a,status:'blank',isManuallyEdited:true}:a);
+  assert.deepEqual(filterReviewAnswers(corrected,'flagged').map(a=>a.question),[40]);
+  assert.equal(corrected[1].status,'blank');
+  assert.equal(filterReviewAnswers(corrected,'all').length,3);
+});
