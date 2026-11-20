@@ -519,7 +519,7 @@ export function detectQuestion(
   const plausiblySolid=max>=45 && max<85 &&
     second.measurement.fillPercent<12 &&
     (top.detail.filledQuadrants??0)>=3 &&
-    (top.measurement.radialCore??0)>=30 &&
+    (top.measurement.radialCore??0)>=25 &&
     (top.measurement.radialMiddle??0)>=40 &&
     (top.measurement.radialOuter??0)>=32 &&
     top.detail.horizontalDisparity<28 &&
