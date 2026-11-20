@@ -579,9 +579,11 @@ export function detectQuestion(
   const topIndex=options.indexOf(top.measurement.option);
   const hatch=interiorHatchEvidence(correctedGray,centres[topIndex].x,
     centres[topIndex].y,dpi,top.detail.effectiveThreshold??effectiveThreshold);
+  // Outer annular darkness may be contaminated by one heavily shaded half
+  // or by printed-ring interpolation. Test left/right asymmetry directly
+  // even when the outer zone looks dark (v4/v5 Q24 half-filled B).
   const oneSidedFill=max>=60 && max<96 &&
-    top.detail.horizontalDisparity>=38 &&
-    (top.measurement.radialOuter??0)<85;
+    top.detail.horizontalDisparity>=35;
   const hatchedFill=max>=45 && max<90 && hatch.hatchLike && !solidTextureRescue;
   if(oneSidedFill||hatchedFill){
     top.measurement.rejectReason=oneSidedFill
