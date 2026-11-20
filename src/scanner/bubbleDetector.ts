@@ -522,12 +522,30 @@ export function detectQuestion(
     secondInk.measurement.rejectReason = 'Additional ink on another option: manual review';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
+  // Strict physical-sheet policy (two camera samples, 2026-11-20):
+  // Examine internal hatch gaps BEFORE any texture rescue. In Sample 01
+  // Q20-C's two diagonal strokes were accepted at 76%, whereas the same
+  // physical mark was rejected at 58% in Sample 02. A later rescue must
+  // never promote a confirmed hatch to a valid answer.
+  const selectedIndex = options.indexOf(top.measurement.option);
+  const preRescueHatch = interiorHatchEvidence(
+    correctedGray, centres[selectedIndex].x, centres[selectedIndex].y, dpi,
+    top.detail.effectiveThreshold ?? effectiveThreshold
+  );
+  if (preRescueHatch.hatchLike && max < 90 && substantialMarks.length === 1) {
+    top.measurement.validMark = false;
+    top.measurement.rejectReason =
+      'Strict-fill policy: repeated bright gaps between ink strokes';
+    return { measurements, answer: null, status: 'blank',
+      confidence: Math.max(0, 100 - max), policyRejectedBlank: true };
+  }
+
   // Borderline solid-fill recovery: JPEG/photocopy texture can create
   // narrow bright holes inside a genuinely filled circle (v4 Q18-D).
   // Use a *small* threshold perturbation only when the ORIGINAL radial,
   // quadrant and symmetry evidence already resembles a broad circular fill.
   // Never rescue ticks, dots, hatches with thin outer coverage or crescents.
-  const plausiblySolid=max>=45 && max<85 &&
+  const plausiblySolid=!preRescueHatch.hatchLike && max>=45 && max<85 &&
     second.measurement.fillPercent<12 &&
     (top.detail.filledQuadrants??0)>=3 &&
     (top.measurement.radialCore??0)>=25 &&
