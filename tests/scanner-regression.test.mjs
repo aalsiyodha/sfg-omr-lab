@@ -1328,3 +1328,68 @@ test('review UI: correcting a flagged answer resolves it without changing other 
   assert.equal(corrected[1].status,'blank');
   assert.equal(filterReviewAnswers(corrected,'all').length,3);
 });
+
+test('v2.2.4: missing alignment proof and duplicate question numbers fail closed',()=>{
+  const {validateScanResult}=loadTS('src/scanner/scanValidator.ts');
+  const base={warnings:[],errors:[],perspectiveCorrected:true,qrValid:true,
+    testId:35,markerCount:4,answers:Array.from({length:50},(_,i)=>({
+      question:i+1,status:'detected',detectedAnswer:'B',confidence:90,measurements:[]
+    }))};
+  const absent=validateScanResult(base);
+  assert.ok(absent.errors.some(e=>e.includes('timing marks')));
+  const trusted=validateScanResult({...base,alignmentVerified:true});
+  assert.deepEqual(trusted.errors,[]);
+  const duplicate=validateScanResult({...base,alignmentVerified:true,
+    answers:base.answers.map((a,i)=>i===49?{...a,question:49}:a)});
+  assert.ok(duplicate.errors.some(e=>e.includes('unique')));
+});
+
+test('v2.2.4: midpoint second-choice recovers correct square behind bubble distractor',()=>{
+  mockCv([
+    {x:355,y:15,width:14,height:14}, // filled student bubble wins top rank
+    {x:355,y:60,width:14,height:14}, // true but slightly less topmost
+    {x:356,y:1028,width:14,height:14},
+    {x:21,y:525,width:14,height:14},
+    {x:692,y:528,width:14,height:14},
+  ]);
+  const {detectMidpointMarkers}=loadTS('src/scanner/midpointDetector.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}}}
+  });
+  const first=detectMidpointMarkers(null,720,1061);
+  const alternate=detectMidpointMarkers(null,720,1061,undefined,'top');
+  assert.equal(first.found,true);
+  assert.equal(alternate.found,true);
+  assert.equal(first.top.y,22);
+  assert.equal(alternate.top.y,67);
+  assert.equal(alternate.bottom.y,1035);
+});
+
+test('v2.2.4: invalid-mark blank summaries do not increase review count',()=>{
+  const {countRejectedBlankMarks,filterReviewAnswers}=
+    loadTS('src/review/reviewPolicy.ts');
+  const answers=[
+    {question:24,status:'blank',measurements:[{rejectReason:'Asymmetric partial fill'}]},
+    {question:25,status:'blank',measurements:[{rejectReason:'Centre dot is not a valid response'}]},
+    {question:26,status:'blank',measurements:[]},
+    {question:27,status:'multiple',measurements:[]},
+    {question:28,status:'detected',measurements:[]},
+  ];
+  assert.equal(countRejectedBlankMarks(answers),2);
+  assert.deepEqual(filterReviewAnswers(answers,'flagged').map(a=>a.question),[27]);
+});
+
+test('v2.2.4: outlying stroke geometry uses physical units across DPI',()=>{
+  const {hasExternalStroke}=loadTS('src/scanner/strayInk.ts');
+  const create=(dpi)=>{
+    const scale=dpi/25.4, cx=100,cy=100;
+    const points=new Set();
+    for(let y=-1.5;y<=1.5;y+=0.12)
+      for(let x=-2.95;x<=-2.35;x+=0.12){
+        const r=Math.hypot(x,y);
+        if(r>2.25&&r<3.15)points.add((Math.round(cy+y*scale))*300+Math.round(cx+x*scale));
+      }
+    return {rows:300,cols:300,ucharPtr:(y,x)=>[points.has(y*300+x)?0:255]};
+  };
+  assert.equal(hasExternalStroke(create(150),100,100,150,255),true);
+  assert.equal(hasExternalStroke(create(300),100,100,300,255),true);
+});
