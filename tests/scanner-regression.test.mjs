@@ -1214,3 +1214,46 @@ test('v2.2.2: half fill, crescent and tick are never accepted answers',()=>{
   assert.equal(found.answer,null);
   assert.equal(found.status,'blank');
 });
+
+test('precision: balanced ring probes include all four answer options',()=>{
+  const {sampleGridAnchors}=loadTS('src/scanner/gridAlignment.ts',{
+    '../config/omrLayout':{mmToPx:()=>1,getBubbleCentre:()=>({}),getTestIdBubbleCentre:()=>({})}
+  });
+  const anchors=Array.from({length:48},(_,i)=>({question:Math.floor(i/4),option:i%4}));
+  const sample=sampleGridAnchors(anchors);
+  assert.equal(sample.length,12);
+  assert.deepEqual([...new Set(sample.map(p=>p.option))].sort(),[0,1,2,3]);
+  const digits=Array.from({length:16},(_,i)=>i);
+  assert.ok(sampleGridAnchors(digits).length>=8);
+});
+
+test('precision: ArUco refinement requires higher timing agreement without one-sided regression',()=>{
+  const {shouldAdoptTimingRefinement}=loadTS('src/scanner/alignmentPolicy.ts');
+  const prior={passed:true,matched:49,leftMatched:24,rightMatched:25};
+  assert.equal(shouldAdoptTimingRefinement(prior,{passed:true,matched:50,leftMatched:25,rightMatched:25}),true);
+  assert.equal(shouldAdoptTimingRefinement(prior,prior),false);
+  assert.equal(shouldAdoptTimingRefinement({passed:true,matched:50,leftMatched:25,rightMatched:25},
+    {passed:true,matched:50,leftMatched:25,rightMatched:25}),false);
+  assert.equal(shouldAdoptTimingRefinement({passed:true,matched:45,leftMatched:24,rightMatched:21},
+    {passed:true,matched:46,leftMatched:22,rightMatched:24}),false);
+  assert.equal(shouldAdoptTimingRefinement({passed:false,matched:15,leftMatched:2,rightMatched:13},
+    {passed:true,matched:50,leftMatched:25,rightMatched:25}),true);
+  assert.equal(shouldAdoptTimingRefinement({passed:false,matched:15,leftMatched:2,rightMatched:13},
+    {passed:true,matched:21,leftMatched:10,rightMatched:11}),false);
+});
+
+test('precision: strongly one-sided shading stays blank without invalidating solid fills',()=>{
+  const engine=v201Engine();
+  const image=v201Image({shape:'solid',option:1});
+  const read=image.ucharPtr;
+  image.ucharPtr=(y,x)=>{
+    const dx=x-160,dy=y-120;
+    return [Math.hypot(dx,dy)<=150/25.4 && dx>=2 ? 225 : read(y,x)[0]];
+  };
+  const partial=engine.detectQuestion(image,24,150,152);
+  assert.equal(partial.status,'blank');
+  assert.equal(partial.answer,null);
+  const solid=engine.detectQuestion(v201Image({shape:'solid',option:1}),24,150,152);
+  assert.equal(solid.status,'detected');
+  assert.equal(solid.answer,'B');
+});
