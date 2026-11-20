@@ -1154,3 +1154,30 @@ test('rotated ArUco orientations are decoded independently of image position',()
     }
   }
 });
+
+
+test('v2.2.2: registration evidence fails closed on missing QR or one-sided timing', () => {
+  const {registrationScore}=loadTS('src/scanner/alignmentPolicy.ts');
+  const base={kind:'corner',timingMatched:46,leftMatched:23,rightMatched:23,qrVerified:true};
+  assert.ok(Number.isFinite(registrationScore(base)));
+  assert.equal(registrationScore({...base,qrVerified:false}),-Infinity);
+  assert.equal(registrationScore({...base,leftMatched:5,rightMatched:41}),-Infinity);
+  assert.equal(registrationScore({...base,timingMatched:19}),-Infinity);
+});
+
+test('v2.2.2: cross-check chooses stronger timing evidence across marker families', () => {
+  const {registrationScore}=loadTS('src/scanner/alignmentPolicy.ts');
+  const evidence=(kind,matched)=>({kind,timingMatched:matched,
+    leftMatched:Math.floor(matched/2),rightMatched:Math.ceil(matched/2),qrVerified:true});
+  assert.ok(registrationScore(evidence('midpoint',45))>registrationScore(evidence('corner',44)));
+  assert.ok(registrationScore(evidence('corner',45))>registrationScore(evidence('aruco',45)));
+});
+
+test('v2.2.2: top-facing fast path retains ArUco Otsu recovery', () => {
+  const {skipRedundantFallback}=loadTS('src/scanner/alignmentPolicy.ts');
+  assert.equal(skipRedundantFallback(null,'corner/Otsu','corner'),false);
+  assert.equal(skipRedundantFallback(43,'midpoint/Otsu','midpoint'),false);
+  assert.equal(skipRedundantFallback(44,'corner/Otsu','corner'),true);
+  assert.equal(skipRedundantFallback(44,'aruco/Otsu','aruco'),false);
+  assert.equal(skipRedundantFallback(44,'midpoint/aruco-guided-Otsu','midpoint'),true);
+});
