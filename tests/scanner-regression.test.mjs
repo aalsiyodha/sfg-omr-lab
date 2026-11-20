@@ -290,7 +290,7 @@ test('v1.8 clear C remains detected, A+B multiple remains multiple', () => {
 test('v1.8 beta report includes concise answer map and excludes student identity', () => {
   const report = loadTS('src/diagnostics/llmPromptGenerator.ts', {
     '../config/scannerSettings': { getSettings: () => settings },
-    '../config/version': { APP_VERSION: 'v1.8.0' },
+    '../config/version': { APP_VERSION: 'v1.8.0', getBuildIdentity: () => 'Source: local-dev | Scanner: v1.8.0 | Commit: test' },
     '../scanner/grayCalibration': {grayStripInkCeiling:()=>null}
   });
   const answers = Array.from({length:50}, (_,index) => ({
@@ -310,7 +310,7 @@ test('v1.8 beta report includes concise answer map and excludes student identity
     registrationMethod:'corner/adaptive',alignmentMatched:45,
     orientationRotated:false,answers,errors:[]
   }});
-  assert.match(prompt,/Beta scan feedback/);
+  assert.match(prompt,/compact scan diagnostic/);
   assert.match(prompt,/29:\?/);
   assert.match(prompt,/Q29 uncertain/);
   assert.doesNotMatch(prompt,/SENSITIVE_STUDENT|SFGOMR1:SECRET/);
