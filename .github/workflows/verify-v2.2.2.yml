@@ -1,0 +1,18 @@
+name: Verify v2.2.2 alignment
+on:
+  push:
+    branches: [release/v2.2.2-multi-alignment]
+  pull_request:
+    branches: [main]
+jobs:
+  scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:scanner
+      - run: npm run build
