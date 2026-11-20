@@ -322,6 +322,13 @@ export function detectQuestion(
     const cyPx = centres[idx].y;
     const detail = details[idx];
     const radial = measureRadialInk(correctedGray, cxPx, cyPx, dpi, detail.effectiveThreshold ?? effectiveThreshold);
+    // Record hatch evidence before classification even if another shape
+    // rejection returns early. This makes rejected Q20/Q22-style marks
+    // explainable in full diagnostics rather than only in answer counts.
+    const hatchEvidence = detail.fillPercent >= 30
+      ? interiorHatchEvidence(correctedGray, cxPx, cyPx, dpi,
+          detail.effectiveThreshold ?? effectiveThreshold)
+      : {gapRows:0,hatchLike:false};
     const clearlyInvalid = radial.classification === 'centre_dot' || radial.classification === 'hollow_ring';
     const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
     // Q38-D-type crescent can darken most of the *interior* while leaving
@@ -360,6 +367,8 @@ export function detectQuestion(
         paperReferenceBrightness: detail.paperReferenceBrightness,
         paperReferenceContaminated: detail.paperReferenceContaminated,
         filledQuadrants: detail.filledQuadrants,
+        hatchGapRows: hatchEvidence.gapRows,
+        hatchLike: hatchEvidence.hatchLike,
         strokeLike: detail.strokeLike,
         axisCoverage: detail.axisCoverage,
         diagonalCoverage: detail.diagonalCoverage,
@@ -522,12 +531,32 @@ export function detectQuestion(
     secondInk.measurement.rejectReason = 'Additional ink on another option: manual review';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
+  // Strict physical-sheet policy (two camera samples, 2026-11-20):
+  // Examine internal hatch gaps BEFORE any texture rescue. In Sample 01
+  // Q20-C's two diagonal strokes were accepted at 76%, whereas the same
+  // physical mark was rejected at 58% in Sample 02. A later rescue must
+  // never promote a confirmed hatch to a valid answer.
+  const selectedIndex = options.indexOf(top.measurement.option);
+  // v2.3: reuse the initial hatch measurement rather than walking the
+  // same pixels again at the same location and threshold.
+  const preRescueHatch = {
+    gapRows: top.measurement.hatchGapRows ?? 0,
+    hatchLike: top.measurement.hatchLike === true,
+  };
+  if (preRescueHatch.hatchLike && max < 90 && substantialMarks.length === 1) {
+    top.measurement.validMark = false;
+    top.measurement.rejectReason =
+      'Strict-fill policy: repeated bright gaps between ink strokes';
+    return { measurements, answer: null, status: 'blank',
+      confidence: Math.max(0, 100 - max), policyRejectedBlank: true };
+  }
+
   // Borderline solid-fill recovery: JPEG/photocopy texture can create
   // narrow bright holes inside a genuinely filled circle (v4 Q18-D).
   // Use a *small* threshold perturbation only when the ORIGINAL radial,
   // quadrant and symmetry evidence already resembles a broad circular fill.
   // Never rescue ticks, dots, hatches with thin outer coverage or crescents.
-  const plausiblySolid=max>=45 && max<85 &&
+  const plausiblySolid=!preRescueHatch.hatchLike && max>=45 && max<85 &&
     second.measurement.fillPercent<12 &&
     (top.detail.filledQuadrants??0)>=3 &&
     (top.measurement.radialCore??0)>=25 &&
@@ -578,9 +607,7 @@ export function detectQuestion(
   // Evaluate inner fill topology even when the global fill score is high:
   // v3 Q20-C's diagonal hatching left a persistent bright channel and Q24-B
   // was dark on one side but only half-shaded on the other.
-  const topIndex=options.indexOf(top.measurement.option);
-  const hatch=interiorHatchEvidence(correctedGray,centres[topIndex].x,
-    centres[topIndex].y,dpi,top.detail.effectiveThreshold??effectiveThreshold);
+  const hatch = preRescueHatch; // v2.3: avoid a third identical hatch scan.
   // Outer annular darkness may be contaminated by one heavily shaded half
   // or by printed-ring interpolation. Test left/right asymmetry directly
   // even when the outer zone looks dark (v4/v5 Q24 half-filled B).

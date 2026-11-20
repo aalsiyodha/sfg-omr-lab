@@ -24,6 +24,8 @@ export interface BubbleMeasurement {
   paperReferenceContaminated?: boolean;
   filledQuadrants?: number;
   filledSectors?: number;
+  hatchGapRows?: number;
+  hatchLike?: boolean;
   strokeLike?: boolean;
   axisCoverage?: number;
   diagonalCoverage?: number;

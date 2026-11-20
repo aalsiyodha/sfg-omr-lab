@@ -25,8 +25,8 @@ export default function HomePage({ appState }: Props) {
       <section className="product-hero">
         <div className="product-hero-content">
           <div className="product-eyebrow"><span className="product-eyebrow-dot" /> SFG OMR LAB <span className="product-eyebrow-separator">/</span> {APP_VERSION}</div>
-          <h1>Scan your OMR sheet.<br/><span>Check your answers.</span></h1>
-          <p className="product-hero-lead">Turn a photo of your filled SFG answer sheet into a clear 50-question result. No setup needed: scan, review flagged questions and see what was detected.</p>
+          <h1>Every mark matters.<br/><span>Scan with confidence.</span></h1>
+          <p className="product-hero-lead">A clearer way to check your SFG answer sheet. Upload a photo, review all 50 responses, and resolve any flagged marks before scoring.</p>
           <div className="product-actions">
             <Link to="/scan" className="btn btn-primary btn-lg product-primary-cta"><i className="bi bi-upc-scan me-2" />Scan my sheet <i className="bi bi-arrow-up-right ms-2" /></Link>
             <button type="button" className="btn btn-outline-secondary btn-lg product-secondary-cta" onClick={downloadSheet} disabled={downloading}>
@@ -61,6 +61,18 @@ export default function HomePage({ appState }: Props) {
         </div>
       </section>
 
+      <section className="container my-3" aria-label="Latest scanner changes">
+        <div className="alert alert-info border mb-0" role="note">
+          <strong><i className="bi bi-stars me-2" />New in v2.2.5</strong>
+          <p className="small mb-0 mt-1">
+            Partial bubbles, dots, hatches and ticks are rejected as blank;
+            two fully shaded options remain multiple even if crossed through.
+            In practice scoring, multiple selections now receive the incorrect
+            answer penalty (−0.66 for a 2-mark question). Diagnostic reports
+            show why high-ink partial marks were rejected.
+          </p>
+        </div>
+      </section>
       <section className="product-workflow" aria-labelledby="workflow-title">
         <div className="product-section-heading">
           <div><span className="product-kicker">SIMPLE WORKFLOW</span><h2 id="workflow-title">How it works — just 3 steps.</h2></div>

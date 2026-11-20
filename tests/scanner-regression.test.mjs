@@ -304,13 +304,14 @@ test('v1.8 beta report includes concise answer map and excludes student identity
     confidence:0,
     isManuallyEdited:false
   }));
-  const prompt = report.generateBetaFeedbackPrompt({scanResult:{
+  const prompt = report.generateBetaFeedbackPrompt({file:{name:'case01.jpg',size:12345,type:'image/jpeg'},scanResult:{
     studentId:'SENSITIVE_STUDENT', qrRaw:'SFGOMR1:SECRET',
     status:'partial',overallStatus:'partial',testId:27,qrValid:true,
     registrationMethod:'corner/adaptive',alignmentMatched:45,
     orientationRotated:false,answers,errors:[]
   }});
   assert.match(prompt,/compact scan diagnostic/);
+  assert.match(prompt,/case01.jpg/);
   assert.match(prompt,/29:\?/);
   assert.match(prompt,/Q29 uncertain/);
   assert.doesNotMatch(prompt,/SENSITIVE_STUDENT|SFGOMR1:SECRET/);
@@ -1447,6 +1448,64 @@ test('single-tap diagnostics have compact and full exports and redaction',()=>{
   assert.ok(scan.includes('Copy full diagnostic'));
   const err=readFileSync('src/components/ErrorLogBox.tsx','utf8');
   assert.ok(!err.includes('scanResult.qrRaw ||'));
-  assert.ok(!err.includes('File Name: ${file.name}'));
+  assert.ok(err.includes('File Name: ${file.name}'));
   assert.ok(err.includes('getBuildIdentity()'));
+});
+
+test('diagnostics keep filenames and remove repetitive full-report instructions',()=>{
+  const source=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  assert.ok(source.includes("'File=' + (file?.name ?? 'camera/unknown')"));
+  assert.ok(source.includes('Full bubble measurements'));
+  assert.ok(source.includes('Detailed optical evidence for flagged/edited rows'));
+  assert.ok(source.includes('Important stage logs'));
+  assert.equal(source.includes('## 8. Instructions for the LLM'),false);
+  assert.equal(source.includes('Top | 2nd | Gap | Baseline'),false);
+  const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(scan.includes('scanResult, file: capturedFile, activeTestId'));
+});
+
+
+test('v2.2.5: multiple-filled answer incurs the wrong-answer penalty', () => {
+  const { calculateScore } = loadTS('src/scoring/scoringEngine.ts');
+  const answerKey = Array(50).fill('A');
+  const answers = Array.from({ length: 50 }, (_, i) => ({
+    question: i + 1, status: 'blank', detectedAnswer: null,
+    measurements: [], confidence: 100, isManuallyEdited: false
+  }));
+  answers[43] = { ...answers[43], status: 'multiple', detectedAnswer: null };
+  const result = calculateScore(answers, answerKey, 4);
+  assert.equal(result.incorrect, 1);
+  assert.equal(result.unanswered, 49);
+  assert.equal(result.totalMarks, -0.66);
+});
+
+test('v2.2.5: policy-rejected partial marks are unanswered without penalty', () => {
+  const { calculateScore } = loadTS('src/scoring/scoringEngine.ts');
+  const answers = Array.from({ length: 50 }, (_, i) => ({
+    question: i + 1, status: 'blank', detectedAnswer: null,
+    policyRejectedBlank: i === 45,
+    measurements: [], confidence: 100, isManuallyEdited: false
+  }));
+  const result = calculateScore(answers, Array(50).fill('A'), 4);
+  assert.equal(result.unanswered, 50);
+  assert.equal(result.incorrect, 0);
+  assert.equal(result.totalMarks, 0);
+});
+
+
+test('v2.3: registration fast path requires verified QR and both complete timing bands', () => {
+  const { canStopRegistrationSearch } = loadTS('src/scanner/registrationFastPath.ts');
+  assert.equal(canStopRegistrationSearch(true,50,25,25),true);
+  assert.equal(canStopRegistrationSearch(false,50,25,25),false);
+  assert.equal(canStopRegistrationSearch(true,49,25,24),false);
+  assert.equal(canStopRegistrationSearch(true,47,25,22),false);
+  assert.equal(canStopRegistrationSearch(true,50,24,26),false);
+});
+
+test('v2.3: hatch evidence is reused from the measured bubble', () => {
+  const source = readFileSync('src/scanner/bubbleDetector.ts','utf8');
+  assert.match(source, /hatchGapRows: hatchEvidence\.gapRows/);
+  assert.match(source, /hatchLike: hatchEvidence\.hatchLike/);
+  assert.match(source, /hatchLike: top\.measurement\.hatchLike === true/);
+  assert.match(source, /const hatch = preRescueHatch/);
 });

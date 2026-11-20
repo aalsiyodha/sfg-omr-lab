@@ -157,7 +157,7 @@ export default function ScanPage({ appState }: Props) {
   const handleCopyBetaReport = async () => {
     if (!scanResult) return;
     const ok = await copyText(generateBetaFeedbackPrompt({
-      scanResult, activeTestId: practice.activeTest?.testId,
+      scanResult, file: capturedFile, activeTestId: practice.activeTest?.testId,
     }));
     setLlmCopied(ok);
     setCopyFailed(!ok);
@@ -209,7 +209,7 @@ export default function ScanPage({ appState }: Props) {
   const hasAnswers = scanResult?.answers && scanResult.answers.length > 0;
   const hasErrorsOrWarnings = (scanResult?.errors && scanResult.errors.length > 0) || !hasAnswers;
 
-  const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult, activeTestId: practice.activeTest?.testId}) : '';
+  const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult, file: capturedFile, activeTestId: practice.activeTest?.testId}) : '';
   // Strict-invalid marks (ticks, crescents, dots and partials) are blanks,
   // not review cases. A manual edit resolves a previously flagged question.
   const reviewCount = scanResult?.answers.filter(needsReview).length ?? 0;
@@ -228,7 +228,7 @@ export default function ScanPage({ appState }: Props) {
   return (
     <div>
       <div className="product-scan-header">
-        <div><span className="product-kicker">YOUR SCANNING WORKSPACE</span><h1>Scan a sheet</h1><p>Upload your SFG answer sheet and inspect every detected mark.</p></div>
+        <div><span className="product-kicker">PRECISION OMR SCANNING</span><h1>Scan your answer sheet</h1><p>Capture or upload a sheet, verify your marks, and review your results with confidence.</p></div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>
           <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>

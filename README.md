@@ -1,5 +1,20 @@
 # SFG OMR LAB — Browser-Based OMR Scanner & Evaluation Laboratory
 
+## v2.2.5 — Strict marks, multiple-answer scoring, and clearer review (Antigravity test branch)
+
+This test release incorporates five photographed-sheet assessments (Test IDs 35 and 04). It does **not** alter the printable OMR geometry or production `main` branch.
+
+- Reject deliberate partial/hatch/tick/dot/crescent marks instead of treating ink coverage alone as proof of a complete selection. A filled answer remains eligible even when another option is blank; two filled options remain a `multiple` selection even if one has a crossing stroke.
+- **Fix practice scoring:** `multiple` now counts as incorrect (configured `−0.66` for 2-mark practice questions), instead of accidentally counting as unanswered because `detectedAnswer` is null. A lone rejected partial remains blank and scores zero.
+- Full optical diagnostics now include high-ink rejected blanks and their spatial/radial/hatch evidence. Compact diagnostic samples include policy-rejected blanks.
+- Home and Scan screens explicitly display the v2.2.5 changes.
+- Regression cases cover multiple-answer penalty and rejected-blank zero penalty.
+
+**Notes:** Strict invalid-mark outcomes are a configurable *practice policy*, not a claim about any published UPSC scanner threshold. On-page `Commit: unknown` indicates an unverified build identity; run `git rev-parse --short HEAD`, update this branch, and restart the Vite dev server before attributing scan behavior to v2.2.5. A deployed build must be validated against real photo fixtures before release.
+
+---
+
+
 ## v2.2.2 — Multi-method alignment release candidate
 
 The scanner prioritizes the usual top-facing photograph. It evaluates candidate

@@ -20,7 +20,12 @@ export function calculateScore(
     const key = answerKey[i];
     const given = q.detectedAnswer;
 
-    if (q.status === 'blank' || given === null) {
+    // Multiple fully shaded options are a wrong answer under UPSC-style
+    // negative marking, even though there is no single detectedAnswer.
+    // Invalid single partial marks remain BLANK and attract no penalty.
+    if (q.status === 'multiple') {
+      incorrect++;
+    } else if (q.status === 'blank' || given === null) {
       unanswered++;
     } else if (given === key) {
       correct++;
