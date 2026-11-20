@@ -1447,6 +1447,18 @@ test('single-tap diagnostics have compact and full exports and redaction',()=>{
   assert.ok(scan.includes('Copy full diagnostic'));
   const err=readFileSync('src/components/ErrorLogBox.tsx','utf8');
   assert.ok(!err.includes('scanResult.qrRaw ||'));
-  assert.ok(!err.includes('File Name: ${file.name}'));
+  assert.ok(err.includes('File Name: ${file.name}'));
   assert.ok(err.includes('getBuildIdentity()'));
+});
+
+test('diagnostics keep filenames and remove repetitive full-report instructions',()=>{
+  const source=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  assert.ok(source.includes("'File=' + (file?.name ?? 'camera/unknown')"));
+  assert.ok(source.includes('Full bubble measurements'));
+  assert.ok(source.includes('Detailed optical evidence for flagged/edited rows'));
+  assert.ok(source.includes('Important stage logs'));
+  assert.equal(source.includes('## 8. Instructions for the LLM'),false);
+  assert.equal(source.includes('Top | 2nd | Gap | Baseline'),false);
+  const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(scan.includes('scanResult, file: capturedFile, activeTestId'));
 });
