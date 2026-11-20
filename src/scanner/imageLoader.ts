@@ -17,8 +17,8 @@ export interface ValidationResult {
 
 export async function loadImageFromFile(file: File): Promise<LoadedImage> {
   return new Promise((resolve, reject) => {
-    if (!['image/jpeg', 'image/jpg', 'image/png'].includes(file.type)) {
-      reject(new Error(`Unsupported file type: ${file.type}. Please upload a JPG or PNG image.`));
+    if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type)) {
+      reject(new Error(`Unsupported file type: ${file.type}. Please upload JPG, PNG, or WebP. HEIC/HEIF must first be converted to JPEG/PNG in a supported app.`));
       return;
     }
     const reader = new FileReader();
@@ -82,11 +82,12 @@ export function validateImage(img: LoadedImage): ValidationResult {
   const errors: string[] = [];
   const { width, height } = img;
 
-  // Lenient minimum resolution: only reject if extremely small (<400px)
-  if (width < 400 || height < 400) {
-    errors.push(`Image resolution too low: ${width}×${height}px. Minimum 400×400px required.`);
-  } else if (width < 800 || height < 800) {
-    warnings.push(`Image resolution (${width}×${height}px) is moderate. Processing will upscale to 150 DPI.`);
+  // The scanner rectifies to 150 DPI. Upscaling cannot recover lost mark
+  // topology from tiny source images; reject before scanning the paper.
+  if (Math.min(width,height) < 650 || Math.max(width,height) < 1000) {
+    errors.push(`Image resolution too low for reliable mark-shape analysis: ${width}×${height}px. Use a photo at least 650px on the short side and 1000px on the long side.`);
+  } else if (Math.min(width,height) < 850) {
+    warnings.push(`Image resolution (${width}×${height}px) is near the lower recommended limit. A higher-resolution photo may improve mark recognition.`);
   }
 
   // Aspect ratio check: standard A4 is ~1.41 (portrait)
