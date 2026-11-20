@@ -30,7 +30,7 @@ export default function HomePage({ appState }: Props) {
           <div className="product-actions">
             <Link to="/scan" className="btn btn-primary btn-lg product-primary-cta"><i className="bi bi-upc-scan me-2" />Scan an OMR sheet <i className="bi bi-arrow-up-right ms-2" /></Link>
             <button type="button" className="btn btn-outline-secondary btn-lg product-secondary-cta" onClick={downloadSheet} disabled={downloading}>
-              <i className="bi bi-download me-2" />{downloading?'Preparing…':'Download blank sheet'}
+              <i className="bi bi-download me-2" />{downloading?'Preparing…':'Download OMR 2.1 sheet'}
             </button>
           </div>
           <div className="product-trust-row">
