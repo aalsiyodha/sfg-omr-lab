@@ -1405,3 +1405,22 @@ test('OMR 2.1 PDF generator uses new ArUco markers and seven-tone calibration',(
   assert.ok(source.includes('[132,141,150,159,168,177,186]'));
   assert.ok(source.includes('arucoBits'));
 });
+
+test('mobile UX: theme toggle stays outside collapsed navigation and persists selection',()=>{
+  const app=readFileSync('src/App.tsx','utf8');
+  const head=app.indexOf('className="product-header-controls"');
+  const collapse=app.indexOf('className="collapse navbar-collapse"');
+  assert.ok(head>0 && collapse>head);
+  assert.equal((app.match(/className="product-theme-toggle"/g)||[]).length,1);
+  assert.ok(app.includes("localStorage.setItem('sfg-omr-theme', theme)"));
+  assert.ok(app.includes("aria-label={theme === 'dark'"));
+  const styles=readFileSync('src/index.css','utf8');
+  assert.ok(styles.includes('.product-header-controls .product-theme-toggle{width:auto'));
+});
+test('onboarding UX: printable sheet and photo guidance remain clear',()=>{
+  const home=readFileSync('src/pages/HomePage.tsx','utf8');
+  assert.ok(home.includes("Get printable OMR 2.1"));
+  assert.ok(home.includes("print at 100%") || home.includes("print on A4 at Actual Size (100%)"));
+  assert.ok(home.includes("Keep the entire page visible"));
+  assert.ok(home.includes("Shade bubbles completely"));
+});
