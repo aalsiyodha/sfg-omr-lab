@@ -17,9 +17,8 @@ export function filterReviewAnswers<T extends ReviewableAnswer>(
  * manual-review queue or change the score. Count each affected question once.
  */
 export function countRejectedBlankMarks(
-  answers: Array<ReviewableAnswer & { measurements?: Array<{rejectReason?: string}> }>,
+  answers: Array<ReviewableAnswer & { policyRejectedBlank?: boolean }>,
 ): number {
-  const invalidShape = /centre dot|central dot|crescent|partial|hatch|stripe|stroke|slash|cross|asymmetr|non-solid|invalid mark|incomplete|one-sided|outside|off.bubble/i;
   return answers.filter(row => row.status === 'blank' &&
-    row.measurements?.some(m => m.rejectReason && invalidShape.test(m.rejectReason))).length;
+    row.policyRejectedBlank === true && !row.isManuallyEdited).length;
 }
