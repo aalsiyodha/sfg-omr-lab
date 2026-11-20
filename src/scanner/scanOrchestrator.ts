@@ -294,6 +294,18 @@ export async function runFullScan(
       } else {
         disposeAlignment(evaluated);
       }
+      // LITE experiment: after *independent* QR identity and both timing
+      // bands reach a perfect 50/50, no later hypothesis can improve
+      // timing coverage. Avoid remaining costly perspective/QR warps.
+      // Do NOT stop at 47–49: the reference photos needed fallback.
+      if (selected?.qr.valid && selected.check.matched === 50 &&
+          selected.check.leftMatched === 25 && selected.check.rightMatched === 25) {
+        logger.info('perspective',
+          'LITE fast-path: stopped registration after perfect QR + 50/50 timing',
+          {selected:selected.hypothesis.name,skipped:Math.max(0,
+            hypotheses.length-hypotheses.indexOf(hypothesis)-1)});
+        break;
+      }
     }
 
     // Deferred midpoint search: only pay for four alternate candidates
