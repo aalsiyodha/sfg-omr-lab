@@ -1111,3 +1111,46 @@ test('v4 borderline textured solid can recover but malformed shapes cannot',()=>
     assert.notEqual(result.status,'detected',shape+' must not be rescued as a fill');
   }
 });
+
+
+test('v5 tilted-sheet timing correction uses all four independent printed anchors',()=>{
+  const t=loadTS('src/scanner/timingRefinement.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{answers:{
+      rowStartY:83,rowSpacingY:7.4,questionsPerCol:25
+    }},mmToPx:(mm,dpi)=>mm*dpi/25.4},
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>155}
+  });
+  const dpi=150,targets=t.timingAnchorTargets(dpi);
+  const found={
+    leftTop:{x:85,y:483},
+    rightTop:{x:1165,y:503},
+    rightBottom:{x:1160,y:1563},
+    leftBottom:{x:74,y:1534},
+  };
+  assert.ok(t.boundedTimingGeometry(found,targets,dpi));
+  assert.equal(t.boundedTimingGeometry(
+    {...found,rightBottom:{x:1185,y:1563}},targets,dpi),false);
+  assert.equal(t.boundedTimingGeometry(
+    {...found,rightBottom:found.leftBottom},targets,dpi),false);
+  // Actual v5 right-side drift was +13 px at the top, +24 px at the
+  // bottom; nearest-position matching could choose the PREVIOUS row
+  // (-20 px), but same-side drift correctly identifies the real last row.
+  const next=targets.rightBottom;
+  const rightLast=t.timingCandidateScore(
+    found.rightBottom,next,13,22,34,150,150/25.4*2);
+  const wrongPrev=t.timingCandidateScore(
+    {x:1160,y:1519},next,13,22,34,150,150/25.4*2);
+  assert.ok(rightLast<wrongPrev,'must select actual 25th timing row');
+});
+
+test('rotated ArUco orientations are decoded independently of image position',()=>{
+  const {decodeArucoCells,ARUCO_BITS}=loadTS('src/scanner/arucoDetector.ts');
+  const cw=m=>m.map((_,y)=>m.map((_,x)=>m[5-x][y]));
+  for(let id=0;id<4;id++){
+    let bits=ARUCO_BITS[id].map(row=>[...row].map(v=>v==='#'?1:0));
+    for(const angle of [0,90,180,270]){
+      assert.equal(decodeArucoCells(bits)?.id,id,'ID '+id+' '+angle);
+      bits=cw(bits);
+    }
+  }
+});
