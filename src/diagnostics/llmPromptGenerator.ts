@@ -217,7 +217,7 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId }: LLMRepo
       ' | patches=' + scanResult.grayCalibration.patchMedians.join(',') +
       ' | contrast=' + (scanResult.grayCalibration.contrast ?? '?'));
   if (scanResult.errors.length) lines.push('Errors=' + scanResult.errors.slice(0, 3).join('; '));
-  if (scanResult.warnings.length) lines.push('Warnings=' + scanResult.warnings.slice(0, 2).join('; '));
+  if (scanResult.warnings?.length) lines.push('Warnings=' + scanResult.warnings.slice(0, 2).join('; '));
 
   lines.push('Answer map (— blank, X multiple, ? uncertain/error):');
   for (let start = 1; start <= 50; start += 10) {
