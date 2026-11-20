@@ -5,30 +5,11 @@ import QRCode from 'qrcode';
 import { OMR_LAYOUT, getBubbleCentre, getTestIdBubbleCentre } from '../config/omrLayout';
 
 /**
- * Generate and download printable A4 B&W OMR sheet PDF.
- * Downloads the official Version 1.1 reference PDF directly for 100% byte-for-byte fidelity.
+ * Generate the OMR 2.1 printable A4 reference from the same physical
+ * coordinates used by the scanner. Do not serve the old v1.1 static PDF:
+ * it lacks four ArUco IDs and the seven-tone calibration strip.
  */
 export async function generateOMRSheet(): Promise<void> {
-  try {
-    // 1. Fetch the official pre-built v1.1 reference PDF directly
-    const res = await fetch('/SFG_OMR_Lab_Minimal.pdf');
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'SFG_OMR_Lab_Minimal.pdf';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      return;
-    }
-  } catch (err) {
-    console.warn('Falling back to jsPDF generator:', err);
-  }
-
-  // Fallback: programmatic generator
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const L = OMR_LAYOUT;
 
@@ -40,7 +21,7 @@ export async function generateOMRSheet(): Promise<void> {
     doc.rect(marker.xMm, marker.yMm, marker.sizeMm, marker.sizeMm, 'F');
   }
 
-  // 2. Edge-midpoint markers (v1.1: 4x4 mm squares at midpoints of the 4 edges)
+  // 2. Edge-midpoint markers (OMR 2.1 retains v1.1 coordinates: 4x4 mm squares at midpoints of the 4 edges)
   // TOP_CENTER (105, 8.0) -> rect(103, 6, 4, 4)
   // BOTTOM_CENTER (105, 289.0) -> rect(103, 287, 4, 4)
   // LEFT_CENTER (8.0, 148.5) -> rect(6, 146.5, 4, 4)
@@ -50,7 +31,31 @@ export async function generateOMRSheet(): Promise<void> {
   doc.rect(6, 146.5, 4, 4, 'F');
   doc.rect(200, 146.5, 4, 4, 'F');
 
-  // 3. Timing marks (v1.1: 50 solid black rectangles 2.2 x 1.6 mm, one per question row)
+  // OMR 2.1: independently identifiable DICT_4X4_50 markers.
+  // Each is a 7x7 mm six-cell matrix with a black border. Centres and
+  // bits match arucoDetector.ts exactly (including IDs and orientation).
+  const arucoBits = [
+    ['######','#.#..#','##.#.#','###..#','###.##','######'],
+    ['######','######','#....#','#.##.#','#.#.##','######'],
+    ['######','###..#','###..#','###.##','#..#.#','######'],
+    ['######','#.##.#','#.##.#','##.###','##..##','######'],
+  ] as const;
+  const arucoCentres = [
+    {x:83.5,y:10.0}, {x:151.5,y:10.0},
+    {x:51.5,y:287.0}, {x:117.5,y:287.0},
+  ] as const;
+  const markerSize = 7;
+  const moduleSize = markerSize / 6;
+  doc.setFillColor(0,0,0);
+  arucoBits.forEach((rows,id) => rows.forEach((row,y) =>
+    [...row].forEach((cell,x) => {
+      if (cell === '#') doc.rect(
+        arucoCentres[id].x-markerSize/2+x*moduleSize,
+        arucoCentres[id].y-markerSize/2+y*moduleSize,
+        moduleSize,moduleSize,'F');
+    })));
+
+  // 3. Timing marks (OMR 2.1 retains v1.1 coordinates: 50 solid black rectangles 2.2 x 1.6 mm, one per question row)
   // Left band x: 12.2 - 14.4 mm; Right band x: 195.6 - 197.8 mm
   for (let r = 0; r < 25; r++) {
     const rowY = L.answers.rowStartY + r * L.answers.rowSpacingY;
@@ -93,7 +98,7 @@ export async function generateOMRSheet(): Promise<void> {
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.text('STANDARDISED ANSWER SHEET', 16, 22.4);
+  doc.text('STANDARDISED ANSWER SHEET - OMR 2.1', 16, 22.4);
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
@@ -223,26 +228,21 @@ export async function generateOMRSheet(): Promise<void> {
     { align: 'center' }
   );
 
-  // 9. Calibration Strip (v1.1: 4 patches: Black, Grey 35%, Grey 70%, White at x 158-193, y 283.5-289.5)
-  const patchY = 283.5;
-  const patchW = 8;
-  const patchH = 6;
-  const patches = [
-    { x: 158, r: 0, g: 0, b: 0 },
-    { x: 167, r: 89, g: 89, b: 89 },
-    { x: 176, r: 179, g: 179, b: 179 },
-    { x: 185, r: 255, g: 255, b: 255 },
-  ];
-  for (const p of patches) {
-    doc.setFillColor(p.r, p.g, p.b);
-    doc.rect(p.x, patchY, patchW, patchH, 'F');
-    doc.setDrawColor(0);
-    doc.setLineWidth(0.3);
-    doc.rect(p.x, patchY, patchW, patchH, 'S');
-  }
+  // OMR 2.1: seven neutral patches at the physical calibration centres
+  // (132,141,150,159,168,177,186) x y=286.5 mm, as grayCalibration.ts.
+  // These are diagnostics; valid answer decisions remain fail closed.
+  const grayCentres = [132,141,150,159,168,177,186] as const;
+  grayCentres.forEach((centre,i) => {
+    const shade=Math.round(255*i/6);
+    doc.setFillColor(shade,shade,shade);
+    doc.rect(centre-4,283.5,8,6,'F');
+    doc.setDrawColor(51);
+    doc.setLineWidth(0.16);
+    doc.rect(centre-4,283.5,8,6,'S');
+  });
 
-  // Save PDF
-  doc.save('SFG_OMR_Lab_Minimal.pdf');
+  // Save 2.1 PDF; never silently substitute the obsolete 1.1 reference.
+  doc.save('SFG_OMR_2.1_Printable.pdf');
 }
 
 /**

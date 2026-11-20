@@ -1394,3 +1394,14 @@ test('v2.2.4: outlying stroke geometry uses physical units across DPI',()=>{
   assert.equal(hasExternalStroke(create(150),100,100,150,255),true);
   assert.equal(hasExternalStroke(create(300),100,100,300,255),true);
 });
+
+test('OMR 2.1 PDF generator uses new ArUco markers and seven-tone calibration',()=>{
+  const source=readFileSync('src/pdf/generateOMR.ts','utf8');
+  assert.ok(source.includes("doc.save('SFG_OMR_2.1_Printable.pdf')"));
+  assert.equal(source.includes("fetch('/SFG_OMR_Lab_Minimal.pdf')"),false);
+  for(const coords of ["{x:83.5,y:10.0}","{x:151.5,y:10.0}",
+    "{x:51.5,y:287.0}","{x:117.5,y:287.0}"])
+    assert.ok(source.includes(coords),'Missing ArUco anchor '+coords);
+  assert.ok(source.includes('[132,141,150,159,168,177,186]'));
+  assert.ok(source.includes('arucoBits'));
+});
