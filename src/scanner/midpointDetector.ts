@@ -37,6 +37,7 @@ const sides: Side[] = ['top', 'bottom', 'left', 'right'];
 export function detectMidpointMarkers(
   binary: any, W: number, H: number,
   expected?: Partial<Record<Side,ImagePoint>>,
+  alternativeSide?: 'top' | 'bottom' | 'left' | 'right',
 ): MidpointRegistration {
   const fallback: MidpointRegistration = {
     found: false, count: 0, top: null, bottom: null, left: null, right: null
@@ -108,9 +109,18 @@ export function detectMidpointMarkers(
       return position + .22 * areaPenalty;
     };
 
+    // On a rejected first warp, retry one lower-ranked fiducial per side.
+    // This permits recovery when a filled Test-ID/answer bubble outranks an
+    // actual but washed-out 4 mm reference square. Every alternative must
+    // independently pass geometric, QR identity and dual-side timing gates.
+    if (alternativeSide && regions[alternativeSide].length < 2) {
+      return {...fallback, count:4,
+        error:'No second plausible '+alternativeSide+' midpoint candidate.'};
+    }
     const selected = Object.fromEntries(sides.map(side => {
-      const best = [...regions[side]].sort((a,b) => rank(side,a)-rank(side,b))[0];
-      return [side, { x: best.x, y: best.y }];
+      const ordered = [...regions[side]].sort((a,b) => rank(side,a)-rank(side,b));
+      const chosen = ordered[side===alternativeSide ? 1 : 0];
+      return [side, { x: chosen.x, y: chosen.y }];
     })) as Record<Side, ImagePoint>;
 
     const topBottom = Math.hypot(selected.bottom.x-selected.top.x, selected.bottom.y-selected.top.y);
