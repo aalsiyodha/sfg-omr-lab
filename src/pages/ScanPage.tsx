@@ -237,6 +237,16 @@ export default function ScanPage({ appState }: Props) {
         </div>
       </div>
 
+      <div className="alert alert-info border mb-3" role="note">
+        <strong><i className="bi bi-stars me-2" />What's new in v2.2.5</strong>
+        <div className="small mt-1">
+          Strict partial-mark rejection (ticks, hatching, dots and half-fills);
+          fully shaded multiple options are flagged and scored as incorrect
+          (−0.66 for a 2-mark practice question). High-ink rejected bubbles
+          now appear in diagnostics. Results remain beta: inspect doubtful marks.
+        </div>
+      </div>
+
       {opencv !== 'ready' && (
         <div className={`alert alert-${opencv === 'loading' ? 'warning' : 'danger'} mb-3`}>
           <i className="bi bi-exclamation-triangle me-2" />
