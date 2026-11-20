@@ -5,12 +5,20 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
+import { registrationScore, skipRedundantFallback } from './alignmentPolicy';
+import { refineByTimingSquares } from './timingRefinement';
 import type { AlignmentCheck } from './alignmentValidator';
-import { correctPerspective, correctPerspectiveFromMidpoints } from './perspectiveCorrection';
+import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
+import { detectArucoMarkers, predictMidpointsFromArucos, generateArucoOverlay } from './arucoDetector';
+import type { ArucoRegistration } from './arucoDetector';
+import { applySevenToneCorrection } from './grayToneCorrection';
+import { reconcileToneAnswers } from './toneConsensus';
 import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion } from './qrDecoder';
-import { detectAllAnswers, detectTestId } from './bubbleDetector';
-import { measureGrayCalibration } from './grayCalibration';
+import { detectAllAnswers, detectTestId, computeAdaptiveDarkThreshold } from './bubbleDetector';
+import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
+import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
+import { rescueTestIdOffset } from './testIdAlignment';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
 import { OMR_LAYOUT } from '../config/omrLayout';
@@ -27,7 +35,8 @@ export interface ScanProgress {
 type QRStatus = ReturnType<typeof decodeQRFromRegion>;
 type Hypothesis =
   | { kind: 'corner'; name: string; markers: MarkerDetectionResult }
-  | { kind: 'midpoint'; name: string; markers: MidpointRegistration };
+  | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
+  | { kind: 'aruco'; name: string; markers: ArucoRegistration };
 interface AcceptedAlignment {
   hypothesis: Hypothesis;
   perspective: PerspectiveResult;
@@ -59,7 +68,9 @@ function evaluateHypothesis(
   try {
     persp = hypothesis.kind === 'corner'
       ? correctPerspective(source, hypothesis.markers)
-      : correctPerspectiveFromMidpoints(source, hypothesis.markers);
+      : hypothesis.kind === 'midpoint'
+      ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
+      : correctPerspectiveFromArucos(source,hypothesis.markers);
     if (!persp.success || !persp.corrected) return null;
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
@@ -90,9 +101,58 @@ function evaluateHypothesis(
 
     gray = new cv.Mat();
     cv.cvtColor(persp.corrected, gray, cv.COLOR_RGBA2GRAY);
-    const check = verifyTimingMarks(gray, dpi);
+    let check = verifyTimingMarks(gray, dpi);
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
+    if (!check.passed) {
+      // v2.2.2: Any registration method can have a sound QR position but
+      // a slightly displaced timing lattice. Try four *independent* printed
+      // timing squares as a bounded second correction. Never trust a refined
+      // warp until QR identity and both side timing bands independently pass.
+      const rescued=refineByTimingSquares(persp.corrected,dpi);
+      if(rescued){
+        let updatedGray:any=null;
+        try{
+          const candidate=document.createElement('canvas');
+          candidate.width=rescued.corrected.cols;
+          candidate.height=rescued.corrected.rows;
+          cv.imshow(candidate,rescued.corrected);
+          const verifiedQR=decodeQRFromRegion(
+            candidate,OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+          if(verifiedQR.valid && verifiedQR.raw === qr.raw){
+            updatedGray=new cv.Mat();
+            cv.cvtColor(rescued.corrected,updatedGray,cv.COLOR_RGBA2GRAY);
+            const updatedCheck=verifyTimingMarks(updatedGray,dpi);
+            logger.info('perspective',`${hypothesis.name}: timing-assisted refinement`,{
+              shifts:rescued.shifts,
+              before:check.matched,after:updatedCheck.matched,
+              left:updatedCheck.leftMatched,right:updatedCheck.rightMatched,
+              qrReverified:verifiedQR.valid,
+            });
+            if(updatedCheck.passed && updatedCheck.matched>=check.matched+8){
+              cleanupMats(gray,persp.corrected);
+              persp.corrected=rescued.corrected;
+              persp.correctedDataUrl=candidate.toDataURL('image/png');
+              gray=updatedGray;updatedGray=null;
+              cv.imshow(canvas,persp.corrected);
+              check=updatedCheck;
+              qr=verifiedQR;
+              // The original first-stage transform remains owned by persp.
+            }else cleanupMats(rescued.corrected);
+          }else{
+            logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`);
+            cleanupMats(rescued.corrected);
+          }
+        }catch(error){
+          // On failure, keep only the unchanged original warp.
+          // If the refinement was adopted, persp owns the new image.
+          if(persp.corrected!==rescued.corrected)cleanupMats(rescued.corrected);
+          logger.warning('perspective','Timing-assisted correction failed',{reason:String(error)});
+        }finally{
+          cleanupMats(updatedGray,rescued.transform);
+        }
+      }
+    }
     if (!check.passed) {
       logger.warning('perspective', `${hypothesis.name}: rejected, insufficient independent timing-mark alignment`);
       return null;
@@ -134,6 +194,13 @@ export async function runFullScan(
     onProgress?.({ stage: 'Finding reference markers (corner and edge midpoint)…', percent: 30 });
 
     const hypotheses: Hypothesis[] = [];
+    // Independent marker families: corners, side midpoints and uniquely
+    // identified ArUco codes. Each alignment is verified after warping.
+    const arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
+    const arucoMidpointPrediction=predictMidpointsFromArucos(arucoAdaptive);
+    logger.info('markerDetection','ArUco 4x4 marker identification (adaptive)',{
+      identified:arucoAdaptive.count,ids:Object.keys(arucoAdaptive.points),
+      readyForRescue:arucoAdaptive.found});
     const primary = detectMarkers(preprocessed.thresholded, loaded.width, loaded.height);
     if (primary.found) hypotheses.push({ kind: 'corner', name: 'corner/adaptive', markers: primary });
 
@@ -141,6 +208,15 @@ export async function runFullScan(
     // corner quadrilateral can be geometrically plausible (Test 4 v1.6).
     const mid = detectMidpointMarkers(preprocessed.thresholded, loaded.width, loaded.height);
     if (mid.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/adaptive', markers: mid });
+    if(arucoMidpointPrediction){
+      const guided=detectMidpointMarkers(preprocessed.thresholded,loaded.width,loaded.height,arucoMidpointPrediction);
+      logger.info('markerDetection','ArUco-guided midpoint square selection',{
+        predictions:arucoMidpointPrediction,valid:guided.found,
+        selected:guided.found?{top:guided.top,right:guided.right,
+          bottom:guided.bottom,left:guided.left}:null,
+      });
+      if(guided.found) hypotheses.push({kind:'midpoint',name:'midpoint/aruco-guided',markers:guided});
+    }
 
     const alternate = new cv.Mat();
     try {
@@ -149,14 +225,32 @@ export async function runFullScan(
       const midOtsu = detectMidpointMarkers(alternate, loaded.width, loaded.height);
       if (cornerOtsu.found) hypotheses.push({ kind: 'corner', name: 'corner/Otsu', markers: cornerOtsu });
       if (midOtsu.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/Otsu', markers: midOtsu });
+      if(arucoMidpointPrediction){
+        const guidedOtsu=detectMidpointMarkers(alternate,loaded.width,loaded.height,arucoMidpointPrediction);
+        if(guidedOtsu.found)hypotheses.push({
+          kind:'midpoint',name:'midpoint/aruco-guided-Otsu',markers:guidedOtsu,
+        });
+      }
+      const arucoOtsu=detectArucoMarkers(preprocessed.gray,alternate);
+      logger.info('markerDetection','ArUco identification (Otsu)',{
+        identified:arucoOtsu.count,ids:Object.keys(arucoOtsu.points),
+        readyForRescue:arucoOtsu.found});
+      if(arucoAdaptive.found)hypotheses.push({kind:'aruco',name:'aruco/adaptive',markers:arucoAdaptive});
+      // Independent thresholding can recover a different set of marker
+      // centres. Evaluate both, even if adaptive ArUco detection succeeded.
+      if(arucoOtsu.found)hypotheses.push({kind:'aruco',name:'aruco/Otsu',markers:arucoOtsu});
     } finally {
       cleanupMats(alternate);
     }
 
     logger.info('markerDetection', `${hypotheses.length} reference hypotheses available`,
       { cornerCandidates: hypotheses.filter(h => h.kind === 'corner').length,
-        midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length });
-    images.markerOverlay = generateMarkerOverlay(loaded.canvas, primary);
+        midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length,
+        arucoCandidates: hypotheses.filter(h => h.kind === 'aruco').length,
+        methodNames: hypotheses.map(h => h.name) });
+    images.markerOverlay = arucoAdaptive.found
+      ? generateArucoOverlay(loaded.canvas,arucoAdaptive)
+      : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
     for (const hypothesis of hypotheses) {
@@ -164,20 +258,32 @@ export async function runFullScan(
         hypothesis.kind === 'corner'
           ? { topLeft:hypothesis.markers.topLeft, topRight:hypothesis.markers.topRight, bottomLeft:hypothesis.markers.bottomLeft,
               bottomRight:hypothesis.markers.bottomRight, validGeometry:hypothesis.markers.validGeometry }
-          : { top:hypothesis.markers.top, right:hypothesis.markers.right, bottom:hypothesis.markers.bottom, left:hypothesis.markers.left });
+          : hypothesis.kind === 'midpoint'
+          ? { top:hypothesis.markers.top, right:hypothesis.markers.right, bottom:hypothesis.markers.bottom, left:hypothesis.markers.left }
+          : { ids:Object.keys(hypothesis.markers.points),points:hypothesis.markers.points });
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
-      if (selected && selected.check.matched >= 40 && hypothesis.name.endsWith('/Otsu')) break;
+      if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name, hypothesis.kind)) {
+        logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
+        continue;
+      }
       const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
-      const newScore = evaluated.check.matched +
-        (evaluated.hypothesis.kind === 'corner' ? 0.25 : 0);
-      const oldScore = selected
-        ? selected.check.matched + (selected.hypothesis.kind === 'corner' ? .25 : 0)
-        : -1;
+      const rank = (a: AcceptedAlignment) => registrationScore({
+        kind: a.hypothesis.kind, timingMatched: a.check.matched,
+        leftMatched: a.check.leftMatched, rightMatched: a.check.rightMatched,
+        qrVerified: a.qr.valid,
+      });
+      const newScore = rank(evaluated);
+      const oldScore = selected ? rank(selected) : -1;
+      logger.info('perspective', `${hypothesis.name}: alignment candidate verified`, {
+        score: newScore, timing: evaluated.check.matched,
+        left: evaluated.check.leftMatched, right: evaluated.check.rightMatched,
+        qrIdentityVerified: evaluated.qr.valid,
+      });
       if (newScore > oldScore) {
         if (selected) disposeAlignment(selected);
         selected = evaluated;
@@ -213,30 +319,95 @@ export async function runFullScan(
       logger.info('perspective', `Selected ${registrationMethod} registration`,
         { timingMarks: alignmentMatched, rotated });
       images.perspectiveCorrected = chosen.canvas.toDataURL('image/png');
-      images.markerOverlay = chosen.hypothesis.kind === 'corner'
-        ? generateMarkerOverlay(loaded.canvas, chosen.hypothesis.markers)
-        : generateMidpointOverlay(loaded.canvas, chosen.hypothesis.markers);
+      if(arucoAdaptive.found)images.markerOverlay=generateArucoOverlay(
+        loaded.canvas,arucoAdaptive,registrationMethod,alignmentMatched,
+        chosen.hypothesis.kind==='midpoint'?chosen.hypothesis.markers:undefined);
+      else if(chosen.hypothesis.kind==='corner')
+        images.markerOverlay=generateMarkerOverlay(loaded.canvas,chosen.hypothesis.markers);
+      else if(chosen.hypothesis.kind==='midpoint')
+        images.markerOverlay=generateMidpointOverlay(loaded.canvas,chosen.hypothesis.markers);
 
       grayCalibration = measureGrayCalibration(chosen.gray, dpi);
-      logger.info('bubbleDetection', 'Grayscale reference strip (diagnostic only)', {
+      const inkCeiling = grayStripInkCeiling(grayCalibration);
+      logger.info('bubbleDetection', 'Grayscale reference strip calibration', {
         status:grayCalibration.status,
         patchMedians:grayCalibration.patchMedians,
         contrast:grayCalibration.contrast,
+        activeInkCeiling:inkCeiling,
         note:grayCalibration.note
       });
+      onProgress?.({ stage: 'Refining printed bubble-grid alignment…', percent: 67 });
+      const gridStart=Date.now();
+      const grid = estimateGridAlignment(chosen.gray,dpi);
+      logger.info('perspective','Independent printed-ring grid offsets',
+        {grid, durationMs:Date.now()-gridStart});
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
-      const detectedId = detectTestId(chosen.gray, dpi);
+      let idOffset: {dx:number;dy:number} = grid.testId;
+      let detectedId = detectTestId(chosen.gray, dpi, inkCeiling ?? undefined, idOffset);
+      if(detectedId.testId===null){
+        // A global warp may miss the top ID grid even if answer rings align.
+        // Only retry at a location with TWO isolated high-density digit cores.
+        const rescue=rescueTestIdOffset(chosen.gray,dpi,Math.min(150,inkCeiling??150));
+        if(rescue){
+          const retry=detectTestId(chosen.gray,dpi,inkCeiling??undefined,rescue);
+          if(retry.testId===rescue.tens*10+rescue.units){
+            detectedId=retry;
+            idOffset=rescue;
+            logger.info('testIdDetection','ID rescued with independent two-row evidence',
+              {offset:{dx:rescue.dx,dy:rescue.dy},strength:rescue.strength});
+          } else logger.warning('testIdDetection','Candidate ID offset failed full validation',
+            {offset:{dx:rescue.dx,dy:rescue.dy},strength:rescue.strength});
+        }
+      }
       testId = detectedId.testId;
       logger.info('testIdDetection', `Test ID: ${testId}`, detectedId);
-      answers = detectAllAnswers(chosen.gray, dpi);
+      // Compare original and seven-tone readings under exactly the same
+      // verified registration, grid offsets and ink ceiling. This separates
+      // geometry from tone-mapping changes and protects against Q18-like
+      // disappearing filled marks without promoting Q42-like faint debris.
+      const rawInkThreshold=computeAdaptiveDarkThreshold(chosen.gray);
+      const rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
+        q=>offsetForQuestion(grid,q),rawInkThreshold);
+      const tone=applySevenToneCorrection(chosen.gray,grayCalibration);
+      logger.info('bubbleDetection','Seven-tone image correction',{
+        applied:tone.applied,topBottomDelta:tone.topBottomDelta,
+        description:tone.description});
+      try {
+        if(tone.applied){
+          // Both the darkness threshold and the calibrated ink ceiling
+          // must be mapped through the identical LUT as the pixel values.
+          const correctedInkThreshold=tone.mapInkThreshold(rawInkThreshold);
+          const correctedInkCeiling=inkCeiling===null
+            ? undefined : tone.mapInkThreshold(inkCeiling);
+          logger.info('bubbleDetection','Original/corrected threshold correspondence',{
+            rawThreshold:rawInkThreshold,
+            correctedThreshold:Number(correctedInkThreshold.toFixed(2)),
+            rawInkCeiling:inkCeiling,
+            correctedInkCeiling:correctedInkCeiling===undefined
+              ? null:Number(correctedInkCeiling.toFixed(2)),
+          });
+          const toneAnswers=detectAllAnswers(tone.corrected,dpi,correctedInkCeiling,
+            q=>offsetForQuestion(grid,q),correctedInkThreshold);
+          const consensus=reconcileToneAnswers(rawAnswers,toneAnswers);
+          answers=consensus.answers;
+          logger.info('bubbleDetection','Original-vs-seven-tone answer comparison',{
+            differingRows:consensus.differences,
+            reviewedConflicts:consensus.differences.filter(d=>d.action!=='retain_corrected').length,
+          });
+        }else{
+          answers=rawAnswers;
+        }
+      } finally {
+        cleanupMats(tone.corrected);
+      }
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
       images.bubbleOverlay = generateBubbleOverlay(
-        chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi
+        chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi, idOffset
       );
     } else {
       logger.error('perspective',
-        'No trustworthy registration: corner/edge-midpoint attempts failed QR or timing-mark validation.');
+        'No trustworthy registration: corner, midpoint and ArUco attempts failed independent QR/timing validation.');
     }
 
     const partial: ScanResult = {
@@ -248,7 +419,7 @@ export async function runFullScan(
       stageLogs: [],
       warnings: [],
       errors: selected ? [] : [
-        'No registration hypothesis verified the QR position and side timing marks. Try a clearer photo of the complete sheet.'
+        'No registration hypothesis passed QR identity and independent left/right timing checks (corners, midpoint squares, ArUco). Try a sharper full-page image.'
       ],
       overallStatus: 'failed',
     };

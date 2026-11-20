@@ -92,7 +92,8 @@ function measureBubbleInterior(
   interiorRadiusPx: number,
   darkThreshold: number = 152,
   dpi: number = 150,
-  paperOverride?: number
+  paperOverride?: number,
+  inkCeiling?: number
 ): BubbleMeasurementDetail {
   // Sample the known homography-mapped centre. Searching for the darkest
   // single pixel caused the ROI to chase outlines and stray ink.
@@ -132,7 +133,7 @@ function measureBubbleInterior(
   // Retain the established threshold on well-lit paper.
   const referencePaper = paperOverride ?? paper;
   const correction = Math.max(-7, Math.min(7, (referencePaper - 235) * .14));
-  const inkThreshold = Math.max(50, Math.min(173, darkThreshold + correction, referencePaper - 24));
+  const inkThreshold = Math.max(50, Math.min(173, darkThreshold + correction, referencePaper - (inkCeiling === undefined ? 24 : 36), inkCeiling ?? 173));
 
   let totalCirclePx = 0;
   let darkCirclePx = 0;
@@ -247,11 +248,45 @@ function measureBubbleInterior(
     paperReferenceBrightness: referencePaper, paperReferenceContaminated: paperOverride !== undefined };
 }
 
+/**
+ * Detect persistent unfilled vertical channels inside a partially shaded
+ * bubble. Repeated two-pixel light gaps bracketed by dark ink on both
+ * sides are typical of parallel hatch strokes; clean solid marks lack them.
+ * The mask ends at the 1mm interior radius (away from printed outlines).
+ */
+export function interiorHatchEvidence(
+  gray:{rows:number;cols:number;ucharPtr(y:number,x:number):ArrayLike<number>},
+  cxPx:number,cyPx:number,dpi:number,threshold:number,
+):{gapRows:number;hatchLike:boolean}{
+  const r=Math.max(2,Math.round(mmToPx(1.0,dpi)));
+  const cx=Math.round(cxPx),cy=Math.round(cyPx);
+  if(cx-r<0||cy-r<0||cx+r>=gray.cols||cy+r>=gray.rows)
+    return {gapRows:0,hatchLike:false};
+  let rows=0;
+  for(let dy=-Math.round(r*.72);dy<=Math.round(r*.72);dy++){
+    const xs:number[]=[];
+    for(let dx=-r;dx<=r;dx++)
+      if(dx*dx+dy*dy<=r*r)xs.push(dx);
+    const dark=xs.map(dx=>gray.ucharPtr(cy+dy,cx+dx)[0]<threshold);
+    // A gap must be inside ink, not a partially marked outer edge.
+    let found=false;
+    for(let i=2;i<dark.length-3;i++){
+      if(dark[i-2]&&dark[i-1]&&!dark[i]&&!dark[i+1]&&dark.slice(i+2).some(Boolean)){
+        found=true;break;
+      }
+    }
+    if(found)rows++;
+  }
+  return {gapRows:rows,hatchLike:rows>=Math.max(4,Math.round(r*.6))};
+}
+
 export function detectQuestion(
   correctedGray: any,  // grayscale cv.Mat of perspective-corrected image
   question: number,    // 1-based
   dpi: number,
-  darkThreshold?: number
+  darkThreshold?: number,
+  inkCeiling?: number,
+  offset: {dx:number;dy:number} = {dx:0,dy:0}
 ): BubbleReadResult {
   const settings = getSettings();
   const effectiveThreshold = darkThreshold ?? computeAdaptiveDarkThreshold(correctedGray);
@@ -261,10 +296,10 @@ export function detectQuestion(
   
   const centres = options.map((_, idx) => {
     const c = getBubbleCentre(question, idx as 0|1|2|3);
-    return { x: mmToPx(c.xMm,dpi), y: mmToPx(c.yMm,dpi) };
+    return { x: mmToPx(c.xMm,dpi)+offset.dx, y: mmToPx(c.yMm,dpi)+offset.dy };
   });
   const preliminary = centres.map(c =>
-    measureBubbleInterior(correctedGray, c.x, c.y, interiorRadiusPx, effectiveThreshold, dpi));
+    measureBubbleInterior(correctedGray, c.x, c.y, interiorRadiusPx, effectiveThreshold, dpi, undefined, inkCeiling));
   // An extended pen mark can flood the 2.05–2.55mm reference annulus.
   // Borrow nearby paper only for an extreme isolated anomaly, not for
   // ordinary localized shadows such as Test 10 Q21–24.
@@ -277,7 +312,7 @@ export function detectQuestion(
     if (localPaper < 105 && reference - localPaper >= 65 &&
         others.filter(v=>v>=145).length >= 2)
       return measureBubbleInterior(correctedGray, centres[idx].x, centres[idx].y,
-        interiorRadiusPx, effectiveThreshold, dpi, reference);
+        interiorRadiusPx, effectiveThreshold, dpi, reference, inkCeiling);
     return sample;
   });
   const rawMeasurements = options.map((opt, idx) => {
@@ -290,11 +325,15 @@ export function detectQuestion(
     const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
     // Q38-D-type crescent can darken most of the *interior* while leaving
     // an incomplete outer fill. Check radial consistency even above 85%.
+    // A dark central ROI is not sufficient when the outer part of the
+    // printed bubble is only half shaded (v5 Q24). At a perspective angle
+    // the small 1mm ROI can look 85%+ full while the 1.04–1.40mm annulus
+    // is substantially incomplete. Keep broad textured fills recoverable.
     const highFillCrescent = detail.fillPercent >= 75 &&
-      detail.fillPercent < 97 &&
-      radial.core >= 75 &&
-      radial.outer < 42 &&
-      radial.core - radial.outer > 42;
+      detail.fillPercent < 96 &&
+      radial.core >= 70 &&
+      radial.outer < 60 &&
+      radial.core - radial.outer > 25;
     if (highFillCrescent) {
       detail.isValid = false;
       detail.rejectReason = 'High-density partial/crescent: outer coverage insufficient';
@@ -336,22 +375,46 @@ export function detectQuestion(
   });
 
   const measurements = rawMeasurements.map(r => r.measurement);
-  // Separate stray-ink signals from answer validity.
-  const bands = centres.map(c => measureOutlineBand(correctedGray,c.x,c.y,dpi));
-  const tracedOutline = bands.some((value,i) =>
+  // Hybrid: inspect the outer paper only when the row lacks a confident
+  // answer. An optional very faint second mark is handled separately below.
+  // This avoids flagging ordinary solid answers due to shadows, adjacent
+  // printed text, and JPEG artifacts around the bubble rings.
+  const strongestFill = Math.max(...measurements.map(m => m.fillPercent));
+  const probeExternal = strongestFill < settings.bubbleFillThreshold;
+  const bands = probeExternal
+    ? centres.map(c => measureOutlineBand(correctedGray,c.x,c.y,dpi))
+    : [];
+  const tracedOutline = probeExternal && bands.some((value,i) =>
     measurements[i].fillPercent < settings.bubbleFillThreshold &&
     value < 85 && Math.max(...bands.filter((_,j)=>j!==i)) - value > 45);
-  const offBubbleInk = hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
-    measurements.map(m => m.localPaperBrightness ?? 235));
-  const externalStroke = centres.some((c,i) =>
-    hasExternalStroke(correctedGray,c.x,c.y,dpi,
-      measurements[i].paperReferenceBrightness ?? measurements[i].localPaperBrightness ?? 235));
+  const offBubbleInk = probeExternal &&
+    hasInterBubbleInk(correctedGray,centres,dpi,effectiveThreshold,
+      measurements.map(m => m.localPaperBrightness ?? 235));
+  // The 2.0.1 external-band probe sees printed text/rings and JPEG artifacts,
+  // so it is not trustworthy when a clear solid answer is present. Constrain
+  // it to *otherwise unfilled* rows that also have local interior evidence of
+  // a genuine stray mark. Never reject a clear fill based on this probe alone.
+  const externalStroke = probeExternal &&
+    centres.some((c,i) =>
+      measurements[i].fillPercent >= 18 &&
+      measurements[i].fillPercent < settings.bubbleFillThreshold &&
+      hasExternalStroke(correctedGray,c.x,c.y,dpi,
+        measurements[i].paperReferenceBrightness ?? measurements[i].localPaperBrightness ?? 235));
   const unexpectedInk = tracedOutline || offBubbleInk || externalStroke;
   const reviewUnexpected = (): BubbleReadResult => {
-    const target = rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
+    // A hollow outline may leave every interior score at zero. Attribute the
+    // warning to the actual band outlier rather than arbitrarily to option A.
+    const bandIndex = tracedOutline
+      ? bands.findIndex((value,i)=>measurements[i].fillPercent < settings.bubbleFillThreshold &&
+          value < 85 && Math.max(...bands.filter((_,j)=>j!==i))-value>45)
+      : -1;
+    const target = bandIndex>=0 ? rawMeasurements[bandIndex]
+      : rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
     target.measurement.rejectReason = tracedOutline ? 'Ink traced around a bubble outline'
       : offBubbleInk ? 'Ink detected between answer bubbles' : 'Stroke outside bubble outline';
-    return { measurements, answer:null,status:'uncertain',confidence:0 };
+    // Per SFG strict-fill policy, an unfilled row with an outline tick,
+    // slash, or off-bubble stroke is an unattempted question, not a choice.
+    return { measurements, answer:null,status:'blank',confidence:0 };
   };
   
   // Sort by fill descending
@@ -381,6 +444,15 @@ export function detectQuestion(
   }
   if (max < settings.bubbleFillThreshold) {
     if (unexpectedInk) return reviewUnexpected();
+    // v2.1.2: printed-ring/compression debris produces faint annular pixels
+    // even in an empty row. Without central evidence or an independent
+    // external-stroke signal, do not turn tiny noise into manual review.
+    // A visible centre slash/cross still follows the conservative review path.
+    const noCoreInk = rawMeasurements.every(r =>
+      (r.measurement.radialCore ?? 0) < 8 &&
+      (r.measurement.radialMiddle ?? 0) < 20);
+    if(max < 12 && noCoreInk)
+      return { measurements, answer:null, status:'blank', confidence:Math.max(0,100-max) };
     // A small crossed or ticked bubble can have almost no dark interior
     // at the standard threshold. Compare the fixed interior against local
     // paper without promoting any mark to a valid answer.
@@ -399,12 +471,19 @@ export function detectQuestion(
       }
       const fraction=total?dark/total:0;
       // Faint strokes: nontrivial interior evidence but not broad solid ink.
+      const radialCore=measurements[i].radialCore ?? 0;
+      const radialMiddle=measurements[i].radialMiddle ?? 0;
+      // The full engine mistook clean printed rings (Test 12 Q11) for
+      // deliberate marks. Require extra evidence for weaker interior ink.
+      // Strong narrow marks (Test 12 Q37/Q38) still go to manual review.
       return paper>=115 && fraction>=0.075 && fraction<=0.48 &&
-        measurements[i].fillPercent < RULES.visiblePartialFill;
+        measurements[i].fillPercent < RULES.visiblePartialFill &&
+        (measurements[i].fillPercent>=14 ||
+          (radialCore>=15 && radialMiddle>=10));
     });
     if (faintMark) {
       top.measurement.rejectReason = 'Faint or thin non-solid ink inside bubble';
-      return {measurements,answer:null,status:'uncertain',confidence:0};
+      return {measurements,answer:null,status:'blank',confidence:Math.max(0,100-max)};
     }
     if (max >= RULES.nearThresholdFill ||
         (max >= RULES.visiblePartialFill && (top.detail.filledQuadrants ?? 0) >= 2) ||
@@ -412,7 +491,7 @@ export function detectQuestion(
         rawMeasurements.some(r => r.measurement.radialShape === 'hollow_ring' &&
           r.measurement.radialOuter >= 55)) {
       top.measurement.rejectReason = top.detail.rejectReason || 'Visible mark near the fill threshold';
-      return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+      return { measurements, answer: null, status: 'blank', confidence: Math.max(0,100-max) };
     }
     return { measurements, answer: null, status: 'blank', confidence: Math.max(0, 100 - max) };
   }
@@ -424,24 +503,114 @@ export function detectQuestion(
     second.measurement.rejectReason = 'Possible additional mark just below threshold';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
-  if (substantialMarks.length >= 2 || !top.detail.isValid || jump < RULES.minJump ||
-      diff < settings.bubbleUncertainThreshold) {
+  // A confident answer must not silently suppress a deliberate weaker mark
+  // on another option (e.g. a solid B plus an A tick). Do not include the top
+  // option in this check, and require both measured and shape evidence to
+  // reduce paper/printed-outline false alarms.
+  // A strong selection must not be invalidated by a few peripheral JPEG
+  // pixels in another bubble. On v5 Q38/Q40/Q43 the neighbouring options
+  // had 14–16% apparent darkness but ZERO ink in their radial cores.
+  // Require connected core evidence, or a demonstrable thin stroke with
+  // substantial intensity (preserves genuine secondary ticks/crosses).
+  const secondInk = sorted.slice(1).find(r =>
+    r.measurement.fillPercent >= 12 &&
+    r.measurement.fillPercent < settings.bubbleFillThreshold &&
+    ((r.measurement.radialCore ?? 0) >= 15 ||
+      (r.detail.strokeLike && r.measurement.fillPercent >= 22)));
+  if (secondInk) {
+    secondInk.measurement.rejectReason = 'Additional ink on another option: manual review';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+  }
+  // Borderline solid-fill recovery: JPEG/photocopy texture can create
+  // narrow bright holes inside a genuinely filled circle (v4 Q18-D).
+  // Use a *small* threshold perturbation only when the ORIGINAL radial,
+  // quadrant and symmetry evidence already resembles a broad circular fill.
+  // Never rescue ticks, dots, hatches with thin outer coverage or crescents.
+  const plausiblySolid=max>=45 && max<85 &&
+    second.measurement.fillPercent<12 &&
+    (top.detail.filledQuadrants??0)>=3 &&
+    (top.measurement.radialCore??0)>=25 &&
+    (top.measurement.radialMiddle??0)>=40 &&
+    (top.measurement.radialOuter??0)>=32 &&
+    top.detail.horizontalDisparity<28 &&
+    top.detail.diagonalDisparity<55;
+  let solidTextureRescue=false;
+  if(plausiblySolid) {
+    const idx=options.indexOf(top.measurement.option);
+    const t=Math.min(inkCeiling??173,(top.detail.effectiveThreshold??effectiveThreshold)+7);
+    const sample=measureBubbleInterior(correctedGray,centres[idx].x,centres[idx].y,
+      interiorRadiusPx,t,dpi,top.measurement.paperReferenceBrightness,inkCeiling);
+    const radial=measureRadialInk(correctedGray,centres[idx].x,centres[idx].y,dpi,
+      sample.effectiveThreshold??t);
+    solidTextureRescue=sample.fillPercent>=65 &&
+      sample.filledQuadrants===4 && !sample.strokeLike &&
+      sample.horizontalDisparity<25 && sample.diagonalDisparity<40 &&
+      radial.core>=35 && radial.middle>=65 && radial.outer>=55 &&
+      radial.classification==='solid_like';
+    if(solidTextureRescue) {
+      top.measurement.rejectReason=undefined;
+      top.measurement.validMark=true;
+    }
+  }
+  if (substantialMarks.length >= 2 || (!top.detail.isValid && !solidTextureRescue) || jump < RULES.minJump ||
+      diff < settings.bubbleUncertainThreshold) {
+    top.measurement.rejectReason ??= top.detail.rejectReason ??
+      (substantialMarks.length >= 2 ? 'Two marked options' :
+       !top.detail.isValid ? 'Top mark has invalid shape' :
+       'Insufficient separation between options');
+    // Reject a single incomplete mark as blank; do not suppress conflicts
+    // between two genuinely marked options as mere blanks.
+    const invalidOnly = substantialMarks.length === 1 &&
+      !top.detail.isValid && !solidTextureRescue &&
+      second.measurement.fillPercent < 12;
+    return { measurements, answer: null,
+      status: invalidOnly ? 'blank' : 'uncertain',
+      confidence: invalidOnly ? Math.max(0,100-max) : 0 };
   }
 
   // Only borderline selections need perturbation analysis; clear 90%-filled
   // answers remain fast. Recheck neighbouring ink thresholds and ROI centres.
-  if (max < RULES.strongFill) {
+  // A symmetric, centre-and-edge-filled bubble is a legitimate lightly
+  // filled selection (Test 12 Q12-B and Q24-C). Variance checks should
+  // target narrow/uneven marks (Test 27 Q27 cross), not all medium fills.
+  // Evaluate inner fill topology even when the global fill score is high:
+  // v3 Q20-C's diagonal hatching left a persistent bright channel and Q24-B
+  // was dark on one side but only half-shaded on the other.
+  const topIndex=options.indexOf(top.measurement.option);
+  const hatch=interiorHatchEvidence(correctedGray,centres[topIndex].x,
+    centres[topIndex].y,dpi,top.detail.effectiveThreshold??effectiveThreshold);
+  const oneSidedFill=max>=60 && max<96 &&
+    top.detail.horizontalDisparity>=38 &&
+    (top.measurement.radialOuter??0)<85;
+  const hatchedFill=max>=45 && max<90 && hatch.hatchLike && !solidTextureRescue;
+  if(oneSidedFill||hatchedFill){
+    top.measurement.rejectReason=oneSidedFill
+      ? 'Asymmetric partial fill: left/right ink coverage differs'
+      : 'Hatched/striped ink: repeated unfilled channels inside bubble';
+    // A single obviously incomplete bubble is unattempted, per SFG policy.
+    return {measurements,answer:null,status:'blank',confidence:Math.max(0,100-max)};
+  }
+  const stableSolidShape = solidTextureRescue || (
+    (top.detail.filledQuadrants ?? 0) === 4 &&
+    !top.detail.strokeLike &&
+    (top.measurement.radialCore ?? 0)>=40 &&
+    (top.measurement.radialMiddle ?? 0)>=40 &&
+    (top.measurement.radialOuter ?? 0)>=45);
+  if (max < RULES.strongFill && !stableSolidShape) {
     const optionIdx = options.indexOf(top.measurement.option) as 0|1|2|3;
     const centre = getBubbleCentre(question, optionIdx);
-    const cx = mmToPx(centre.xMm, dpi), cy = mmToPx(centre.yMm, dpi);
+    const cx = mmToPx(centre.xMm, dpi)+offset.dx, cy = mmToPx(centre.yMm, dpi)+offset.dy;
+    // The perturbations must use the exact paper/ceiling policy used for the
+    // principal measurement. Otherwise they count gray halos as new ink.
+    const paper = top.measurement.paperReferenceBrightness ??
+      top.measurement.localPaperBrightness;
     const samples = [
-      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - RULES.thresholdPerturbation, dpi),
-      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + RULES.thresholdPerturbation, dpi),
-      measureBubbleInterior(correctedGray, cx - 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
-      measureBubbleInterior(correctedGray, cx + 1, cy, interiorRadiusPx, effectiveThreshold, dpi),
-      measureBubbleInterior(correctedGray, cx, cy - 1, interiorRadiusPx, effectiveThreshold, dpi),
-      measureBubbleInterior(correctedGray, cx, cy + 1, interiorRadiusPx, effectiveThreshold, dpi),
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold - RULES.thresholdPerturbation, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx, cy, interiorRadiusPx, effectiveThreshold + RULES.thresholdPerturbation, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx - 1, cy, interiorRadiusPx, effectiveThreshold, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx + 1, cy, interiorRadiusPx, effectiveThreshold, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx, cy - 1, interiorRadiusPx, effectiveThreshold, dpi, paper, inkCeiling),
+      measureBubbleInterior(correctedGray, cx, cy + 1, interiorRadiusPx, effectiveThreshold, dpi, paper, inkCeiling),
     ];
     const values = [max, ...samples.map(s => s.fillPercent)];
     const range = Math.max(...values) - Math.min(...values);
@@ -467,12 +636,18 @@ export function detectQuestion(
 
 export function detectAllAnswers(
   correctedGray: any,
-  dpi: number
+  dpi: number,
+  inkCeiling?: number,
+  offsetForRow: (q:number)=>{dx:number;dy:number} = ()=>({dx:0,dy:0}),
+  // When using a tone-corrected image, supply the original threshold mapped
+  // through the same LUT. Recomputing Otsu on already-remapped pixels and
+  // retaining an uncorrected ink ceiling erases medium-density filled ink.
+  darkThresholdOverride?: number
 ): QuestionResult[] {
-  const darkThreshold = computeAdaptiveDarkThreshold(correctedGray);
+  const darkThreshold = darkThresholdOverride ?? computeAdaptiveDarkThreshold(correctedGray);
   return Array.from({ length: 50 }, (_, i) => {
     const q = i + 1;
-    const result = detectQuestion(correctedGray, q, dpi, darkThreshold);
+    const result = detectQuestion(correctedGray, q, dpi, darkThreshold, inkCeiling, offsetForRow(q));
     return {
       question: q,
       measurements: result.measurements,
@@ -486,8 +661,12 @@ export function detectAllAnswers(
 
 export function detectTestId(
   correctedGray: any,
-  dpi: number
-): { tens: number | null; units: number | null; testId: number | null } {
+  dpi: number,
+  inkCeiling?: number,
+  offset: {dx:number;dy:number} = {dx:0,dy:0}
+): { tens: number | null; units: number | null; testId: number | null;
+  tensCandidates: {digit:number;fill:number;valid:boolean}[];
+  unitsCandidates: {digit:number;fill:number;valid:boolean}[] } {
   const settings = getSettings();
   const darkThreshold = computeAdaptiveDarkThreshold(correctedGray);
   const TID = OMR_LAYOUT.testId;
@@ -497,15 +676,15 @@ export function detectTestId(
   // Detect TENS (0-5)
   const tensFills = (TID.tens.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('tens', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
-    return { digit, fill: detail.fillPercent, valid: detail.isValid };
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi)+offset.dx, mmToPx(c.yMm, dpi)+offset.dy, interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
+    return { digit, fill: detail.fillPercent, valid: detail.isValid, paper: detail.paperReferenceBrightness ?? 235 };
   });
   
   // Detect UNITS (0-9)
   const unitsFills = (TID.units.digits as readonly number[]).map(digit => {
     const c = getTestIdBubbleCentre('units', digit);
-    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi), mmToPx(c.yMm, dpi), interiorRadiusPx, darkThreshold, dpi);
-    return { digit, fill: detail.fillPercent, valid: detail.isValid };
+    const detail = measureBubbleInterior(correctedGray, mmToPx(c.xMm, dpi)+offset.dx, mmToPx(c.yMm, dpi)+offset.dy, interiorRadiusPx, darkThreshold, dpi, undefined, inkCeiling);
+    return { digit, fill: detail.fillPercent, valid: detail.isValid, paper: detail.paperReferenceBrightness ?? 235 };
   });
   
   const sortedTens = [...tensFills].sort((a,b) => b.fill - a.fill);
@@ -519,17 +698,30 @@ export function detectTestId(
   const runnerUnits = sortedUnits[1];
   const unitsDiff = runnerUnits ? bestUnits.fill - runnerUnits.fill : bestUnits.fill;
   
-  // Digit detection
-  const tens = (bestTens && bestTens.fill >= settings.bubbleFillThreshold && bestTens.valid && tensDiff >= RULES.testIdMinSeparation)
-    ? bestTens.digit
-    : null;
-    
-  const units = (bestUnits && bestUnits.fill >= settings.bubbleFillThreshold && bestUnits.valid && unitsDiff >= RULES.testIdMinSeparation)
-    ? bestUnits.digit
-    : null;
+  // The ID rows contain only one valid mark each. Allow a strongly
+  // isolated mark even if the generic answer-shape classifier rejects it
+  // due to photographic artifacts. Never choose a digit on a close tie.
+  const isolatedDigit = (
+    best: {digit:number;fill:number;valid:boolean;paper:number} | undefined,
+    runner: {fill:number} | undefined,
+    separation: number,
+  ): number | null => {
+    if (!best || separation < RULES.testIdMinSeparation) return null;
+    const strong = best.fill >= 70 && separation >= 30;
+    const moderate = best.fill >= settings.bubbleFillThreshold &&
+      best.valid && separation >= RULES.testIdMinSeparation;
+    const lowLightRescue = best.fill >= 40 && best.valid &&
+      separation >= 32 && (runner?.fill ?? 0) < 18;
+    return strong || moderate || lowLightRescue ? best.digit : null;
+  };
+  const tens = isolatedDigit(bestTens, runnerTens, tensDiff);
+  const units = isolatedDigit(bestUnits, runnerUnits, unitsDiff);
   
   const testId = (tens !== null && units !== null) ? tens * 10 + units : null;
   const validRange = testId !== null && testId >= 1 && testId <= 40;
   
-  return { tens, units, testId: validRange ? testId : null };
+  return { tens, units, testId: validRange ? testId : null,
+    tensCandidates: tensFills.map(({digit,fill,valid})=>({digit,fill,valid})),
+    unitsCandidates: unitsFills.map(({digit,fill,valid})=>({digit,fill,valid})) };
+
 }

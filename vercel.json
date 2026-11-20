@@ -17,5 +17,13 @@
         }
       ]
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "test-build": false,
+      "hybrid-experiment": false,
+      "omr-v2-experiment": false,
+      "omr-v2-aruco-gray-experiment": false
+    }
+  }
 }

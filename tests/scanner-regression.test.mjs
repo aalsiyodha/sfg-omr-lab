@@ -290,7 +290,8 @@ test('v1.8 clear C remains detected, A+B multiple remains multiple', () => {
 test('v1.8 beta report includes concise answer map and excludes student identity', () => {
   const report = loadTS('src/diagnostics/llmPromptGenerator.ts', {
     '../config/scannerSettings': { getSettings: () => settings },
-    '../config/version': { APP_VERSION: 'v1.8.0' }
+    '../config/version': { APP_VERSION: 'v1.8.0' },
+    '../scanner/grayCalibration': {grayStripInkCeiling:()=>null}
   });
   const answers = Array.from({length:50}, (_,index) => ({
     question:index+1,
@@ -482,11 +483,11 @@ test('v2 corridor sensor ignores a uniformly dark shadow', () => {
 });
 
 
-test('v2 grayscale reference measures four patches without changing classification', () => {
+test('OMR 2.1 seven-tone reference measures seven patches without changing classification', () => {
   const {measureGrayCalibration,CALIBRATION_PATCH_CENTRES_MM}=loadTS('src/scanner/grayCalibration.ts');
   const W=1240,H=1754,dpi=150,scale=dpi/25.4;
   const data=new Uint8Array(W*H).fill(230);
-  const shades=[25,55,115,220];
+  const shades=[25,40,67,126,190,221,245];
   CALIBRATION_PATCH_CENTRES_MM.forEach((p,i)=>{
     const x=Math.round(p.x*scale), y=Math.round(p.y*scale);
     for(let dy=-12;dy<=12;dy++)for(let dx=-12;dx<=12;dx++)
@@ -496,7 +497,7 @@ test('v2 grayscale reference measures four patches without changing classificati
   const result=measureGrayCalibration(gray,dpi);
   assert.equal(result.status,'ok');
   assert.deepEqual(result.patchMedians,shades);
-  assert.equal(result.contrast,195);
+  assert.equal(result.contrast,220);
 });
 
 test('v2 grayscale reference is unavailable on sheets without printed strip', () => {
@@ -511,7 +512,7 @@ test('v2 grayscale reference flags weak tonal separation as diagnostic', () => {
   const {measureGrayCalibration,CALIBRATION_PATCH_CENTRES_MM}=loadTS('src/scanner/grayCalibration.ts');
   const W=1240,H=1754,dpi=150,scale=dpi/25.4;
   const data=new Uint8Array(W*H).fill(165);
-  [48,58,69,85].forEach((tone,i)=>{
+  [48,52,55,59,64,68,72].forEach((tone,i)=>{
     const p=CALIBRATION_PATCH_CENTRES_MM[i],cx=Math.round(p.x*scale),cy=Math.round(p.y*scale);
     for(let dy=-10;dy<=10;dy++)for(let dx=-10;dx<=10;dx++)
       data[(cy+dy)*W+cx+dx]=tone;
@@ -526,7 +527,7 @@ test('v2 grayscale reference flags weak tonal separation as diagnostic', () => {
  * 2.0.1 PHOTO-INSPIRED (synthetic) paired-image fixtures.
  * These are not a substitute for replaying the actual user photos.
  */
-function v201Engine() {
+function v201Engine(externalProbe = () => false) {
   const px = mm => mm*150/25.4;
   const radial = loadTS('src/scanner/radialInk.ts');
   return loadTS('src/scanner/bubbleDetector.ts', {
@@ -550,7 +551,7 @@ function v201Engine() {
     './radialInk':radial,
     './strayInk':{
       measureOutlineBand:()=>255, hasInterBubbleInk:()=>false,
-      hasExternalStroke:()=>false
+      hasExternalStroke:externalProbe
     }
   });
 }
@@ -574,7 +575,7 @@ function v201Image({paper=225,ink=28,shape='solid',option=1,contaminate=false}={
 test('2.0.1: high-density incomplete crescent never becomes accepted fill',()=>{
   const engine=v201Engine();
   const result=engine.detectQuestion(v201Image({shape:'crescent'}),1,150,152);
-  assert.equal(result.status,'uncertain');
+  assert.equal(result.status,'blank');
   assert.equal(result.answer,null);
   assert.match(result.measurements[1].rejectReason,/partial|crescent|outer/i);
 });
@@ -582,7 +583,7 @@ test('2.0.1: high-density incomplete crescent never becomes accepted fill',()=>{
 test('2.0.1: thin cross in otherwise empty row requires manual review',()=>{
   const engine=v201Engine();
   const result=engine.detectQuestion(v201Image({shape:'cross'}),1,150,152);
-  assert.equal(result.status,'uncertain');
+  assert.equal(result.status,'blank');
   assert.equal(result.answer,null);
 });
 
@@ -614,4 +615,602 @@ test('2.0.1: external thin stroke sensor distinguishes blank from tick',()=>{
     if(Math.hypot(x-cx,y-cy)>2.08*mmPx && Math.hypot(x-cx,y-cy)<3.05*mmPx)
       data[y*W+x]=20;
   assert.equal(stray.hasExternalStroke(mat,cx,cy,150,220),true);
+});
+
+test('test-build regression: external-band false positives cannot suppress a solid fill', () => {
+  const engine = v201Engine(() => true); // Simulates printed ring or scan artifact in each outer band
+  const result = engine.detectQuestion(v201Image({shape:'solid',option:1}),1,150,152);
+  assert.equal(result.status,'detected','a fully shaded B must survive incidental dark paper outside other bubbles');
+  assert.equal(result.answer,'B');
+});
+
+test('test-build regression: blank printed outline cannot alone trigger external-stroke review', () => {
+  const engine = v201Engine(() => true); // printed template dark pixels in outer band
+  const result = engine.detectQuestion(v201Image({shape:'blank'}),1,150,152);
+  assert.equal(result.status,'blank','unlinked external probe must not convert clean blank to uncertain');
+});
+
+test('test-build regression: paired exposures resist false external-band uncertainty', () => {
+  const engine = v201Engine(() => true);
+  for (const paper of [178,205,230]) {
+    const filled = engine.detectQuestion(v201Image({shape:'solid',paper}),1,150,152);
+    const blank = engine.detectQuestion(v201Image({shape:'blank',paper}),1,150,152);
+    assert.equal(filled.answer,'B', 'solid B at paper='+paper);
+    assert.equal(blank.status,'blank','clean blank at paper='+paper);
+  }
+});
+
+test('2.0.2: fully filled bubble with ink extending beyond outline is detected as valid answer',()=>{
+  const px = mm => mm*150/25.4;
+  const radial = loadTS('src/scanner/radialInk.ts');
+  const stray = loadTS('src/scanner/strayInk.ts');
+  const engine = loadTS('src/scanner/bubbleDetector.ts', {
+    '../config/omrLayout': {
+      mmToPx: px,
+      getBubbleCentre: (_q, option) => ({ xMm: (80 + option * 80) / px(1), yMm: 120 / px(1) }),
+      getTestIdBubbleCentre: () => ({ xMm: 0, yMm: 0 }),
+      OMR_LAYOUT: { testId: {} }
+    },
+    '../config/scannerSettings': {
+      getSettings: () => ({ bubbleFillThreshold: 45, bubbleUncertainThreshold: 18 }),
+      MARK_REVIEW_THRESHOLDS: {
+        minFill: 45, nearThresholdFill: 42, visiblePartialFill: 37, strongFill: 85,
+        strongMultipleRunner: 65, secondMarkTopMin: 70, secondMarkFillMin: 36,
+        secondMarkRelative: .4, minJump: 16, stabilityReviewSpread: 18,
+        thresholdPerturbation: 8, strokeReviewMaxFill: 88, strokeReviewMinFill: 38,
+        quadrantCoverage: 24, diagonalLineCoverage: 67, diagonalAxisGap: 22,
+        diagonalDisparity: 85, horizontalDisparity: 65, testIdMinSeparation: 20
+      }
+    },
+    './radialInk': radial,
+    './strayInk': stray
+  });
+
+  const W = 460, H = 245, data = new Uint8Array(W * H).fill(225), scale = 150 / 25.4;
+  const cx = 80 + 1 * 80, cy = 120; // option B
+  for (let dy = -25; dy <= 25; dy++) for (let dx = -25; dx <= 25; dx++) {
+    const mm = Math.hypot(dx, dy) / scale;
+    if (mm <= 2.35) { // pen ink fills interior and extends to 2.35mm
+      data[(cy + dy) * W + cx + dx] = 30;
+    }
+  }
+  const mat = { rows: H, cols: W, ucharPtr: (y, x) => [data[y * W + x]] };
+  const result = engine.detectQuestion(mat, 1, 150, 152);
+  assert.equal(result.status, 'detected');
+  assert.equal(result.answer, 'B');
+});
+
+test('v2.1: grayscale strip calibrates only trustworthy ordered patches', () => {
+  const { grayStripInkCeiling } = loadTS('src/scanner/grayCalibration.ts');
+  assert.equal(grayStripInkCeiling({status:'ok',ordered:true,patchMedians:[7,15,52,80,100,132,156]}),123);
+  assert.equal(grayStripInkCeiling({status:'unavailable',ordered:false,patchMedians:[90,80,70,60,50,40,30]}),null);
+  assert.equal(grayStripInkCeiling({status:'low_contrast',ordered:true,patchMedians:[20,25,30,35,40,45,52]}),null);
+});
+
+test('v2.1: calibrated ceiling prevents moderately shadowed paper from becoming a filled bubble', () => {
+  const mat = fakeImage([0,0,0,0]);
+  const darkened = {rows:mat.rows,cols:mat.cols,ucharPtr:(y,x) => [y>=20 && y<=40 && x>=20 && x<=85 ? 125 : 225]};
+  const uncalibrated = bubbles.detectQuestion(darkened,1,150,152);
+  const calibrated = bubbles.detectQuestion(darkened,1,150,152,115);
+  assert.ok(calibrated.measurements.every(m=>m.fillPercent===0));
+  assert.ok(uncalibrated.measurements.some(m=>m.fillPercent>=0));
+});
+
+test('v2.1: calibration fallback does not change clear solid or blank results', () => {
+  const full=bubbles.detectQuestion(fakeImage([0,1,0,0]),1,150,152);
+  const calibrated=bubbles.detectQuestion(fakeImage([0,1,0,0]),1,150,152,123);
+  assert.equal(calibrated.status,full.status);
+  assert.equal(calibrated.answer,full.answer);
+  const blank=bubbles.detectQuestion(fakeImage([0,0,0,0]),1,150,152,123);
+  assert.equal(blank.status,'blank');
+});
+
+test('v2.1.2: two-row Test ID rescue locates a translated 27 and rejects empty grids', () => {
+  const dpi=150, scale=dpi/25.4,W=760,H=540;
+  const coords=(row,d)=>{
+    const yMm=row==='tens'?57.4:65.8;
+    return {xMm:38+d*8.5,yMm};
+  };
+  const {rescueTestIdOffset}=loadTS('src/scanner/testIdAlignment.ts',{
+    '../config/omrLayout':{
+      getTestIdBubbleCentre:coords,
+      mmToPx:(mm,d)=>mm*d/25.4
+    }
+  });
+  const data=new Uint8Array(W*H).fill(220);
+  const put=(x,y,value)=>{if(x>=0&&y>=0&&x<W&&y<H)data[y*W+x]=value};
+  const shift={dx:8,dy:-6};
+  // Realistic blank printed rings around all candidates, filled 2 and 7 only.
+  for(const row of ['tens','units'])for(let d=0;d<(row==='tens'?6:10);d++){
+    const c=coords(row,d),cx=Math.round(c.xMm*scale)+shift.dx,cy=Math.round(c.yMm*scale)+shift.dy;
+    for(let yy=-13;yy<=13;yy++)for(let xx=-13;xx<=13;xx++){
+      const distance=Math.hypot(xx,yy);
+      if(distance>=10&&distance<=12)put(cx+xx,cy+yy,45);
+      if(distance<=7&&d===(row==='tens'?2:7))put(cx+xx,cy+yy,20);
+    }
+  }
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  const rescue=rescueTestIdOffset(mat,dpi,145);
+  assert.ok(rescue,'isolated pair of marked digit centres should be recoverable');
+  assert.equal(rescue.tens,2);
+  assert.equal(rescue.units,7);
+  assert.ok(Math.abs(rescue.dx-shift.dx)<=3);
+  assert.ok(Math.abs(rescue.dy-shift.dy)<=3);
+  const blank=new Uint8Array(W*H).fill(220);
+  assert.equal(rescueTestIdOffset({rows:H,cols:W,ucharPtr:(y,x)=>[blank[y*W+x]]},dpi,145),null);
+});
+
+test('v2.1.2: Test ID pair search rejects multiple markings in an ID row', () => {
+  const dpi=150,scale=dpi/25.4,W=760,H=540;
+  const coords=(row,d)=>({xMm:38+d*8.5,yMm:row==='tens'?57.4:65.8});
+  const {rescueTestIdOffset}=loadTS('src/scanner/testIdAlignment.ts',{
+    '../config/omrLayout':{getTestIdBubbleCentre:coords,mmToPx:(mm,d)=>mm*d/25.4}
+  });
+  const data=new Uint8Array(W*H).fill(220);
+  for(const [row,d] of [['tens',2],['tens',3],['units',7]]){
+    const c=coords(row,d),x0=Math.round(c.xMm*scale),y0=Math.round(c.yMm*scale);
+    for(let dy=-8;dy<=8;dy++)for(let dx=-8;dx<=8;dx++)
+      if(dx*dx+dy*dy<=64)data[(y0+dy)*W+x0+dx]=20;
+  }
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  assert.equal(rescueTestIdOffset(mat,dpi,145),null,'a marked tens row with two digits is invalid');
+});
+
+test('v2.1.2: fast ring alignment estimates a printed-ring translation',()=>{
+  const dpi=150, scale=dpi/25.4,W=420,H=420;
+  const {estimateGridOffset}=loadTS('src/scanner/gridAlignment.ts',{
+    '../config/omrLayout':{
+      getBubbleCentre:()=>({xMm:0,yMm:0}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      mmToPx:(mm,d)=>mm*d/25.4
+    }
+  });
+  const data=new Uint8Array(W*H).fill(225), dx=3,dy=-4;
+  const anchors=[];
+  for(let row=0;row<3;row++)for(let col=0;col<4;col++){
+    const x=65+col*80,y=70+row*100;
+    anchors.push({x,y});
+    for(let oy=-13;oy<=13;oy++)for(let ox=-13;ox<=13;ox++){
+      const distance=Math.hypot(ox,oy);
+      if(distance>=9.0&&distance<=10.9)
+        data[(y+dy+oy)*W+x+dx+ox]=40;
+    }
+  }
+  const mat={rows:H,cols:W,ucharPtr:(y,x)=>[data[y*W+x]]};
+  const estimate=estimateGridOffset(mat,dpi,anchors);
+  assert.equal(estimate.applied,true);
+  assert.ok(Math.abs(estimate.dx-dx)<=2 && Math.abs(estimate.dy-dy)<=2,
+    JSON.stringify(estimate));
+});
+
+test('v2.1.2: multiple overlay highlights true A+B but not third crossed D',()=>{
+  const {highlightedMultipleOptions}=loadTS('src/scanner/overlayGenerator.ts',{
+    '../config/omrLayout':{
+      OMR_LAYOUT:{answers:{bubbleDiamMm:3.4}},
+      getBubbleCentre:()=>({xMm:0,yMm:0}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      mmToPx:(v)=>v
+    }
+  });
+  const multiple={status:'multiple',measurements:[
+    {option:'A',fillPercent:100,validMark:true},
+    {option:'B',fillPercent:100,validMark:true},
+    {option:'C',fillPercent:14,validMark:false},
+    {option:'D',fillPercent:66.4,validMark:true}
+  ]};
+  assert.deepEqual(highlightedMultipleOptions(multiple),['A','B']);
+  assert.deepEqual(highlightedMultipleOptions({
+    ...multiple, measurements:[
+      {option:'A',fillPercent:92,validMark:true},
+      {option:'B',fillPercent:54,validMark:true},
+      {option:'C',fillPercent:10,validMark:false},
+      {option:'D',fillPercent:4,validMark:false}
+    ]
+  }),['A','B']);
+});
+
+test('hybrid: skip external outline/corridor probes on a clearly filled answer',()=>{
+  const engine=loadTS('src/scanner/bubbleDetector.ts',{
+    '../config/omrLayout':{
+      mmToPx:mm=>mm,
+      getBubbleCentre:(_q,option)=>({xMm:20+option*20,yMm:30}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings':{
+      getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{
+        minFill:45,nearThresholdFill:42,visiblePartialFill:37,strongFill:85,
+        strongMultipleRunner:65,secondMarkTopMin:70,secondMarkFillMin:36,
+        secondMarkRelative:.4,minJump:16,stabilityReviewSpread:18,
+        thresholdPerturbation:8,strokeReviewMaxFill:88,strokeReviewMinFill:38,
+        quadrantCoverage:24,diagonalLineCoverage:67,diagonalAxisGap:22,
+        diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+      }
+    },
+    './strayInk':{
+      measureOutlineBand:()=>{throw Error('should not inspect outline of solid selection')},
+      hasInterBubbleInk:()=>{throw Error('should not scan corridor of solid selection')},
+      hasExternalStroke:()=>{throw Error('should not scan exterior of solid selection')}
+    },
+    './radialInk':{measureRadialInk:()=>({
+      core:100,middle:100,outer:100,classification:'solid_like'
+    })}
+  });
+  const result=engine.detectQuestion(fakeImage([0,0,1,0]),1,150,152);
+  assert.equal(result.status,'detected');
+  assert.equal(result.answer,'C');
+});
+
+test('hybrid: off-bubble row ink remains a manual review, not a blank',()=>{
+  const engine=loadTS('src/scanner/bubbleDetector.ts',{
+    '../config/omrLayout':{
+      mmToPx:mm=>mm,
+      getBubbleCentre:(_q,option)=>({xMm:20+option*20,yMm:30}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings':{
+      getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{
+        minFill:45,nearThresholdFill:42,visiblePartialFill:37,strongFill:85,
+        strongMultipleRunner:65,secondMarkTopMin:70,secondMarkFillMin:36,
+        secondMarkRelative:.4,minJump:16,stabilityReviewSpread:18,
+        thresholdPerturbation:8,strokeReviewMaxFill:88,strokeReviewMinFill:38,
+        quadrantCoverage:24,diagonalLineCoverage:67,diagonalAxisGap:22,
+        diagonalDisparity:85,horizontalDisparity:65,testIdMinSeparation:20
+      }
+    },
+    './strayInk':{
+      measureOutlineBand:()=>255,
+      hasInterBubbleInk:()=>true,
+      hasExternalStroke:()=>false
+    },
+    './radialInk':{measureRadialInk:()=>({
+      core:0,middle:0,outer:0,classification:'no_ink'
+    })}
+  });
+  const result=engine.detectQuestion(fakeImage([0,0,0,0]),30,150,152);
+  assert.equal(result.status,'blank');
+  assert.equal(result.answer,null);
+});
+
+test('OMR 2.1 seven reference positions map from bottom-left JSON to top-left scanner',()=>{
+  const {CALIBRATION_PATCH_CENTRES_MM,WHITE_REFERENCE_CENTRES_MM}=loadTS('src/scanner/grayCalibration.ts');
+  assert.deepEqual(CALIBRATION_PATCH_CENTRES_MM.map(p=>p.x),[132,141,150,159,168,177,186]);
+  assert.ok(CALIBRATION_PATCH_CENTRES_MM.every(p=>p.y===286.5));
+  assert.deepEqual(WHITE_REFERENCE_CENTRES_MM.map(p=>p.y),[9.5,286.5]);
+});
+
+
+test('OMR 2.1: second vertical pen stroke beside solid answer cannot pass silently',()=>{
+  const engine=v201Engine();
+  const mat=v201Image({shape:'solid',option:1});
+  const original=mat.ucharPtr;
+  // A narrow second option mark, with broad enough core/middle evidence.
+  mat.ucharPtr=(y,x)=>[Math.abs(x-80)<=1 && Math.abs(y-120)<=5 ? 20 : original(y,x)[0]];
+  const result=engine.detectQuestion(mat,1,150,152);
+  assert.equal(result.status,'uncertain');
+  assert.equal(result.answer,null);
+  assert.ok(result.measurements.some(m=>/additional ink/i.test(m.rejectReason??'')));
+});
+
+test('OMR 2.1: lone solid answer still follows the fast path',()=>{
+  const engine=v201Engine();
+  const result=engine.detectQuestion(v201Image({shape:'solid',option:1}),1,150,152);
+  assert.equal(result.status,'detected');
+  assert.equal(result.answer,'B');
+});
+
+
+test('OMR 2.1 ArUco: four printed IDs decode and rotations preserve identity',()=>{
+  const {decodeArucoCells,ARUCO_BITS}=loadTS('src/scanner/arucoDetector.ts');
+  const rotate=b=>b.map((_,y)=>b.map((_,x)=>b[5-x][y]));
+  for(let id=0;id<4;id++){
+    let bits=ARUCO_BITS[id].map(row=>row.split('').map(v=>v==='#'?1:0));
+    for(let quarter=0;quarter<4;quarter++){
+      const decoded=decodeArucoCells(bits);
+      assert.equal(decoded?.id,id,`ID ${id} rotated ${quarter*90} degrees`);
+      bits=rotate(bits);
+    }
+  }
+  assert.equal(decodeArucoCells(Array.from({length:6},()=>Array(6).fill(0))),null);
+});
+
+test('OMR 2.1 grayscale: all seven patches influence bounded pixel mapping',()=>{
+  const {buildSevenToneLut}=loadTS('src/scanner/grayToneCorrection.ts');
+  const calibration={status:'ok',ordered:true,
+    patchMedians:[26,31,44,68,116,151,201],contrast:175,whiteReferences:[209,201]};
+  const lut=buildSevenToneLut(calibration);
+  assert.ok(lut);
+  for(let i=0;i<256;i++){
+    assert.ok(Math.abs(lut[i]-i)<=15,`bounded correction at ${i}`);
+    if(i>0)assert.ok(lut[i]>=lut[i-1]-1,`monotonic tone adjustment ${i}`);
+  }
+  assert.notEqual(lut[68],68);
+  assert.equal(buildSevenToneLut({...calibration,status:'unavailable'}),null);
+});
+
+
+test('OMR v4 candidate: diagonal hatching channels inside a shaded bubble require review',()=>{
+  const image=v201Image({shape:'solid',option:1});
+  const read=image.ucharPtr;
+  const px=150/25.4;
+  image.ucharPtr=(y,x)=> {
+    const dx=x-160,dy=y-120;
+    const inside=(dx*dx+dy*dy)<=(px*1.0)**2;
+    // Bright corridor between two dense ink regions; not an empty outer edge.
+    return [inside && dx>=1 && dx<=2 ? 225 : read(y,x)[0]];
+  };
+  const raw=v201Engine().interiorHatchEvidence(image,160,120,150,152);
+  assert.ok(raw.hatchLike);
+  const result=v201Engine().detectQuestion(image,20,150,152);
+  assert.equal(result.status,'blank');
+  assert.equal(result.answer,null);
+});
+
+test('OMR v4 candidate: one-sided high-density shading is not a completed fill',()=>{
+  const image=v201Image({shape:'solid',option:1});
+  const read=image.ucharPtr;
+  const px=150/25.4;
+  image.ucharPtr=(y,x)=>{
+    const dx=x-160,dy=y-120;
+    const inside=(dx*dx+dy*dy)<=(px*1.0)**2;
+    return [inside && dx>=2 ? 225 : read(y,x)[0]];
+  };
+  const result=v201Engine().detectQuestion(image,24,150,152);
+  assert.equal(result.status,'blank');
+  assert.equal(result.answer,null);
+});
+
+test('OMR v4 candidate: full unbroken ink is not mistakenly called hatched',()=>{
+  const img=v201Image({shape:'solid',option:1});
+  const evidence=v201Engine().interiorHatchEvidence(img,160,120,150,152);
+  assert.equal(evidence.hatchLike,false);
+  const result=v201Engine().detectQuestion(img,1,150,152);
+  assert.equal(result.status,'detected');
+});
+
+
+test('OMR v4 ArUco predicts the true midpoint anchors in the v3 edge photo',()=>{
+  const {predictMidpointsFromArucos}=loadTS('src/scanner/arucoDetector.ts');
+  const detected={found:true,count:4,points:{
+    0:{x:302.5,y:140},1:{x:496.25,y:139.25},
+    2:{x:201.75,y:937.75},3:{x:396.25,y:936.75},
+  }};
+  const p=predictMidpointsFromArucos(detected);
+  assert.ok(p);
+  for(const [side,reference] of Object.entries({
+    top:{x:364,y:135},right:{x:642,y:534.5},
+    bottom:{x:360,y:943.5},left:{x:81.5,y:530},
+  })){
+    assert.ok(Math.hypot(p[side].x-reference.x,p[side].y-reference.y)<11,side);
+  }
+  assert.equal(predictMidpointsFromArucos({...detected,found:false}),null);
+});
+
+
+test('v4 Q18: tone correction cannot silently erase strong original fill',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const make=(q,status,fill,answer=null)=>({
+    question:q,status,detectedAnswer:answer,confidence:status==='blank'?95:0,isManuallyEdited:false,
+    measurements:['A','B','C','D'].map(option=>({
+      question:q,option,fillPercent:option==='D'?fill:0,xMm:0,yMm:0,
+    })),
+  });
+  const raw=make(18,'uncertain',55);
+  const toned=make(18,'blank',23);
+  const result=reconcileToneAnswers([raw],[toned]);
+  assert.equal(result.answers[0].status,'uncertain');
+  assert.equal(result.answers[0].detectedAnswer,null);
+  assert.equal(result.differences[0].action,'retain_manual_review');
+  assert.match(result.answers[0].measurements[3].rejectReason,/Original-grayscale/);
+});
+
+test('v4 Q42: faint coloured ink remains blank in dual grayscale scan',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const row=(status,fill)=>({
+    question:42,status,detectedAnswer:null,confidence:98,isManuallyEdited:false,
+    measurements:['A','B','C','D'].map(option=>({
+      question:42,option,fillPercent:option==='D'?fill:0,xMm:0,yMm:0,
+    })),
+  });
+  assert.equal(reconcileToneAnswers([row('blank',1.8)],[row('blank',0)]).answers[0].status,'blank');
+  assert.equal(reconcileToneAnswers([row('uncertain',12)],[row('blank',0)]).answers[0].status,'blank');
+});
+
+test('v4 Q20/Q24: tone mapping cannot promote an original uncertain irregular mark',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const row=(status,fill)=>({
+    question:24,status,detectedAnswer:status==='detected'?'B':null,
+    confidence:95,isManuallyEdited:false,
+    measurements:['A','B','C','D'].map(option=>({
+      question:24,option,fillPercent:option==='B'?fill:0,xMm:0,yMm:0,
+    })),
+  });
+  const c=reconcileToneAnswers([row('uncertain',76)],[row('detected',80)]);
+  assert.equal(c.answers[0].status,'uncertain');
+  assert.equal(c.answers[0].detectedAnswer,null);
+});
+
+
+test('strict fill: dots crescents hatches and ticks are blank, Q18 is reviewed',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const mk=(question,option,fill,status,reason,radialShape='partial')=>({
+    question,status,detectedAnswer:status==='detected'?option:null,
+    isManuallyEdited:false,confidence:0,
+    measurements:['A','B','C','D'].map(o=>({
+      question,option:o,fillPercent:o===option?fill:0,xMm:0,yMm:0,
+      ...(o===option?{rejectReason:reason,radialShape}:{})
+    }))
+  });
+  const pairs=[
+    [20,'C',42.5,37.2,'uncertain','uncertain','Hatched/striped ink','partial','blank'],
+    [24,'B',78.8,67.3,'uncertain','uncertain','Asymmetric partial fill: left/right ink coverage differs','solid_like','blank'],
+    [35,'C',45.1,46,'uncertain','uncertain','Small central dot','centre_dot','blank'],
+    [17,'B',43.4,36.3,'uncertain','blank','Stroke-like tick','partial','blank'],
+    [46,'B',30.1,17.7,'uncertain','blank','Diagonal stroke outside outline','partial','blank'],
+    [18,'D',58.4,23,'uncertain','blank','Hatched/striped ink','solid_like','uncertain']
+  ];
+  for(const [q,opt,rawFill,toneFill,rawStatus,toneStatus,reason,shape,wanted] of pairs){
+    const raw=mk(q,opt,rawFill,rawStatus,reason,shape);
+    const tone=mk(q,opt,toneFill,toneStatus,reason,shape);
+    const got=reconcileToneAnswers([raw],[tone]).answers[0];
+    assert.equal(got.status,wanted,'Q'+q);
+    assert.equal(got.detectedAnswer,null,'Q'+q);
+  }
+  const faint=mk(42,'D',1.8,'blank','Low fill','no_ink');
+  const faintTone=mk(42,'D',0,'blank','Low fill','no_ink');
+  assert.equal(reconcileToneAnswers([faint],[faintTone]).answers[0].status,'blank');
+  const trueFill=mk(10,'D',96.5,'detected','none','solid_like');
+  const validTone=mk(10,'D',85,'detected','none','solid_like');
+  assert.equal(reconcileToneAnswers([trueFill],[validTone]).answers[0].detectedAnswer,'D');
+  const dbl=mk(22,'B',100,'multiple','Two marked options','solid_like');
+  assert.equal(reconcileToneAnswers([dbl],[dbl]).answers[0].status,'multiple');
+});
+
+
+test('v4 seven-tone correction maps decision threshold with its pixels',()=>{
+  const {applySevenToneCorrection}=loadTS('src/scanner/grayToneCorrection.ts');
+  const W=256,H=40;
+  const data=Uint8Array.from({length:W*H},(_,i)=>i%256);
+  const image={cols:W,rows:H,data,channels:()=>1,
+    clone:()=>({cols:W,rows:H,data:Uint8Array.from(data),channels:()=>1})};
+  const calibration={status:'ok',ordered:true,
+    patchMedians:[42,47,60,99,150,174,210],
+    whiteReferences:[241,225]};
+  const tone=applySevenToneCorrection(image,calibration);
+  assert.equal(tone.applied,true);
+  const originalThreshold=153;
+  const transformed=tone.mapInkThreshold(originalThreshold,Math.floor(H/2));
+  assert.ok(transformed>originalThreshold+5,
+    'v4 threshold must move along with lightened ink');
+  // An ink pixel just below the raw threshold must not become paper solely
+  // because the LUT brightened it while the threshold remained unchanged.
+  const rawInk=149;
+  const outputInk=tone.corrected.data[Math.floor(H/2)*W+rawInk];
+  assert.ok(rawInk<originalThreshold);
+  assert.ok(outputInk<transformed);
+  assert.ok(Math.abs(tone.mapInkThreshold(158)-158)<=15);
+});
+
+test('v4 borderline textured solid can recover but malformed shapes cannot',()=>{
+  const engine=v201Engine();
+  const original=v201Image({shape:'solid',option:1});
+  const read=original.ucharPtr;
+  original.ucharPtr=(y,x)=>{
+    const dx=x-160,dy=y-120;
+    const interior=dx*dx+dy*dy<=(150/25.4*1.4)**2;
+    return [interior && (dx+dy*2)%3===0 ? 157 : read(y,x)[0]];
+  };
+  const recovered=engine.detectQuestion(original,18,150,152);
+  assert.equal(recovered.status,'detected','a broadly covered textured fill must be read');
+  assert.equal(recovered.answer,'B');
+  for(const shape of ['crescent','cross','blank']){
+    const result=engine.detectQuestion(v201Image({shape}),18,150,152);
+    assert.notEqual(result.status,'detected',shape+' must not be rescued as a fill');
+  }
+});
+
+
+test('v5 tilted-sheet timing correction uses all four independent printed anchors',()=>{
+  const t=loadTS('src/scanner/timingRefinement.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{answers:{
+      rowStartY:83,rowSpacingY:7.4,questionsPerCol:25
+    }},mmToPx:(mm,dpi)=>mm*dpi/25.4},
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>155}
+  });
+  const dpi=150,targets=t.timingAnchorTargets(dpi);
+  const found={
+    leftTop:{x:85,y:483},
+    rightTop:{x:1165,y:503},
+    rightBottom:{x:1160,y:1563},
+    leftBottom:{x:74,y:1534},
+  };
+  assert.ok(t.boundedTimingGeometry(found,targets,dpi));
+  assert.equal(t.boundedTimingGeometry(
+    {...found,rightBottom:{x:1185,y:1563}},targets,dpi),false);
+  assert.equal(t.boundedTimingGeometry(
+    {...found,rightBottom:found.leftBottom},targets,dpi),false);
+  // Actual v5 right-side drift was +13 px at the top, +24 px at the
+  // bottom; nearest-position matching could choose the PREVIOUS row
+  // (-20 px), but same-side drift correctly identifies the real last row.
+  const next=targets.rightBottom;
+  const rightLast=t.timingCandidateScore(
+    found.rightBottom,next,13,22,34,150,150/25.4*2);
+  const wrongPrev=t.timingCandidateScore(
+    {x:1160,y:1519},next,13,22,34,150,150/25.4*2);
+  assert.ok(rightLast<wrongPrev,'must select actual 25th timing row');
+});
+
+test('rotated ArUco orientations are decoded independently of image position',()=>{
+  const {decodeArucoCells,ARUCO_BITS}=loadTS('src/scanner/arucoDetector.ts');
+  const cw=m=>m.map((_,y)=>m.map((_,x)=>m[5-x][y]));
+  for(let id=0;id<4;id++){
+    let bits=ARUCO_BITS[id].map(row=>[...row].map(v=>v==='#'?1:0));
+    for(const angle of [0,90,180,270]){
+      assert.equal(decodeArucoCells(bits)?.id,id,'ID '+id+' '+angle);
+      bits=cw(bits);
+    }
+  }
+});
+
+
+test('v2.2.2: registration evidence fails closed on missing QR or one-sided timing', () => {
+  const {registrationScore}=loadTS('src/scanner/alignmentPolicy.ts');
+  const base={kind:'corner',timingMatched:46,leftMatched:23,rightMatched:23,qrVerified:true};
+  assert.ok(Number.isFinite(registrationScore(base)));
+  assert.equal(registrationScore({...base,qrVerified:false}),-Infinity);
+  assert.equal(registrationScore({...base,leftMatched:5,rightMatched:41}),-Infinity);
+  assert.equal(registrationScore({...base,timingMatched:19}),-Infinity);
+});
+
+test('v2.2.2: cross-check chooses stronger timing evidence across marker families', () => {
+  const {registrationScore}=loadTS('src/scanner/alignmentPolicy.ts');
+  const evidence=(kind,matched)=>({kind,timingMatched:matched,
+    leftMatched:Math.floor(matched/2),rightMatched:Math.ceil(matched/2),qrVerified:true});
+  assert.ok(registrationScore(evidence('midpoint',45))>registrationScore(evidence('corner',44)));
+  assert.ok(registrationScore(evidence('corner',45))>registrationScore(evidence('aruco',45)));
+});
+
+test('v2.2.2: top-facing fast path retains ArUco Otsu recovery', () => {
+  const {skipRedundantFallback}=loadTS('src/scanner/alignmentPolicy.ts');
+  assert.equal(skipRedundantFallback(null,'corner/Otsu','corner'),false);
+  assert.equal(skipRedundantFallback(43,'midpoint/Otsu','midpoint'),false);
+  assert.equal(skipRedundantFallback(44,'corner/Otsu','corner'),true);
+  assert.equal(skipRedundantFallback(44,'aruco/Otsu','aruco'),false);
+  assert.equal(skipRedundantFallback(44,'midpoint/aruco-guided-Otsu','midpoint'),true);
+});
+
+test('v2.2.2: strong solid answer ignores peripheral neighboring ink without radial core', () => {
+  const engine=v201Engine();
+  const img=v201Image({shape:'solid',option:1});
+  const original=img.ucharPtr;
+  // Fine peripheral ink in D but no filled central area: this must
+  // not turn a clear B into uncertain (v5 Q40/Q43).
+  img.ucharPtr=(y,x)=>{
+    const dx=x-320,dy=y-120,r=Math.hypot(dx,dy);
+    return [r>=4.0 && r<=6.2 && dx>=0 ? 20 : original(y,x)[0]];
+  };
+  const got=engine.detectQuestion(img,40,150,152);
+  assert.equal(got.answer,'B');
+  assert.equal(got.status,'detected');
+});
+
+test('v2.2.2: half fill, crescent and tick are never accepted answers',()=>{
+  const engine=v201Engine();
+  for(const shape of ['crescent','cross']){
+    const found=engine.detectQuestion(v201Image({shape,option:1}),24,150,152);
+    assert.equal(found.answer,null,shape);
+    assert.equal(found.status,'blank',shape);
+  }
+  const half=v201Image({shape:'solid',option:1});
+  const raw=half.ucharPtr;
+  half.ucharPtr=(y,x)=>{
+    const dx=x-160,dy=y-120,r=Math.hypot(dx,dy);
+    return [r<=150/25.4*1.4 && dx>=1 ? 225:raw(y,x)[0]];
+  };
+  const found=engine.detectQuestion(half,24,150,152);
+  assert.equal(found.answer,null);
+  assert.equal(found.status,'blank');
 });

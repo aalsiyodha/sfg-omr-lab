@@ -1,6 +1,7 @@
 // src/diagnostics/llmPromptGenerator.ts
 import { getSettings } from '../config/scannerSettings';
 import { APP_VERSION } from '../config/version';
+import { grayStripInkCeiling } from '../scanner/grayCalibration';
 import type { ScanResult } from '../types';
 
 interface LLMReportOptions {
@@ -55,7 +56,7 @@ export function generateLLMDiagnosticPrompt({
   lines.push(`- **Rotation applied:** ${scanResult.orientationRotated ? '180°' : 'No'}`);
   if (scanResult.grayCalibration) {
     const c = scanResult.grayCalibration;
-    lines.push(`- **Grayscale calibration:** \`${c.status}\` (diagnostic only)`);
+    lines.push(`- **Grayscale calibration:** \`${c.status}\` (validated ink ceiling: ${grayStripInkCeiling(c) ?? 'inactive'}; ceiling only affects thresholds above it)`);
     lines.push(`- **Grayscale patch medians (dark to light):** ${c.patchMedians.join(', ') || 'not available'}; contrast=${c.contrast ?? 'N/A'}; ordered=${c.ordered}`);
     lines.push(`- **Calibration note:** ${c.note}`);
   }

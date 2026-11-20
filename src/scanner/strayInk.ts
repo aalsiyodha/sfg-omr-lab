@@ -96,25 +96,27 @@ export function hasExternalStroke(
 ): boolean {
   if (paper < 95) return false; // unreliable contrast reference
   const scale = dpi / 25.4;
-  const innerSq = (2.08 * scale) ** 2;
-  const outerSq = (3.05 * scale) ** 2;
-  const r = Math.ceil(3.05 * scale);
+  // Increase inner radius to 2.25mm so that the printed circle (ends ~1.95mm)
+  // and registration variance (+-0.25mm) never trigger as an external stroke.
+  const innerSq = (2.25 * scale) ** 2;
+  const outerSq = (3.15 * scale) ** 2;
+  const r = Math.ceil(3.15 * scale);
   const ox = Math.round(cx), oy = Math.round(cy);
   const threshold = Math.min(135, paper - 48);
   const darkPoints: {x:number;y:number}[] = [];
   for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++) {
     const d2=dx*dx+dy*dy;
     // Avoid the printed option letter at +3.3mm.
-    if (d2 < innerSq || d2 > outerSq || dx > 1.45*scale) continue;
+    if (d2 < innerSq || d2 > outerSq || dx > 1.40*scale) continue;
     const x=ox+dx,y=oy+dy;
     if(x<0||y<0||x>=mat.cols||y>=mat.rows)continue;
     if(grayAt(mat,x,y)<threshold)darkPoints.push({x:dx,y:dy});
   }
-  if(darkPoints.length<7)return false;
+  if(darkPoints.length<14)return false;
   const xs=darkPoints.map(p=>p.x),ys=darkPoints.map(p=>p.y);
   const width=Math.max(...xs)-Math.min(...xs);
   const height=Math.max(...ys)-Math.min(...ys);
-  // A 1-pixel blob is not a crossed/ticked mark.
-  return (width>=2 && height>=4 && darkPoints.length>=9) ||
-    (height>=2 && width>=5 && darkPoints.length>=9);
+  // A substantial stroke (e.g. tick/cross) has both breadth and point count
+  return (width>=3 && height>=5 && darkPoints.length>=16) ||
+    (height>=3 && width>=6 && darkPoints.length>=16);
 }
