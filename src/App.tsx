@@ -18,6 +18,19 @@ export type AppState = {
 
 export default function App() {
   const [opencvStatus, setOpencvStatus] = useState<'loading'|'ready'|'error'>('loading');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const stored = window.localStorage.getItem('sfg-omr-theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+    } catch { /* storage may be blocked */ }
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    document.documentElement.setAttribute('data-theme', theme);
+    try { window.localStorage.setItem('sfg-omr-theme', theme); }
+    catch { /* private browsing: use in-memory preference */ }
+  }, [theme]);
   const practice = usePracticeTest();
   const scanning = useScanResult();
 
@@ -52,6 +65,15 @@ export default function App() {
                     <NavLink to={to} end={to==='/'} className={({isActive})=>`nav-link product-nav-link ${isActive?'active':''}`}>{label}</NavLink>
                   </li>
                 ))}
+                <li className="nav-item ms-md-2">
+                  <button type="button" className="product-theme-toggle" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
+                    aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                    title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                    aria-pressed={theme === 'dark'}>
+                    <i className={`bi ${theme === 'dark' ? 'bi-sun' : 'bi-moon-stars'}`} aria-hidden="true" />
+                    <span className="product-theme-caption">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+                  </button>
+                </li>
                 <li className="nav-item ms-md-2"><NavLink to="/scan" className="btn btn-primary product-nav-cta"><i className="bi bi-upc-scan me-2" />Scan a sheet</NavLink></li>
               </ul>
             </div>
