@@ -4,7 +4,8 @@ import type { AppState } from '../App';
 import type { AnswerOption } from '../types';
 import { ErrorLogBox } from '../components/ErrorLogBox';
 import { generateLLMDiagnosticPrompt, generateBetaFeedbackPrompt } from '../diagnostics/llmPromptGenerator';
-import { APP_VERSION } from '../config/version';
+import { APP_VERSION, APP_BUILD_META, APP_DEPLOY_LABEL } from '../config/version';
+import { copyText } from '../utils/copyText';
 import { needsReview, filterReviewAnswers, countRejectedBlankMarks } from '../review/reviewPolicy';
 
 interface Props { appState: AppState; }
@@ -29,6 +30,7 @@ export default function ScanPage({ appState }: Props) {
   const [activeTab, setActiveTab] = useState<ResultViewTab>('table');
   const [reviewFilter, setReviewFilter] = useState<'flagged' | 'all'>('flagged');
   const [llmCopied, setLlmCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [showTechnicalReport, setShowTechnicalReport] = useState(false);
 
   const stopCamera = useCallback(() => {
@@ -138,47 +140,27 @@ export default function ScanPage({ appState }: Props) {
     setActiveTab('table');
     setReviewFilter('flagged');
     setLlmCopied(false);
+    setCopyFailed(false);
   };
 
   const handleCopyLLMReport = async () => {
     if (!scanResult) return;
-    const reportText = generateLLMDiagnosticPrompt({
-      scanResult,
-      file: capturedFile,
+    const ok = await copyText(generateLLMDiagnosticPrompt({
+      scanResult, file: capturedFile,
       activeTestId: practice.activeTest?.testId,
       answerKey: practice.activeTest?.answerKey,
-    });
-    try {
-      await navigator.clipboard.writeText(reportText);
-      setLlmCopied(true);
-      setTimeout(() => setLlmCopied(false), 3500);
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = reportText;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      setLlmCopied(true);
-      setTimeout(() => setLlmCopied(false), 3500);
-    }
+    }));
+    setLlmCopied(ok);
+    setCopyFailed(!ok);
   };
 
   const handleCopyBetaReport = async () => {
     if (!scanResult) return;
-    const report = generateBetaFeedbackPrompt({scanResult});
-    try {
-      await navigator.clipboard.writeText(report);
-    } catch {
-      const input = document.createElement('textarea');
-      input.value = report;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      input.remove();
-    }
-    setLlmCopied(true);
-    setTimeout(() => setLlmCopied(false), 3500);
+    const ok = await copyText(generateBetaFeedbackPrompt({
+      scanResult, activeTestId: practice.activeTest?.testId,
+    }));
+    setLlmCopied(ok);
+    setCopyFailed(!ok);
   };
 
   const downloadOverlay = () => {
@@ -227,7 +209,7 @@ export default function ScanPage({ appState }: Props) {
   const hasAnswers = scanResult?.answers && scanResult.answers.length > 0;
   const hasErrorsOrWarnings = (scanResult?.errors && scanResult.errors.length > 0) || !hasAnswers;
 
-  const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult}) : '';
+  const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult, activeTestId: practice.activeTest?.testId}) : '';
   // Strict-invalid marks (ticks, crescents, dots and partials) are blanks,
   // not review cases. A manual edit resolves a previously flagged question.
   const reviewCount = scanResult?.answers.filter(needsReview).length ?? 0;
@@ -247,7 +229,12 @@ export default function ScanPage({ appState }: Props) {
     <div>
       <div className="product-scan-header">
         <div><span className="product-kicker">YOUR SCANNING WORKSPACE</span><h1>Scan a sheet</h1><p>Upload your SFG answer sheet and inspect every detected mark.</p></div>
-        <span className="product-scan-version">{APP_VERSION}</span>
+        <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
+          <span className="product-scan-version">{APP_VERSION}</span>
+          <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
+            <i className="bi bi-hdd-network me-1" />{APP_DEPLOY_LABEL} · {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}
+          </span>
+        </div>
       </div>
 
       {opencv !== 'ready' && (
@@ -427,9 +414,14 @@ export default function ScanPage({ appState }: Props) {
             <StatusBadge status={scanResult.overallStatus} />
             <span className="text-muted small">({scanResult.processingTimeMs} ms)</span>
 
-            <button className={`btn btn-sm ${llmCopied ? 'btn-success' : 'btn-primary'} ms-auto`} onClick={handleCopyBetaReport}>
-              <i className="bi bi-clipboard-check me-1"/>{llmCopied ? 'Copied!' : 'Copy short beta report'}
-            </button>
+            <div className="ms-auto d-flex gap-2 flex-wrap">
+              <button className={`btn btn-sm ${llmCopied ? 'btn-success' : 'btn-primary'}`} onClick={handleCopyBetaReport}>
+                <i className="bi bi-clipboard-check me-1"/>{llmCopied ? 'Copied!' : 'Copy compact LLM report'}
+              </button>
+              <button className="btn btn-sm btn-outline-secondary" onClick={handleCopyLLMReport}>
+                <i className="bi bi-clipboard me-1"/>Copy full diagnostic
+              </button>
+            </div>
             <button className="btn btn-sm btn-outline-primary" onClick={downloadOverlay} disabled={!intermediateImages.bubbleOverlay}>
               <i className="bi bi-download me-1"/>Save overlay
             </button>
@@ -439,6 +431,7 @@ export default function ScanPage({ appState }: Props) {
             </button>
           </div>
 
+          {copyFailed && <div role="alert" className="alert alert-warning py-2 small mb-3">Clipboard was blocked. Open Share feedback, tap the text area and copy manually.</div>}
           {llmCopied && (
             <div className="alert alert-success py-2 small mb-3">
               <i className="bi bi-check2-circle me-1" />
@@ -661,14 +654,14 @@ export default function ScanPage({ appState }: Props) {
                 <div>
                   <div className="d-flex justify-content-between align-items-center mb-2">
                     <span className="small text-muted">
-                      {showTechnicalReport ? 'Complete technical diagnostic report:' : 'Short report to send with your OMR photo and overlay:'}
+                      {showTechnicalReport ? 'Complete detailed report (larger):' : 'Compact report (low tokens) — send with your OMR photo:'}
                     </span>
                     <div className="d-flex gap-2 flex-wrap">
                       <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowTechnicalReport(v => !v)}>
-                        {showTechnicalReport ? 'Short report' : 'Technical details'}
+                        {showTechnicalReport ? 'Compact preview' : 'Full technical preview'}
                       </button>
                       <button className="btn btn-sm btn-primary" onClick={showTechnicalReport ? handleCopyLLMReport : handleCopyBetaReport}>
-                        <i className="bi bi-clipboard me-1"/>{llmCopied ? 'Copied!' : showTechnicalReport ? 'Copy full report' : 'Copy short report'}
+                        <i className="bi bi-clipboard me-1"/>{llmCopied ? 'Copied!' : showTechnicalReport ? 'Copy full diagnostic' : 'Copy compact report'}
                       </button>
                     </div>
                   </div>
