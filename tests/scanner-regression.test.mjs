@@ -1368,13 +1368,14 @@ test('v2.2.4: invalid-mark blank summaries do not increase review count',()=>{
   const {countRejectedBlankMarks,filterReviewAnswers}=
     loadTS('src/review/reviewPolicy.ts');
   const answers=[
-    {question:24,status:'blank',measurements:[{rejectReason:'Asymmetric partial fill'}]},
-    {question:25,status:'blank',measurements:[{rejectReason:'Centre dot is not a valid response'}]},
-    {question:26,status:'blank',measurements:[]},
-    {question:27,status:'multiple',measurements:[]},
+    {question:24,status:'blank',policyRejectedBlank:true,measurements:[{rejectReason:'Asymmetric partial fill'}]},
+    {question:25,status:'blank',policyRejectedBlank:true,measurements:[{rejectReason:'Centre dot is not a valid response'}]},
+    {question:26,status:'blank',measurements:[{rejectReason:'Low fill (0%)'}]},
+    {question:27,status:'multiple',policyRejectedBlank:true,measurements:[]},
     {question:28,status:'detected',measurements:[]},
   ];
   assert.equal(countRejectedBlankMarks(answers),2);
+  assert.equal(countRejectedBlankMarks([{status:'blank',measurements:[{rejectReason:'Low fill (0%)'}]}]),0);
   assert.deepEqual(filterReviewAnswers(answers,'flagged').map(a=>a.question),[27]);
 });
 
@@ -1384,7 +1385,7 @@ test('v2.2.4: outlying stroke geometry uses physical units across DPI',()=>{
     const scale=dpi/25.4, cx=100,cy=100;
     const points=new Set();
     for(let y=-1.5;y<=1.5;y+=0.12)
-      for(let x=-2.95;x<=-2.35;x+=0.12){
+      for(let x=-3.00;x<=-2.20;x+=0.10){
         const r=Math.hypot(x,y);
         if(r>2.25&&r<3.15)points.add((Math.round(cy+y*scale))*300+Math.round(cx+x*scale));
       }
