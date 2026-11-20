@@ -412,7 +412,9 @@ export function detectQuestion(
       : rawMeasurements.reduce((a,b) => a.measurement.fillPercent >= b.measurement.fillPercent ? a:b);
     target.measurement.rejectReason = tracedOutline ? 'Ink traced around a bubble outline'
       : offBubbleInk ? 'Ink detected between answer bubbles' : 'Stroke outside bubble outline';
-    return { measurements, answer:null,status:'uncertain',confidence:0 };
+    // Per SFG strict-fill policy, an unfilled row with an outline tick,
+    // slash, or off-bubble stroke is an unattempted question, not a choice.
+    return { measurements, answer:null,status:'blank',confidence:0 };
   };
   
   // Sort by fill descending
@@ -481,7 +483,7 @@ export function detectQuestion(
     });
     if (faintMark) {
       top.measurement.rejectReason = 'Faint or thin non-solid ink inside bubble';
-      return {measurements,answer:null,status:'uncertain',confidence:0};
+      return {measurements,answer:null,status:'blank',confidence:Math.max(0,100-max)};
     }
     if (max >= RULES.nearThresholdFill ||
         (max >= RULES.visiblePartialFill && (top.detail.filledQuadrants ?? 0) >= 2) ||
@@ -489,7 +491,7 @@ export function detectQuestion(
         rawMeasurements.some(r => r.measurement.radialShape === 'hollow_ring' &&
           r.measurement.radialOuter >= 55)) {
       top.measurement.rejectReason = top.detail.rejectReason || 'Visible mark near the fill threshold';
-      return { measurements, answer: null, status: 'uncertain', confidence: 0 };
+      return { measurements, answer: null, status: 'blank', confidence: Math.max(0,100-max) };
     }
     return { measurements, answer: null, status: 'blank', confidence: Math.max(0, 100 - max) };
   }
