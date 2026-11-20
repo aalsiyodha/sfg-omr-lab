@@ -1,5 +1,6 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
+declare const __APP_BUILD_META__: { version:string; source:'vercel'|'local-dev'|'local-build'; environment:string; sha:string; buildId:string; builtAt:string; dirty:boolean };
 export const APP_VERSION = version === '2.2.4'
   ? 'v2.2.4 Registration & Review Hardening'
   : version === '2.2.3'
@@ -14,3 +15,13 @@ export const APP_VERSION = version === '2.2.4'
 export const APP_BUILD_ID=__APP_BUILD_ID__;
 export const APP_RELEASE_LABEL=APP_BUILD_ID==='local' ? APP_VERSION : `${APP_VERSION} · ${APP_BUILD_ID}`;
 export const APP_BUILD_NAME=`SFG OMR Lab ${APP_VERSION} (Corner + Midpoint + ArUco Registration • Calibrated Grayscale)`;
+
+/** Build identity is compiled into each bundle, not inferred from stale cache or package version. */
+export const APP_BUILD_META = __APP_BUILD_META__;
+export const APP_DEPLOY_LABEL = APP_BUILD_META.source === 'vercel'
+  ? `Vercel ${APP_BUILD_META.environment}`
+  : APP_BUILD_META.source === 'local-dev' ? 'Local Vite dev server' : 'Local production build';
+export function getBuildIdentity(): string {
+  const host = typeof window !== 'undefined' ? window.location.host : 'unknown';
+  return `Source: ${APP_DEPLOY_LABEL} | Scanner: v${APP_BUILD_META.version} | Commit: ${APP_BUILD_META.sha}${APP_BUILD_META.dirty ? ' (working tree modified)' : ''} | Built: ${APP_BUILD_META.builtAt} | Host: ${host}`;
+}

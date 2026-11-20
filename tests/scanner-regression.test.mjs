@@ -290,7 +290,7 @@ test('v1.8 clear C remains detected, A+B multiple remains multiple', () => {
 test('v1.8 beta report includes concise answer map and excludes student identity', () => {
   const report = loadTS('src/diagnostics/llmPromptGenerator.ts', {
     '../config/scannerSettings': { getSettings: () => settings },
-    '../config/version': { APP_VERSION: 'v1.8.0' },
+    '../config/version': { APP_VERSION: 'v1.8.0', getBuildIdentity: () => 'Source: local-dev | Scanner: v1.8.0 | Commit: test' },
     '../scanner/grayCalibration': {grayStripInkCeiling:()=>null}
   });
   const answers = Array.from({length:50}, (_,index) => ({
@@ -310,7 +310,7 @@ test('v1.8 beta report includes concise answer map and excludes student identity
     registrationMethod:'corner/adaptive',alignmentMatched:45,
     orientationRotated:false,answers,errors:[]
   }});
-  assert.match(prompt,/Beta scan feedback/);
+  assert.match(prompt,/compact scan diagnostic/);
   assert.match(prompt,/29:\?/);
   assert.match(prompt,/Q29 uncertain/);
   assert.doesNotMatch(prompt,/SENSITIVE_STUDENT|SFGOMR1:SECRET/);
@@ -1423,4 +1423,30 @@ test('onboarding UX: printable sheet and photo guidance remain clear',()=>{
   assert.ok(home.includes("print at 100%") || home.includes("print on A4 at Actual Size (100%)"));
   assert.ok(home.includes("Keep the entire page visible"));
   assert.ok(home.includes("Shade bubbles completely"));
+});
+
+test('reports identify exact Vercel or local build, not just release version',()=>{
+  const config=readFileSync('vite.config.ts','utf8');
+  assert.ok(config.includes('VERCEL_GIT_COMMIT_SHA'));
+  assert.ok(config.includes("source = isVercel ? 'vercel'"));
+  assert.ok(config.includes('__APP_BUILD_META__'));
+  const version=readFileSync('src/config/version.ts','utf8');
+  assert.ok(version.includes('getBuildIdentity'));
+  assert.ok(version.includes('APP_DEPLOY_LABEL'));
+  const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(scan.includes('APP_DEPLOY_LABEL'));
+  assert.ok(scan.includes('APP_BUILD_META.buildId'));
+});
+test('single-tap diagnostics have compact and full exports and redaction',()=>{
+  const llm=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  assert.ok(llm.includes('getBuildIdentity()'));
+  assert.ok(llm.includes('const samples=suspect.slice(0,12)'));
+  assert.ok(llm.includes('All-four-bubbles near 100%'));
+  const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(scan.includes('Copy compact LLM report'));
+  assert.ok(scan.includes('Copy full diagnostic'));
+  const err=readFileSync('src/components/ErrorLogBox.tsx','utf8');
+  assert.ok(!err.includes('scanResult.qrRaw ||'));
+  assert.ok(!err.includes('File Name: ${file.name}'));
+  assert.ok(err.includes('getBuildIdentity()'));
 });
