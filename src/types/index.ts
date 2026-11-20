@@ -43,6 +43,8 @@ export interface QuestionResult {
   status: DetectionStatus;
   confidence: number;
   isManuallyEdited: boolean;
+  /** Informational reason-coded flag, not a review or scoring state. */
+  policyRejectedBlank?: boolean;
 }
 
 export interface GrayCalibrationResult {
