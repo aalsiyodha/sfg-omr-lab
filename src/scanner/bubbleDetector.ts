@@ -322,6 +322,13 @@ export function detectQuestion(
     const cyPx = centres[idx].y;
     const detail = details[idx];
     const radial = measureRadialInk(correctedGray, cxPx, cyPx, dpi, detail.effectiveThreshold ?? effectiveThreshold);
+    // Record hatch evidence before classification even if another shape
+    // rejection returns early. This makes rejected Q20/Q22-style marks
+    // explainable in full diagnostics rather than only in answer counts.
+    const hatchEvidence = detail.fillPercent >= 30
+      ? interiorHatchEvidence(correctedGray, cxPx, cyPx, dpi,
+          detail.effectiveThreshold ?? effectiveThreshold)
+      : {gapRows:0,hatchLike:false};
     const clearlyInvalid = radial.classification === 'centre_dot' || radial.classification === 'hollow_ring';
     const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
     // Q38-D-type crescent can darken most of the *interior* while leaving
@@ -360,6 +367,8 @@ export function detectQuestion(
         paperReferenceBrightness: detail.paperReferenceBrightness,
         paperReferenceContaminated: detail.paperReferenceContaminated,
         filledQuadrants: detail.filledQuadrants,
+        hatchGapRows: hatchEvidence.gapRows,
+        hatchLike: hatchEvidence.hatchLike,
         strokeLike: detail.strokeLike,
         axisCoverage: detail.axisCoverage,
         diagonalCoverage: detail.diagonalCoverage,
