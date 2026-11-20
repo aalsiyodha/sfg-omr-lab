@@ -9,6 +9,7 @@ import type { AnswerOption, BubbleMeasurement, DetectionStatus, QuestionResult }
 declare const cv: any;
 
 export interface BubbleReadResult {
+  policyRejectedBlank?: boolean;
   measurements: BubbleMeasurement[];
   answer: AnswerOption | null;
   status: DetectionStatus;
@@ -414,7 +415,7 @@ export function detectQuestion(
       : offBubbleInk ? 'Ink detected between answer bubbles' : 'Stroke outside bubble outline';
     // Per SFG strict-fill policy, an unfilled row with an outline tick,
     // slash, or off-bubble stroke is an unattempted question, not a choice.
-    return { measurements, answer:null,status:'blank',confidence:0 };
+    return { measurements, answer:null,status:'blank',confidence:0,policyRejectedBlank:true };
   };
   
   // Sort by fill descending
@@ -483,7 +484,7 @@ export function detectQuestion(
     });
     if (faintMark) {
       top.measurement.rejectReason = 'Faint or thin non-solid ink inside bubble';
-      return {measurements,answer:null,status:'blank',confidence:Math.max(0,100-max)};
+      return {measurements,answer:null,status:'blank',confidence:Math.max(0,100-max),policyRejectedBlank:true};
     }
     if (max >= RULES.nearThresholdFill ||
         (max >= RULES.visiblePartialFill && (top.detail.filledQuadrants ?? 0) >= 2) ||
@@ -491,7 +492,7 @@ export function detectQuestion(
         rawMeasurements.some(r => r.measurement.radialShape === 'hollow_ring' &&
           r.measurement.radialOuter >= 55)) {
       top.measurement.rejectReason = top.detail.rejectReason || 'Visible mark near the fill threshold';
-      return { measurements, answer: null, status: 'blank', confidence: Math.max(0,100-max) };
+      return { measurements, answer: null, status: 'blank', confidence: Math.max(0,100-max),policyRejectedBlank:true };
     }
     return { measurements, answer: null, status: 'blank', confidence: Math.max(0, 100 - max) };
   }
@@ -565,7 +566,8 @@ export function detectQuestion(
       second.measurement.fillPercent < 12;
     return { measurements, answer: null,
       status: invalidOnly ? 'blank' : 'uncertain',
-      confidence: invalidOnly ? Math.max(0,100-max) : 0 };
+      confidence: invalidOnly ? Math.max(0,100-max) : 0,
+      policyRejectedBlank:invalidOnly };
   }
 
   // Only borderline selections need perturbation analysis; clear 90%-filled
@@ -590,7 +592,7 @@ export function detectQuestion(
       ? 'Asymmetric partial fill: left/right ink coverage differs'
       : 'Hatched/striped ink: repeated unfilled channels inside bubble';
     // A single obviously incomplete bubble is unattempted, per SFG policy.
-    return {measurements,answer:null,status:'blank',confidence:Math.max(0,100-max)};
+    return {measurements,answer:null,status:'blank',confidence:Math.max(0,100-max),policyRejectedBlank:true};
   }
   const stableSolidShape = solidTextureRescue || (
     (top.detail.filledQuadrants ?? 0) === 4 &&
@@ -657,6 +659,7 @@ export function detectAllAnswers(
       status: result.status,
       confidence: result.confidence,
       isManuallyEdited: false,
+      policyRejectedBlank: result.status==='blank' && result.policyRejectedBlank===true,
     };
   });
 }
