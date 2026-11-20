@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route, NavLink } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import PracticeTestPage from './pages/PracticeTestPage';
 import ScanPage from './pages/ScanPage';
@@ -45,8 +45,9 @@ export default function App() {
 
   const appState: AppState = { opencv: opencvStatus, practice, scanning };
 
+  const Router = import.meta.env.BASE_URL === '/sfg-omr-lab/' ? HashRouter : BrowserRouter;
   return (
-    <BrowserRouter>
+    <Router>
       <div className="min-vh-100 d-flex flex-column">
         <nav className="navbar navbar-expand-md sticky-top product-navbar">
           <div className="container-fluid" style={{ maxWidth: 1160 }}>
@@ -102,6 +103,6 @@ export default function App() {
           </div>
         </footer>
       </div>
-    </BrowserRouter>
+    </Router>
   );
 }
