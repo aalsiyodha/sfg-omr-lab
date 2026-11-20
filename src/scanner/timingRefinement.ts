@@ -45,6 +45,14 @@ export function boundedTimingGeometry(
   return cross(lt,rt,rb)>0 && cross(rt,rb,lb)>0 &&
     cross(rb,lb,lt)>0 && cross(lb,lt,rt)>0;
 }
+/** Rank dark square candidates using the observed same-side row drift. */
+export function timingCandidateScore(
+  found:TimingPoint,target:TimingPoint,priorShiftY:number,dx:number,dy:number,area:number,nominal:number,
+):number{
+  const delta=Math.hypot((found.x-target.x)/dx,(found.y-target.y-priorShiftY)/dy);
+  const shape=Math.abs(Math.log(Math.max(1,area)/Math.max(1,nominal*nominal)));
+  return delta+.13*shape;
+}
 function locateTimingSquare(gray:any,target:TimingPoint,threshold:number,dpi:number,priorShiftY=0):TimingPoint|null{
   const dx=Math.ceil(mmToPx(3.7,dpi));
   const dy=Math.ceil(mmToPx(5.8,dpi));
@@ -74,9 +82,7 @@ function locateTimingSquare(gray:any,target:TimingPoint,threshold:number,dpi:num
         if(Math.abs(rect.width/rect.height-1)>.55)continue;
         const x=left+rect.x+rect.width/2;
         const y=top+rect.y+rect.height/2;
-        const delta=Math.hypot((x-target.x)/dx,(y-target.y-priorShiftY)/dy);
-        const shape=Math.abs(Math.log(Math.max(1,area)/(nominal*nominal)));
-        candidates.push({x,y,rank:delta+.13*shape});
+        candidates.push({x,y,rank:timingCandidateScore({x,y},target,priorShiftY,dx,dy,area,nominal)});
       }finally{c.delete();}
     }
     candidates.sort((a,b)=>a.rank-b.rank);
