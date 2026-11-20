@@ -8,7 +8,7 @@ import { verifyTimingMarks } from './alignmentValidator';
 import { refineByTimingSquares } from './timingRefinement';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
-import { detectArucoMarkers, predictMidpointsFromArucos } from './arucoDetector';
+import { detectArucoMarkers, predictMidpointsFromArucos, generateArucoOverlay } from './arucoDetector';
 import type { ArucoRegistration } from './arucoDetector';
 import { applySevenToneCorrection } from './grayToneCorrection';
 import { reconcileToneAnswers } from './toneConsensus';
@@ -241,7 +241,9 @@ export async function runFullScan(
     logger.info('markerDetection', `${hypotheses.length} reference hypotheses available`,
       { cornerCandidates: hypotheses.filter(h => h.kind === 'corner').length,
         midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length });
-    images.markerOverlay = generateMarkerOverlay(loaded.canvas, primary);
+    images.markerOverlay = arucoAdaptive.found
+      ? generateArucoOverlay(loaded.canvas,arucoAdaptive)
+      : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
     for (const hypothesis of hypotheses) {
@@ -300,9 +302,13 @@ export async function runFullScan(
       logger.info('perspective', `Selected ${registrationMethod} registration`,
         { timingMarks: alignmentMatched, rotated });
       images.perspectiveCorrected = chosen.canvas.toDataURL('image/png');
-      if(chosen.hypothesis.kind==='corner')images.markerOverlay=generateMarkerOverlay(loaded.canvas,chosen.hypothesis.markers);
-      else if(chosen.hypothesis.kind==='midpoint')images.markerOverlay=generateMidpointOverlay(loaded.canvas,chosen.hypothesis.markers);
-      // For ArUco rescue keep the original source overlay; marker IDs are in logs.
+      if(arucoAdaptive.found)images.markerOverlay=generateArucoOverlay(
+        loaded.canvas,arucoAdaptive,registrationMethod,alignmentMatched,
+        chosen.hypothesis.kind==='midpoint'?chosen.hypothesis.markers:undefined);
+      else if(chosen.hypothesis.kind==='corner')
+        images.markerOverlay=generateMarkerOverlay(loaded.canvas,chosen.hypothesis.markers);
+      else if(chosen.hypothesis.kind==='midpoint')
+        images.markerOverlay=generateMidpointOverlay(loaded.canvas,chosen.hypothesis.markers);
 
       grayCalibration = measureGrayCalibration(chosen.gray, dpi);
       const inkCeiling = grayStripInkCeiling(grayCalibration);
