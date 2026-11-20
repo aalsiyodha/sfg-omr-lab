@@ -1424,3 +1424,29 @@ test('onboarding UX: printable sheet and photo guidance remain clear',()=>{
   assert.ok(home.includes("Keep the entire page visible"));
   assert.ok(home.includes("Shade bubbles completely"));
 });
+
+test('reports identify exact Vercel or local build, not just release version',()=>{
+  const config=readFileSync('vite.config.ts','utf8');
+  assert.ok(config.includes('VERCEL_GIT_COMMIT_SHA'));
+  assert.ok(config.includes("source = isVercel ? 'vercel'"));
+  assert.ok(config.includes('__APP_BUILD_META__'));
+  const version=readFileSync('src/config/version.ts','utf8');
+  assert.ok(version.includes('getBuildIdentity'));
+  assert.ok(version.includes('APP_DEPLOY_LABEL'));
+  const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(scan.includes('APP_DEPLOY_LABEL'));
+  assert.ok(scan.includes('APP_BUILD_META.buildId'));
+});
+test('single-tap diagnostics have compact and full exports and redaction',()=>{
+  const llm=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  assert.ok(llm.includes('getBuildIdentity()'));
+  assert.ok(llm.includes('const samples=suspect.slice(0,12)'));
+  assert.ok(llm.includes('All-four-bubbles near 100%'));
+  const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(scan.includes('Copy compact LLM report'));
+  assert.ok(scan.includes('Copy full diagnostic'));
+  const err=readFileSync('src/components/ErrorLogBox.tsx','utf8');
+  assert.ok(!err.includes('scanResult.qrRaw ||'));
+  assert.ok(!err.includes('File Name: ${file.name}'));
+  assert.ok(err.includes('getBuildIdentity()'));
+});
