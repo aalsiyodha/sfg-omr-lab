@@ -50,6 +50,27 @@ export function reconcileToneAnswers(
       final={...row,detectedAnswer:null,status:'uncertain',confidence:0};
       action='avoid_tonal_promotion';
     }
+    // SFG strict-fill policy: ink is NOT a response. A lone dot, crescent,
+    // hatch, tick, cross, stroke or partial bubble is treated as unattempted.
+    // Preserve the measured evidence and reason for the debug overlay.
+    // Keep genuine conflicts between the two reading methods for review,
+    // especially v4 Q18 (58.4% raw versus 23% corrected).
+    const disagreement=a.option===b.option && a.fillPercent>=50 &&
+      a.fillPercent-b.fillPercent>=25 && baseline.status!=='blank';
+    const rejectText=[a.rejectReason,b.rejectReason].filter(Boolean).join(' ').toLowerCase();
+    const clearInvalid=/centre dot|central dot|crescent|partial|hatch|striped|stroke|slash|cross|outline|asymmetr|ink distribution|low fill|thin non-solid/.test(rejectText) ||
+      a.radialShape==='centre_dot' || b.radialShape==='centre_dot' ||
+      a.radialShape==='hollow_ring' || b.radialShape==='hollow_ring' ||
+      (a.radialShape==='partial' && b.radialShape==='partial');
+    if(final.status==='uncertain' && !disagreement &&
+      baseline.status!=='detected' && clearInvalid) {
+      final={...final,detectedAnswer:null,status:'blank',confidence:100,
+        measurements:final.measurements.map(m=>({...m}))};
+      const mark=final.measurements.find(m=>m.option===b.option);
+      if(mark)mark.rejectReason='Invalid/non-solid mark; treated as blank by strict-fill policy'
+        +(mark.rejectReason?' ('+mark.rejectReason+')':'');
+      action='invalid_mark_blank';
+    }
     if(baseline.status!==row.status || baseline.detectedAnswer!==row.detectedAnswer ||
        Math.abs(a.fillPercent-b.fillPercent)>=5 || action!=='retain_corrected')
       differences.push({question:row.question,rawStatus:baseline.status,
