@@ -41,6 +41,13 @@ function ringScore(gray: Gray, x: number, y: number, dpi: number, radiusMm:numbe
   return Math.max(0,Math.min(90,coreSum/nCore-darkRing/nRing));
 }
 
+/** Deterministic spatially distributed registration probes, not chosen by ink. */
+export function sampleGridAnchors<T>(anchors:T[]):T[]{
+  return anchors.length>=32 && anchors.length%4===0
+    ? anchors.filter((_,i)=>i%4===Math.floor(i/4)%4).slice(0,16)
+    : anchors.filter((_,i)=>i%Math.max(1,Math.floor(anchors.length/12))===0).slice(0,16);
+}
+
 /** Pick an offset only when substantial ring evidence beats the unshifted layout. */
 export function estimateGridOffset(
   gray:Gray,dpi:number,anchors:{x:number;y:number}[],ringRadiusMm=1.7,
@@ -53,9 +60,7 @@ export function estimateGridOffset(
   // fourth anchor selects only A, which makes local registration sensitive
   // to one option's print defects. Rotate options across successive rows.
   // Keep the original generic sampling for the non-four-option Test ID grid.
-  const sampled=anchors.length>=32 && anchors.length%4===0
-    ? anchors.filter((_,i)=>i%4===Math.floor(i/4)%4).slice(0,16)
-    : anchors.filter((_,i)=>i%Math.max(1,Math.floor(anchors.length/12))===0).slice(0,16);
+  const sampled=sampleGridAnchors(anchors);
   const max=Math.round(mmToPx(1.6,dpi));
   const scored=(dx:number,dy:number):number=>{
     const values=sampled.map(p=>ringScore(gray,p.x+dx,p.y+dy,dpi,ringRadiusMm)).sort((a,b)=>a-b);
