@@ -39,7 +39,7 @@ export function useScanResult() {
         ...prev,
         answers: prev.answers.map(a =>
           a.question === question
-            ? { ...a, detectedAnswer: answer, status: answer ? 'detected' : 'blank', isManuallyEdited: true }
+            ? { ...a, detectedAnswer: answer, status: answer ? 'detected' : 'blank', isManuallyEdited: true, policyRejectedBlank: false }
             : a
         ),
       };
