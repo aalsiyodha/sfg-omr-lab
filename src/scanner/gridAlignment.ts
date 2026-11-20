@@ -41,6 +41,13 @@ function ringScore(gray: Gray, x: number, y: number, dpi: number, radiusMm:numbe
   return Math.max(0,Math.min(90,coreSum/nCore-darkRing/nRing));
 }
 
+/** Deterministic spatially distributed registration probes, not chosen by ink. */
+export function sampleGridAnchors<T>(anchors:T[]):T[]{
+  return anchors.length>=32 && anchors.length%4===0
+    ? anchors.filter((_,i)=>i%4===Math.floor(i/4)%4).slice(0,16)
+    : anchors.filter((_,i)=>i%Math.max(1,Math.floor(anchors.length/12))===0).slice(0,16);
+}
+
 /** Pick an offset only when substantial ring evidence beats the unshifted layout. */
 export function estimateGridOffset(
   gray:Gray,dpi:number,anchors:{x:number;y:number}[],ringRadiusMm=1.7,
@@ -49,7 +56,11 @@ export function estimateGridOffset(
   // v2.1.2: Score a modest, distributed set of template rings instead of
   // evaluating all 52 rings at 400+ shifts. Two-stage coarse/fine search cuts
   // millions of per-pixel calls without giving up sub-mm refinement.
-  const sampled=anchors.filter((_,i)=>i%Math.max(1,Math.floor(anchors.length/12))===0).slice(0,16);
+  // Answer anchors arrive as A,B,C,D for each question. Sampling every
+  // fourth anchor selects only A, which makes local registration sensitive
+  // to one option's print defects. Rotate options across successive rows.
+  // Keep the original generic sampling for the non-four-option Test ID grid.
+  const sampled=sampleGridAnchors(anchors);
   const max=Math.round(mmToPx(1.6,dpi));
   const scored=(dx:number,dy:number):number=>{
     const values=sampled.map(p=>ringScore(gray,p.x+dx,p.y+dy,dpi,ringRadiusMm)).sort((a,b)=>a-b);
@@ -58,9 +69,9 @@ export function estimateGridOffset(
   };
   const baseline=scored(0,0);
   let best={dx:0,dy:0,score:baseline};
-  // Include the actual boundaries and zero. Stride 3 makes the coarse search
-  // 7x7 rather than 21x21 at the current 150 DPI setting.
-  const step=3;
+  // Use a 2px coarse stride and 1px local refinement. Require the same
+  // conservative gain before applying a displacement.
+  const step=2;
   for(let dy=-max;dy<=max;dy+=step)
     for(let dx=-max;dx<=max;dx+=step){
       const score=scored(dx,dy);
