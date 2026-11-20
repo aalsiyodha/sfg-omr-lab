@@ -6,6 +6,16 @@
     <meta name="description" content="SFG OMR Lab — scan your 50-question SFG answer sheet, inspect every mark and review results directly in your browser." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Apply the saved theme before React paints to avoid a light-mode flash.
+      try {
+        const saved = localStorage.getItem('sfg-omr-theme');
+        const theme = saved === 'dark' || saved === 'light'
+          ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch { /* Theme defaults to the light stylesheet */ }
+    </script>
     <title>SFG OMR Lab __APP_VERSION__</title>
     <script>
       // OpenCV.js loading state
