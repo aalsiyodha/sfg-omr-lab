@@ -228,7 +228,11 @@ export default function ScanPage({ appState }: Props) {
   return (
     <div>
       <div className="product-scan-header">
-        <div><span className="product-kicker">YOUR SCANNING WORKSPACE</span><h1>Scan a sheet</h1><p>Upload your SFG answer sheet and inspect every detected mark.</p></div>
+        <div>
+          <span className="product-kicker" style={{ color:'#0d9488',fontWeight:900 }}>LITE EXPERIMENT · PORT 5175</span>
+          <h1 style={{ letterSpacing:'-.035em' }}>SFG OMR Lab <span style={{ color:'#0d9488' }}>Lite</span></h1>
+          <p>Fast comparison scanner · upload the same sheet to Antigravity 5173 and Lite 5175 to compare accuracy and speed.</p>
+        </div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>
           <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
