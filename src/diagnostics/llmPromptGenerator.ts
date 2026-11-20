@@ -63,9 +63,17 @@ export function generateLLMDiagnosticPrompt({
       Math.round(q.confidence) + ' | ' + (q.isManuallyEdited ? 'yes' : 'no') + ' | ' + key);
   }
 
+  // Include rejected high-ink bubbles even when strict policy intentionally
+  // reports the question as blank. Samples 03/05 had no diagnostics for
+  // Q20/Q24/Q35 or Q19/Q22/Q46 despite visible ink.
   const review = scanResult.answers.filter(q =>
-    q.status==='multiple' || q.status==='uncertain' || q.status==='error' || q.isManuallyEdited);
-  lines.push('Detailed optical evidence for flagged/edited rows (' + review.length + '):');
+    q.status==='multiple' || q.status==='uncertain' || q.status==='error' ||
+    q.isManuallyEdited || (q.status==='blank' && (
+      q.policyRejectedBlank === true ||
+      q.measurements.some(m => m.fillPercent >= 30 && m.validMark === false)
+    )));
+
+  lines.push('Detailed optical evidence for flagged, edited or high-ink rejected rows (' + review.length + '):');
   if (!review.length) lines.push('None.');
   for (const q of review) {
     const parts = q.measurements.map(m => {
@@ -76,6 +84,7 @@ export function generateLLMDiagnosticPrompt({
         ' valid='+String(m.validMark ?? '?')+
         ' H='+f(m.horizontalDisparity)+' D='+f(m.diagonalDisparity)+
         ' quad='+String(m.filledQuadrants??'?')+
+        ' sectors='+String(m.filledSectors??'?')+
         ' axis='+f(m.axisCoverage)+' diag='+f(m.diagonalCoverage)+
         ' radial='+String(m.radialShape??'?')+
         ' core='+f(m.radialCore)+' mid='+f(m.radialMiddle)+
@@ -84,7 +93,8 @@ export function generateLLMDiagnosticPrompt({
         (m.strokeLike?' stroke':'')+
         (m.rejectReason?' reason='+m.rejectReason:'');
     });
-    lines.push('Q'+String(q.question).padStart(2,'0')+' '+q.status+': '+parts.join(' ; '));
+    lines.push('Q'+String(q.question).padStart(2,'0')+' '+q.status+
+      (q.policyRejectedBlank?' policyRejectedBlank=true':'')+': '+parts.join(' ; '));
   }
 
   // Preserve per-scan logs, but remove noisy successful stage messages.
@@ -153,7 +163,8 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
   }
 
   const suspect = scanResult.answers.filter(q => {
-    if (q.status === 'multiple' || q.status === 'uncertain' || q.status === 'error' || q.isManuallyEdited) return true;
+    if (q.status === 'multiple' || q.status === 'uncertain' || q.status === 'error' || q.isManuallyEdited || q.policyRejectedBlank) return true;
+    if (q.status === 'blank' && q.measurements.some(m=>m.fillPercent>=30 && m.validMark===false)) return true;
     const ranked=[...q.measurements].sort((a,b)=>b.fillPercent-a.fillPercent);
     return q.status==='detected' && (ranked[0]?.fillPercent < 85 ||
       ranked[1]?.fillPercent >= 33 || ranked.some(m=>m.strokeLike ||
@@ -171,7 +182,8 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
     const m=q.measurements.map(b=>b.option+':'+Math.round(b.fillPercent)+'%'+
       (b.localPaperBrightness===undefined?'':'/paper'+b.localPaperBrightness)+
       (b.inkThreshold===undefined?'':'/thr'+b.inkThreshold)).join(' ');
-    lines.push('Q'+String(q.question).padStart(2,'0')+' '+q.status+' '+m);
+    lines.push('Q'+String(q.question).padStart(2,'0')+' '+q.status+
+      (q.policyRejectedBlank?' [invalid mark]':'')+' '+m);
   }
   lines.push('Please compare with the original photo; do not infer optical correctness from answer key.');
   lines.push('QR payload and student ID omitted; filename retained to match original photo.');
