@@ -523,7 +523,7 @@ export function detectQuestion(
     (top.measurement.radialMiddle??0)>=40 &&
     (top.measurement.radialOuter??0)>=32 &&
     top.detail.horizontalDisparity<28 &&
-    top.detail.diagonalDisparity<45;
+    top.detail.diagonalDisparity<55;
   let solidTextureRescue=false;
   if(plausiblySolid) {
     const idx=options.indexOf(top.measurement.option);
@@ -535,7 +535,7 @@ export function detectQuestion(
     solidTextureRescue=sample.fillPercent>=65 &&
       sample.filledQuadrants===4 && !sample.strokeLike &&
       sample.horizontalDisparity<25 && sample.diagonalDisparity<40 &&
-      radial.core>=45 && radial.middle>=55 && radial.outer>=45 &&
+      radial.core>=35 && radial.middle>=65 && radial.outer>=55 &&
       radial.classification==='solid_like';
     if(solidTextureRescue) {
       top.measurement.rejectReason=undefined;
