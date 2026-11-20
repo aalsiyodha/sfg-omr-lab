@@ -575,7 +575,7 @@ function v201Image({paper=225,ink=28,shape='solid',option=1,contaminate=false}={
 test('2.0.1: high-density incomplete crescent never becomes accepted fill',()=>{
   const engine=v201Engine();
   const result=engine.detectQuestion(v201Image({shape:'crescent'}),1,150,152);
-  assert.equal(result.status,'uncertain');
+  assert.equal(result.status,'blank');
   assert.equal(result.answer,null);
   assert.match(result.measurements[1].rejectReason,/partial|crescent|outer/i);
 });
@@ -583,7 +583,7 @@ test('2.0.1: high-density incomplete crescent never becomes accepted fill',()=>{
 test('2.0.1: thin cross in otherwise empty row requires manual review',()=>{
   const engine=v201Engine();
   const result=engine.detectQuestion(v201Image({shape:'cross'}),1,150,152);
-  assert.equal(result.status,'uncertain');
+  assert.equal(result.status,'blank');
   assert.equal(result.answer,null);
 });
 
@@ -871,7 +871,7 @@ test('hybrid: off-bubble row ink remains a manual review, not a blank',()=>{
     })}
   });
   const result=engine.detectQuestion(fakeImage([0,0,0,0]),30,150,152);
-  assert.equal(result.status,'uncertain');
+  assert.equal(result.status,'blank');
   assert.equal(result.answer,null);
 });
 
@@ -945,7 +945,7 @@ test('OMR v4 candidate: diagonal hatching channels inside a shaded bubble requir
   const raw=v201Engine().interiorHatchEvidence(image,160,120,150,152);
   assert.ok(raw.hatchLike);
   const result=v201Engine().detectQuestion(image,20,150,152);
-  assert.equal(result.status,'uncertain');
+  assert.equal(result.status,'blank');
   assert.equal(result.answer,null);
 });
 
@@ -959,7 +959,7 @@ test('OMR v4 candidate: one-sided high-density shading is not a completed fill',
     return [inside && dx>=2 ? 225 : read(y,x)[0]];
   };
   const result=v201Engine().detectQuestion(image,24,150,152);
-  assert.equal(result.status,'uncertain');
+  assert.equal(result.status,'blank');
   assert.equal(result.answer,null);
 });
 
@@ -1180,4 +1180,37 @@ test('v2.2.2: top-facing fast path retains ArUco Otsu recovery', () => {
   assert.equal(skipRedundantFallback(44,'corner/Otsu','corner'),true);
   assert.equal(skipRedundantFallback(44,'aruco/Otsu','aruco'),false);
   assert.equal(skipRedundantFallback(44,'midpoint/aruco-guided-Otsu','midpoint'),true);
+});
+
+test('v2.2.2: strong solid answer ignores peripheral neighboring ink without radial core', () => {
+  const engine=v201Engine();
+  const img=v201Image({shape:'solid',option:1});
+  const original=img.ucharPtr;
+  // Fine peripheral ink in D but no filled central area: this must
+  // not turn a clear B into uncertain (v5 Q40/Q43).
+  img.ucharPtr=(y,x)=>{
+    const dx=x-320,dy=y-120,r=Math.hypot(dx,dy);
+    return [r>=4.0 && r<=6.2 && dx>=0 ? 20 : original(y,x)[0]];
+  };
+  const got=engine.detectQuestion(img,40,150,152);
+  assert.equal(got.answer,'B');
+  assert.equal(got.status,'detected');
+});
+
+test('v2.2.2: half fill, crescent and tick are never accepted answers',()=>{
+  const engine=v201Engine();
+  for(const shape of ['crescent','cross']){
+    const found=engine.detectQuestion(v201Image({shape,option:1}),24,150,152);
+    assert.equal(found.answer,null,shape);
+    assert.equal(found.status,'blank',shape);
+  }
+  const half=v201Image({shape:'solid',option:1});
+  const raw=half.ucharPtr;
+  half.ucharPtr=(y,x)=>{
+    const dx=x-160,dy=y-120,r=Math.hypot(dx,dy);
+    return [r<=150/25.4*1.4 && dx>=1 ? 225:raw(y,x)[0]];
+  };
+  const found=engine.detectQuestion(half,24,150,152);
+  assert.equal(found.answer,null);
+  assert.equal(found.status,'blank');
 });
