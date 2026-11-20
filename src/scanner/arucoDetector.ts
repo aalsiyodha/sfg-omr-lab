@@ -175,3 +175,42 @@ export function predictMidpointsFromArucos(markers:ArucoRegistration):{
   return {top:at(105,8),bottom:at(105,289),
     left:at(8,148.5),right:at(202,148.5)};
 }
+
+
+/** Draw the actual detected ArUco IDs in the Reference Markers tab. */
+export function generateArucoOverlay(
+  src:HTMLCanvasElement,markers:ArucoRegistration,
+  selectedMethod:string|null=null,timingMatched:number|null=null,
+  selectedMidpoints?:{top:ImagePoint|null;right:ImagePoint|null;bottom:ImagePoint|null;left:ImagePoint|null},
+):string{
+  const canvas=document.createElement('canvas');
+  canvas.width=src.width;canvas.height=src.height;
+  const ctx=canvas.getContext('2d');
+  if(!ctx)return '';
+  ctx.drawImage(src,0,0);
+  const radius=Math.max(11,Math.round(Math.min(src.width,src.height)*.022));
+  ctx.lineWidth=3;
+  ctx.font='bold 15px sans-serif';
+  for(const id of [0,1,2,3]){
+    const p=markers.points[id];
+    if(!p)continue;
+    ctx.strokeStyle='#2dd4bf';ctx.fillStyle='#0f766e';
+    ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.stroke();
+    ctx.fillText('ARUCO '+id,Math.min(src.width-95,p.x+radius+4),Math.max(18,p.y-10));
+  }
+  if(selectedMidpoints){
+    ctx.strokeStyle='#f59e0b';ctx.fillStyle='#92400e';
+    for(const key of ['top','right','bottom','left'] as const){
+      const p=selectedMidpoints[key];if(!p)continue;
+      ctx.beginPath();ctx.arc(p.x,p.y,Math.max(7,radius*.6),0,Math.PI*2);ctx.stroke();
+      ctx.fillText(key.toUpperCase(),Math.min(src.width-70,p.x+13),p.y+18);
+    }
+  }
+  ctx.fillStyle='#111827';
+  ctx.fillRect(0,0,src.width,31);
+  ctx.font='bold 14px sans-serif';ctx.fillStyle='#f9fafb';
+  const status=selectedMethod??'Registration failed / not selected';
+  const timing=timingMatched===null?'':(' | timing '+timingMatched+'/50');
+  ctx.fillText('ArUco IDs '+markers.count+'/4 | '+status+timing,12,21,src.width-20);
+  return canvas.toDataURL('image/png');
+}
