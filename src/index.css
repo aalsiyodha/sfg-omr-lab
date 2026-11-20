@@ -531,3 +531,141 @@ body{background:var(--bg);color:var(--text-main);font-feature-settings:"ss01" on
  .product-footer .container-fluid{flex-direction:column;align-items:flex-start!important}
 }
 @media(prefers-reduced-motion:reduce){.product-sheet-scanline,.product-scanning-sheet .scanner-laser-line{animation:none;top:55%}}
+
+
+/* ==========================================================
+   Review-first answer workflow
+   ========================================================== */
+.review-nav-count{display:inline-grid;place-items:center;margin-left:5px;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:rgba(244,170,51,.18);font-size:.68rem}
+.review-summary{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:17px}
+.review-summary h5{letter-spacing:-.025em}
+.review-summary p{font-size:.81rem;line-height:1.5;color:var(--text-muted)}
+.review-summary-counts{display:flex;gap:8px;flex-wrap:wrap}
+.review-count-pill{padding:7px 11px;border-radius:9px;border:1px solid;font-size:.75rem;font-weight:700;white-space:nowrap}
+.review-count-pill.resolved{color:#277458;background:#eaf8f2;border-color:#d6eee3}
+.review-count-pill.flagged{color:#96600f;background:#fff5e4;border-color:#f7e5c2}
+.review-filter-bar{display:inline-flex;max-width:100%;padding:4px;border:1px solid var(--border);background:var(--bg);border-radius:11px;margin-bottom:17px;gap:4px}
+.review-filter-btn{border:0;border-radius:8px;color:var(--text-muted);background:transparent;cursor:pointer;padding:9px 15px;font-size:.8rem;font-weight:700;transition:background-color .15s,color .15s,box-shadow .15s}
+.review-filter-btn:hover{color:var(--text-main)}
+.review-filter-btn.active{background:var(--card-bg);color:var(--primary);box-shadow:0 1px 5px rgba(20,34,74,.1)}
+.review-answer-table{font-size:.82rem;min-width:660px;border-collapse:separate;border-spacing:0}
+.review-answer-table thead th{font-size:.72rem;padding:12px 10px;background:var(--bg);color:var(--text-muted);border-bottom:1px solid var(--border)}
+.review-answer-table tbody td,.review-answer-table tbody th{padding:13px 10px;vertical-align:middle;border-bottom:1px solid var(--border);background:transparent}
+.review-answer-table tbody tr:last-child td,.review-answer-table tbody tr:last-child th{border-bottom:0}
+.review-answer-flagged{background:rgba(245,170,58,.055)}
+.review-answer-resolved{color:var(--text-muted)}
+.review-answer-resolved .review-current-answer{color:var(--text-main)}
+.review-question-number{white-space:nowrap;font-weight:800;color:var(--text-main)}
+.review-current-answer{font-weight:800;font-size:.9rem}
+.review-status-pill{padding:5px 9px;border-radius:99px;display:inline-block;font-size:.72rem;font-weight:750;text-transform:capitalize}
+.review-status-pill.detected{background:#eaf8f2;color:#247252}
+.review-status-pill.blank{background:var(--bg);border:1px solid var(--border);color:var(--text-muted)}
+.review-status-pill.multiple,.review-status-pill.error{background:#fff0f1;color:#bd3e55}
+.review-status-pill.uncertain{background:#fff2d9;color:#9b6210}
+.review-confidence{color:var(--text-muted);font-variant-numeric:tabular-nums}
+.review-answer-actions{display:flex;align-items:center;gap:5px}
+.review-choice{min-width:32px;min-height:34px;display:inline-grid;place-items:center;border:1px solid var(--border-focus);border-radius:8px;background:var(--card-bg);color:var(--text-muted);font-weight:700;font-size:.76rem;cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+.review-choice:hover{border-color:var(--primary);color:var(--primary)}
+.review-choice.selected{background:var(--primary);color:#fff;border-color:var(--primary)}
+.review-blank-choice{padding:0 9px;min-width:57px}
+.review-help-text{font-size:.75rem;color:var(--text-muted);line-height:1.65;margin:15px 0 0}
+.review-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:9px;padding:35px 18px;background:var(--bg);border:1px dashed var(--border-focus);border-radius:13px;color:var(--text-muted);font-size:.83rem}
+.review-empty-state>i{font-size:2rem;color:#28a078}
+.review-empty-state strong{font-size:1rem;color:var(--text-main)}
+@media(max-width:576px){.review-filter-bar{width:100%;display:flex}.review-filter-btn{flex:1;padding:9px 8px;font-size:.75rem}.review-summary-counts{width:100%}}
+
+/* ==========================================================
+   Persistent dark mode — shared with Bootstrap v5.3 components
+   ========================================================== */
+.product-theme-toggle{min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 11px;border:1px solid var(--border);border-radius:10px;background:var(--card-bg);color:var(--text-main);font-size:.81rem;font-weight:650;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.product-theme-toggle:hover{background:var(--bg);border-color:var(--primary);color:var(--primary)}
+.product-theme-toggle .bi{font-size:1rem}
+.product-theme-toggle:focus-visible,.review-choice:focus-visible,.review-filter-btn:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0c1220;
+  --card-bg:#151e30;
+  --text-main:#edf2fc;
+  --text-muted:#a7b4cd;
+  --accent:#151e30;
+  --accent-light:#1b2840;
+  --primary:#8291ff;
+  --primary-hover:#6f7ff3;
+  --primary-soft:#202b4a;
+  --border:#2b3850;
+  --border-focus:#586888;
+  --success-light:#172f2b;
+  --warning-light:#392c1a;
+  --danger-light:#3c2029;
+  --shadow-xs:0 1px 2px rgba(0,0,0,.18);
+  --shadow-sm:0 1px 6px rgba(0,0,0,.18);
+  --shadow-md:0 12px 28px rgba(0,0,0,.22);
+  background:#0c1220;
+}
+[data-theme="dark"] body{background:#0c1220!important;color:var(--text-main)}
+[data-theme="dark"] .product-navbar.navbar,
+[data-theme="dark"] .product-navbar.navbar.sticky-top{background:rgba(17,25,41,.96)!important;border-color:#2b3850;box-shadow:0 1px 7px rgba(0,0,0,.2)}
+[data-theme="dark"] .product-brand-name{color:#f0f5ff}
+[data-theme="dark"] .product-brand-name span{color:#b5c4e0}
+[data-theme="dark"] .product-version-tag,[data-theme="dark"] .product-scan-version{background:#252e50;color:#bbc4ff;border-color:#37446a}
+[data-theme="dark"] .product-nav-link.nav-link{color:#b0bdd4!important}
+[data-theme="dark"] .product-nav-link.nav-link.active{background:#28355b;color:#d1d8ff!important}
+[data-theme="dark"] .product-nav-link.nav-link:hover{background:#202e47;color:#f5f7ff!important}
+[data-theme="dark"] .navbar-toggler-icon{filter:invert(1)}
+[data-theme="dark"] .product-footer{background:#121b2c;border-color:var(--border);color:#97a6bf}
+[data-theme="dark"] .product-footer-brand{color:#e1eafb}
+[data-theme="dark"] .product-footer-brand span{color:#8d9db8}
+[data-theme="dark"] .product-hero{background:radial-gradient(ellipse 56% 80% at 87% 48%,#25325b 0%,transparent 82%),linear-gradient(125deg,#161e30 15%,#171e38 100%);border-color:var(--border)}
+[data-theme="dark"] .product-hero h1{color:#f4f6ff}
+[data-theme="dark"] .product-hero h1 span{color:#a2adff}
+[data-theme="dark"] .product-hero-lead,[data-theme="dark"] .product-trust-row{color:#bdc8de}
+[data-theme="dark"] .product-eyebrow,[data-theme="dark"] .product-kicker{color:#b3bfff}
+[data-theme="dark"] .product-step,[data-theme="dark"] .product-engine-pill,[data-theme="dark"] .product-bottom-callout,[data-theme="dark"] .product-scan-instructions{background:var(--card-bg);border-color:var(--border);color:var(--text-main)}
+[data-theme="dark"] .product-step h3,[data-theme="dark"] .product-step-top i,[data-theme="dark"] .product-scan-instructions strong{color:#edf2fc}
+[data-theme="dark"] .product-step p,[data-theme="dark"] .product-bottom-callout p,[data-theme="dark"] .product-scan-header p{color:#b4c1d7}
+[data-theme="dark"] .product-bottom-callout .btn,[data-theme="dark"] .product-secondary-cta{background:#202b40;color:#e0e7fa;border-color:#46546e}
+[data-theme="dark"] .product-engine-pill .status-dot{box-shadow:none}
+[data-theme="dark"] .product-floating-chip{background:#17273a;color:#9fdfc5;border-color:#3a5063}
+[data-theme="dark"] .product-sheet{box-shadow:0 18px 40px rgba(0,0,0,.3)}
+[data-theme="dark"] .product-scan-header{border-color:var(--border)}
+[data-theme="dark"] .product-scan-instructions b,[data-theme="dark"] .product-scan-instructions span{color:#c8d2ee}
+[data-theme="dark"] .card,[data-theme="dark"] .content-card,[data-theme="dark"] .card-header,[data-theme="dark"] .scanner-animation-container{background:#151e30!important;border-color:#2b3850;color:#edf2fc}
+[data-theme="dark"] .card-header{background:#192438!important}
+[data-theme="dark"] .text-dark{color:#e8effc!important}
+[data-theme="dark"] .text-muted{color:#a7b4cd!important}
+[data-theme="dark"] .bg-white,[data-theme="dark"] .bg-light,[data-theme="dark"] .table-light,[data-theme="dark"] .alert-secondary{background:#192438!important;color:#e1eaff!important}
+[data-theme="dark"] .border,[data-theme="dark"] .border-top,[data-theme="dark"] .border-bottom{border-color:#2b3850!important}
+[data-theme="dark"] .nav-pills .nav-link:not(.active){color:#b2c0db}
+[data-theme="dark"] .nav-pills .nav-link.active{background:#4456b6;color:white}
+[data-theme="dark"] .form-control,[data-theme="dark"] .form-select,[data-theme="dark"] .input-group-text{background:#111a2a;color:#e4ecfb;border-color:#3c4b68}
+[data-theme="dark"] .form-control::placeholder{color:#96a6c1}
+[data-theme="dark"] .form-control:focus,[data-theme="dark"] .form-select:focus{background:#172239;color:#f5f7ff;border-color:#8091fb}
+[data-theme="dark"] .table{--bs-table-bg:#151e30;--bs-table-color:#dbe4f5;--bs-table-border-color:#34425c;--bs-table-striped-bg:#1d2940;--bs-table-hover-bg:#223048}
+[data-theme="dark"] .btn-outline-secondary{color:#c6d0e5;border-color:#52627c}
+[data-theme="dark"] .btn-outline-secondary:hover{background:#374865;color:#fff}
+[data-theme="dark"] .btn-outline-primary{color:#b6c0ff;border-color:#7786e4}
+[data-theme="dark"] .btn-outline-primary:hover{background:#5667cc;color:#fff}
+[data-theme="dark"] .btn-primary{background:#5264cc;border-color:#5264cc;color:#fff}
+[data-theme="dark"] .btn-primary:hover{background:#6677e7;border-color:#6677e7}
+[data-theme="dark"] .beta-review-banner{background:#1c2a43;color:#d5e0f3;border-color:#3a5279}
+[data-theme="dark"] .beta-review-attention{background:#342b20;color:#f0d5a1;border-color:#66512e}
+[data-theme="dark"] .beta-review-failed{background:#37232a;color:#f9c4cf;border-color:#6c3b48}
+[data-theme="dark"] .beta-scan-intro>div,[data-theme="dark"] .beta-step{background:#151e30;border-color:#2b3850}
+[data-theme="dark"] .beta-scan-intro strong,[data-theme="dark"] .beta-step h3{color:#e0e8f6}
+[data-theme="dark"] .review-count-pill.resolved,[data-theme="dark"] .review-status-pill.detected{background:#19382f;color:#abdfca;border-color:#305c4d}
+[data-theme="dark"] .review-count-pill.flagged,[data-theme="dark"] .review-status-pill.uncertain{background:#40301f;color:#ffdaa4;border-color:#6f5130}
+[data-theme="dark"] .review-status-pill.multiple,[data-theme="dark"] .review-status-pill.error{background:#41272f;color:#ffbdcb}
+[data-theme="dark"] .review-answer-flagged{background:rgba(225,158,57,.09)}
+[data-theme="dark"] .review-answer-table thead th{background:#192438}
+[data-theme="dark"] .review-choice.selected{background:#6172e0;border-color:#6172e0;color:white}
+[data-theme="dark"] .review-filter-btn.active{background:#26334b;color:#c3caff}
+[data-theme="dark"] .review-empty-state>i{color:#6ac3a1}
+[data-theme="dark"] .scanner-viewport.product-scanning-sheet{background:#fff;color:#263550}
+[data-theme="dark"] .scanner-viewport.product-scanning-sheet .grid-dot-mock{border-color:#aab8ca}
+[data-theme="dark"] .scanner-viewport.product-scanning-sheet .grid-dot-mock.filled{background:#5366ca}
+[data-theme="dark"] .badge.bg-secondary{background:#374861!important;color:#f0f3fc!important}
+[data-theme="dark"] .badge.bg-warning{color:#262018!important}
+[data-theme="dark"] .alert-warning{background:#392e1f;color:#f4d7a4;border-color:#65512c}
+[data-theme="dark"] .alert-danger{background:#3d252e;color:#f6bdc9;border-color:#704353}
+[data-theme="dark"] .alert-success{background:#20392c;color:#b5edc8;border-color:#41644e}
+@media(max-width:767px){.product-theme-toggle{width:100%;justify-content:flex-start;padding-left:14px}.product-theme-caption{display:inline}}
