@@ -63,13 +63,12 @@ export default function HomePage({ appState }: Props) {
 
       <section className="container my-3" aria-label="Latest scanner changes">
         <div className="alert alert-info border mb-0" role="note">
-          <strong><i className="bi bi-stars me-2" />New in v2.2.5</strong>
+          <strong><i className="bi bi-stars me-2" />LITE v2.2.6 — Side-by-side experiment</strong>
           <p className="small mb-0 mt-1">
-            Partial bubbles, dots, hatches and ticks are rejected as blank;
-            two fully shaded options remain multiple even if crossed through.
-            In practice scoring, multiple selections now receive the incorrect
-            answer penalty (−0.66 for a 2-mark question). Diagnostic reports
-            show why high-ink partial marks were rejected.
+            This 5175 experimental engine stops registration search after
+            independent QR verification and a perfect 50/50 timing match,
+            and reuses hatch evidence. Compare the same photo with Antigravity
+            on port 5173. Partial-mark and multiple-selection policies remain unchanged.
           </p>
         </div>
       </section>
