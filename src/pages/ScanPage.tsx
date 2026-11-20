@@ -5,7 +5,7 @@ import type { AnswerOption } from '../types';
 import { ErrorLogBox } from '../components/ErrorLogBox';
 import { generateLLMDiagnosticPrompt, generateBetaFeedbackPrompt } from '../diagnostics/llmPromptGenerator';
 import { APP_VERSION } from '../config/version';
-import { needsReview, filterReviewAnswers } from '../review/reviewPolicy';
+import { needsReview, filterReviewAnswers, countRejectedBlankMarks } from '../review/reviewPolicy';
 
 interface Props { appState: AppState; }
 
@@ -232,6 +232,7 @@ export default function ScanPage({ appState }: Props) {
   // not review cases. A manual edit resolves a previously flagged question.
   const reviewCount = scanResult?.answers.filter(needsReview).length ?? 0;
   const resolvedCount = (scanResult?.answers.length ?? 0) - reviewCount;
+  const invalidBlankCount = countRejectedBlankMarks(scanResult?.answers ?? []);
   const visibleAnswers = filterReviewAnswers(scanResult?.answers ?? [], reviewFilter);
   const llmReportPreview = scanResult
     ? generateLLMDiagnosticPrompt({
@@ -454,6 +455,17 @@ export default function ScanPage({ appState }: Props) {
             </div>
             {scanResult.overallStatus !== 'failed' && <button className="btn btn-sm btn-outline-primary" onClick={() => setActiveTab('table')}>Review answers</button>}
           </div>
+
+          {invalidBlankCount > 0 && (
+            <div className="alert alert-info py-2 small d-flex flex-wrap align-items-center gap-2" role="status">
+              <i className="bi bi-info-circle" aria-hidden="true" />
+              <span><strong>{invalidBlankCount} question(s)</strong> contained incomplete or non-solid markings and were treated as blank under strict SFG rules.</span>
+              <button type="button" className="btn btn-sm btn-outline-secondary ms-auto"
+                onClick={() => {setActiveTab('table');setReviewFilter('all');}}>
+                View all answers
+              </button>
+            </div>
+          )}
 
           {/* Warnings & errors */}
           {scanResult.warnings.map((w, i) => (
