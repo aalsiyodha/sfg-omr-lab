@@ -13,7 +13,7 @@ import { applySevenToneCorrection } from './grayToneCorrection';
 import { reconcileToneAnswers } from './toneConsensus';
 import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion } from './qrDecoder';
-import { detectAllAnswers, detectTestId } from './bubbleDetector';
+import { detectAllAnswers, detectTestId, computeAdaptiveDarkThreshold } from './bubbleDetector';
 import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import { rescueTestIdOffset } from './testIdAlignment';
@@ -292,16 +292,29 @@ export async function runFullScan(
       // verified registration, grid offsets and ink ceiling. This separates
       // geometry from tone-mapping changes and protects against Q18-like
       // disappearing filled marks without promoting Q42-like faint debris.
+      const rawInkThreshold=computeAdaptiveDarkThreshold(chosen.gray);
       const rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
-        q=>offsetForQuestion(grid,q));
+        q=>offsetForQuestion(grid,q),rawInkThreshold);
       const tone=applySevenToneCorrection(chosen.gray,grayCalibration);
       logger.info('bubbleDetection','Seven-tone image correction',{
         applied:tone.applied,topBottomDelta:tone.topBottomDelta,
         description:tone.description});
       try {
         if(tone.applied){
-          const toneAnswers=detectAllAnswers(tone.corrected,dpi,inkCeiling??undefined,
-            q=>offsetForQuestion(grid,q));
+          // Both the darkness threshold and the calibrated ink ceiling
+          // must be mapped through the identical LUT as the pixel values.
+          const correctedInkThreshold=tone.mapInkThreshold(rawInkThreshold);
+          const correctedInkCeiling=inkCeiling===null
+            ? undefined : tone.mapInkThreshold(inkCeiling);
+          logger.info('bubbleDetection','Original/corrected threshold correspondence',{
+            rawThreshold:rawInkThreshold,
+            correctedThreshold:Number(correctedInkThreshold.toFixed(2)),
+            rawInkCeiling:inkCeiling,
+            correctedInkCeiling:correctedInkCeiling===undefined
+              ? null:Number(correctedInkCeiling.toFixed(2)),
+          });
+          const toneAnswers=detectAllAnswers(tone.corrected,dpi,correctedInkCeiling,
+            q=>offsetForQuestion(grid,q),correctedInkThreshold);
           const consensus=reconcileToneAnswers(rawAnswers,toneAnswers);
           answers=consensus.answers;
           logger.info('bubbleDetection','Original-vs-seven-tone answer comparison',{
