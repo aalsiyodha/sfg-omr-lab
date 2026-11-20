@@ -19,7 +19,15 @@ export function proxy(request: NextRequest) {
     slug = host.slice(0, -".localhost".length);
   }
 
-  if (!slug || slug === "www" || slug === "dashboard" || slug === "admin" || slug === "app") {
+  if (slug === "dashboard") {
+    if (path === "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      return NextResponse.rewrite(url);
+    }
+    return NextResponse.next();
+  }
+  if (!slug || slug === "www" || slug === "admin" || slug === "app") {
     return NextResponse.next();
   }
   if (!getDemoTenant(slug)) {
