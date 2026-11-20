@@ -1177,9 +1177,11 @@ test('v2.2.2: top-facing fast path retains ArUco Otsu recovery', () => {
   const {skipRedundantFallback}=loadTS('src/scanner/alignmentPolicy.ts');
   assert.equal(skipRedundantFallback(null,'corner/Otsu','corner'),false);
   assert.equal(skipRedundantFallback(43,'midpoint/Otsu','midpoint'),false);
-  assert.equal(skipRedundantFallback(44,'corner/Otsu','corner'),true);
+  assert.equal(skipRedundantFallback(44,'corner/Otsu','corner'),false);
+  assert.equal(skipRedundantFallback(48,'corner/Otsu','corner'),true);
   assert.equal(skipRedundantFallback(44,'aruco/Otsu','aruco'),false);
-  assert.equal(skipRedundantFallback(44,'midpoint/aruco-guided-Otsu','midpoint'),true);
+  assert.equal(skipRedundantFallback(44,'midpoint/aruco-guided-Otsu','midpoint'),false);
+  assert.equal(skipRedundantFallback(48,'midpoint/aruco-guided-Otsu','midpoint'),true);
 });
 
 test('v2.2.2: strong solid answer ignores peripheral neighboring ink without radial core', () => {
@@ -1256,4 +1258,47 @@ test('precision: strongly one-sided shading stays blank without invalidating sol
   const solid=engine.detectQuestion(v201Image({shape:'solid',option:1}),24,150,152);
   assert.equal(solid.status,'detected');
   assert.equal(solid.answer,'B');
+});
+
+test('v2.2.3: tone correction cannot create an answer from a raw blank or invalid mark',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const mk=(status,fill,option='B')=>({
+    question:42,status,detectedAnswer:status==='detected'?option:null,
+    confidence:status==='detected'?99:0,isManuallyEdited:false,
+    measurements:['A','B','C','D'].map(o=>({question:42,option:o,
+      fillPercent:o===option?fill:0,xMm:0,yMm:0,
+      radialShape:o===option?'solid_like':'no_ink'}))
+  });
+  for(const fill of [0,30,44,50,62]){
+    const res=reconcileToneAnswers([mk('blank',fill)],[mk('detected',89)]);
+    assert.equal(res.answers[0].status,'blank','raw blank '+fill);
+    assert.equal(res.answers[0].detectedAnswer,null);
+  }
+  const invalid=reconcileToneAnswers([mk('uncertain',40)],[mk('detected',93)]);
+  assert.equal(invalid.answers[0].detectedAnswer,null);
+  assert.notEqual(invalid.answers[0].status,'detected');
+  const legitimate=reconcileToneAnswers([mk('detected',91)],[mk('detected',94)]);
+  assert.equal(legitimate.answers[0].detectedAnswer,'B');
+});
+
+test('v2.2.3: registration scoring and rescue fail closed below 35 timing marks',()=>{
+  const {registrationScore,shouldAdoptTimingRefinement,skipRedundantFallback}=
+    loadTS('src/scanner/alignmentPolicy.ts');
+  const base={kind:'corner',qrVerified:true,timingMatched:35,leftMatched:17,rightMatched:18};
+  assert.ok(Number.isFinite(registrationScore(base)));
+  assert.equal(registrationScore({...base,timingMatched:34}),-Infinity);
+  assert.equal(registrationScore({...base,leftMatched:9,rightMatched:26}),-Infinity);
+  const weak={passed:false,matched:19,leftMatched:9,rightMatched:10};
+  assert.equal(shouldAdoptTimingRefinement(weak,{passed:true,matched:27,leftMatched:13,rightMatched:14}),false);
+  assert.equal(shouldAdoptTimingRefinement(weak,{passed:true,matched:35,leftMatched:17,rightMatched:18}),true);
+  assert.equal(skipRedundantFallback(44,'corner/Otsu','corner'),false);
+});
+
+test('v2.2.3: reject too-small sources but permit existing v4/v5 image dimensions',()=>{
+  const {validateImage}=loadTS('src/scanner/imageLoader.ts');
+  assert.equal(validateImage({width:868,height:1156}).valid,true);
+  assert.equal(validateImage({width:1200,height:1600}).valid,true);
+  assert.equal(validateImage({width:500,height:850}).valid,false);
+  assert.equal(validateImage({width:600,height:1100}).valid,false);
+  assert.equal(validateImage({width:690,height:1100}).valid,true);
 });
