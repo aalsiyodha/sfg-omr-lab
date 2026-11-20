@@ -511,7 +511,38 @@ export function detectQuestion(
     secondInk.measurement.rejectReason = 'Additional ink on another option: manual review';
     return { measurements, answer: null, status: 'uncertain', confidence: 0 };
   }
-  if (substantialMarks.length >= 2 || !top.detail.isValid || jump < RULES.minJump ||
+  // Borderline solid-fill recovery: JPEG/photocopy texture can create
+  // narrow bright holes inside a genuinely filled circle (v4 Q18-D).
+  // Use a *small* threshold perturbation only when the ORIGINAL radial,
+  // quadrant and symmetry evidence already resembles a broad circular fill.
+  // Never rescue ticks, dots, hatches with thin outer coverage or crescents.
+  const plausiblySolid=max>=45 && max<85 &&
+    second.measurement.fillPercent<12 &&
+    (top.detail.filledQuadrants??0)>=3 &&
+    (top.measurement.radialCore??0)>=30 &&
+    (top.measurement.radialMiddle??0)>=40 &&
+    (top.measurement.radialOuter??0)>=32 &&
+    top.detail.horizontalDisparity<28 &&
+    top.detail.diagonalDisparity<45;
+  let solidTextureRescue=false;
+  if(plausiblySolid) {
+    const idx=options.indexOf(top.measurement.option);
+    const t=Math.min(inkCeiling??173,(top.detail.effectiveThreshold??effectiveThreshold)+7);
+    const sample=measureBubbleInterior(correctedGray,centres[idx].x,centres[idx].y,
+      interiorRadiusPx,t,dpi,top.measurement.paperReferenceBrightness,inkCeiling);
+    const radial=measureRadialInk(correctedGray,centres[idx].x,centres[idx].y,dpi,
+      sample.effectiveThreshold??t);
+    solidTextureRescue=sample.fillPercent>=65 &&
+      sample.filledQuadrants===4 && !sample.strokeLike &&
+      sample.horizontalDisparity<25 && sample.diagonalDisparity<40 &&
+      radial.core>=45 && radial.middle>=55 && radial.outer>=45 &&
+      radial.classification==='solid_like';
+    if(solidTextureRescue) {
+      top.measurement.rejectReason=undefined;
+      top.measurement.validMark=true;
+    }
+  }
+  if (substantialMarks.length >= 2 || (!top.detail.isValid && !solidTextureRescue) || jump < RULES.minJump ||
       diff < settings.bubbleUncertainThreshold) {
     top.measurement.rejectReason ??= top.detail.rejectReason ??
       (substantialMarks.length >= 2 ? 'Two marked options' :
@@ -534,19 +565,19 @@ export function detectQuestion(
   const oneSidedFill=max>=60 && max<92 &&
     top.detail.horizontalDisparity>=38 &&
     (top.measurement.radialOuter??0)<85;
-  const hatchedFill=max>=45 && max<90 && hatch.hatchLike;
+  const hatchedFill=max>=45 && max<90 && hatch.hatchLike && !solidTextureRescue;
   if(oneSidedFill||hatchedFill){
     top.measurement.rejectReason=oneSidedFill
       ? 'Asymmetric partial fill: left/right ink coverage differs'
       : 'Hatched/striped ink: repeated unfilled channels inside bubble';
     return {measurements,answer:null,status:'uncertain',confidence:0};
   }
-  const stableSolidShape =
+  const stableSolidShape = solidTextureRescue || (
     (top.detail.filledQuadrants ?? 0) === 4 &&
     !top.detail.strokeLike &&
     (top.measurement.radialCore ?? 0)>=40 &&
     (top.measurement.radialMiddle ?? 0)>=40 &&
-    (top.measurement.radialOuter ?? 0)>=45;
+    (top.measurement.radialOuter ?? 0)>=45);
   if (max < RULES.strongFill && !stableSolidShape) {
     const optionIdx = options.indexOf(top.measurement.option) as 0|1|2|3;
     const centre = getBubbleCentre(question, optionIdx);
