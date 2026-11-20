@@ -304,13 +304,14 @@ test('v1.8 beta report includes concise answer map and excludes student identity
     confidence:0,
     isManuallyEdited:false
   }));
-  const prompt = report.generateBetaFeedbackPrompt({scanResult:{
+  const prompt = report.generateBetaFeedbackPrompt({file:{name:'case01.jpg',size:12345,type:'image/jpeg'},scanResult:{
     studentId:'SENSITIVE_STUDENT', qrRaw:'SFGOMR1:SECRET',
     status:'partial',overallStatus:'partial',testId:27,qrValid:true,
     registrationMethod:'corner/adaptive',alignmentMatched:45,
     orientationRotated:false,answers,errors:[]
   }});
   assert.match(prompt,/compact scan diagnostic/);
+  assert.match(prompt,/case01.jpg/);
   assert.match(prompt,/29:\?/);
   assert.match(prompt,/Q29 uncertain/);
   assert.doesNotMatch(prompt,/SENSITIVE_STUDENT|SFGOMR1:SECRET/);
