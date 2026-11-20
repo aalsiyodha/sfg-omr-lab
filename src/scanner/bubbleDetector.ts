@@ -589,9 +589,13 @@ export function detectAllAnswers(
   correctedGray: any,
   dpi: number,
   inkCeiling?: number,
-  offsetForRow: (q:number)=>{dx:number;dy:number} = ()=>({dx:0,dy:0})
+  offsetForRow: (q:number)=>{dx:number;dy:number} = ()=>({dx:0,dy:0}),
+  // When using a tone-corrected image, supply the original threshold mapped
+  // through the same LUT. Recomputing Otsu on already-remapped pixels and
+  // retaining an uncorrected ink ceiling erases medium-density filled ink.
+  darkThresholdOverride?: number
 ): QuestionResult[] {
-  const darkThreshold = computeAdaptiveDarkThreshold(correctedGray);
+  const darkThreshold = darkThresholdOverride ?? computeAdaptiveDarkThreshold(correctedGray);
   return Array.from({ length: 50 }, (_, i) => {
     const q = i + 1;
     const result = detectQuestion(correctedGray, q, dpi, darkThreshold, inkCeiling, offsetForRow(q));
