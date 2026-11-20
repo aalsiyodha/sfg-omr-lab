@@ -16,6 +16,7 @@ function localDirty(): boolean {
 
 export default defineConfig(({ command }) => {
   const isVercel = Boolean(process.env.VERCEL)
+  const isGitHubPages = process.env.GITHUB_PAGES === 'true'
   const source = isVercel ? 'vercel' : command === 'serve' ? 'local-dev' : 'local-build'
   const sha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || localGitSha()
   const environment = isVercel ? (process.env.VERCEL_ENV || 'unknown') : command === 'serve' ? 'development' : 'local-preview'
@@ -28,6 +29,7 @@ export default defineConfig(({ command }) => {
     dirty: !isVercel && localDirty(),
   }
   return {
+    base: isGitHubPages ? '/sfg-omr-lab/' : '/',
     plugins: [
       react(),
       { name: 'app-version-html', transformIndexHtml: html => html.replaceAll('__APP_VERSION__', `v${version}`) },
