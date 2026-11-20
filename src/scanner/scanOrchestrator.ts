@@ -103,11 +103,11 @@ function evaluateHypothesis(
     let check = verifyTimingMarks(gray, dpi);
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
-    if (!check.passed && hypothesis.kind === 'aruco') {
-      // v5: four correctly decoded marker IDs produced an upright, QR-valid
-      // warp but a skewed timing lattice (0/50). Use four *independent*
-      // printed timing squares to perform a second bounded correction.
-      // Both QR and the original strict 50-row test MUST pass afterwards.
+    if (!check.passed) {
+      // v2.2.2: Any registration method can have a sound QR position but
+      // a slightly displaced timing lattice. Try four *independent* printed
+      // timing squares as a bounded second correction. Never trust a refined
+      // warp until QR identity and both side timing bands independently pass.
       const rescued=refineByTimingSquares(persp.corrected,dpi);
       if(rescued){
         let updatedGray:any=null;
@@ -118,7 +118,7 @@ function evaluateHypothesis(
           cv.imshow(candidate,rescued.corrected);
           const verifiedQR=decodeQRFromRegion(
             candidate,OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
-          if(verifiedQR.valid){
+          if(verifiedQR.valid && verifiedQR.raw === qr.raw){
             updatedGray=new cv.Mat();
             cv.cvtColor(rescued.corrected,updatedGray,cv.COLOR_RGBA2GRAY);
             const updatedCheck=verifyTimingMarks(updatedGray,dpi);
@@ -193,6 +193,8 @@ export async function runFullScan(
     onProgress?.({ stage: 'Finding reference markers (corner and edge midpoint)…', percent: 30 });
 
     const hypotheses: Hypothesis[] = [];
+    // Independent marker families: corners, side midpoints and uniquely
+    // identified ArUco codes. Each alignment is verified after warping.
     const arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
     const arucoMidpointPrediction=predictMidpointsFromArucos(arucoAdaptive);
     logger.info('markerDetection','ArUco 4x4 marker identification (adaptive)',{
@@ -233,14 +235,18 @@ export async function runFullScan(
         identified:arucoOtsu.count,ids:Object.keys(arucoOtsu.points),
         readyForRescue:arucoOtsu.found});
       if(arucoAdaptive.found)hypotheses.push({kind:'aruco',name:'aruco/adaptive',markers:arucoAdaptive});
-      else if(arucoOtsu.found)hypotheses.push({kind:'aruco',name:'aruco/Otsu',markers:arucoOtsu});
+      // Independent thresholding can recover a different set of marker
+      // centres. Evaluate both, even if adaptive ArUco detection succeeded.
+      if(arucoOtsu.found)hypotheses.push({kind:'aruco',name:'aruco/Otsu',markers:arucoOtsu});
     } finally {
       cleanupMats(alternate);
     }
 
     logger.info('markerDetection', `${hypotheses.length} reference hypotheses available`,
       { cornerCandidates: hypotheses.filter(h => h.kind === 'corner').length,
-        midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length });
+        midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length,
+        arucoCandidates: hypotheses.filter(h => h.kind === 'aruco').length,
+        methodNames: hypotheses.map(h => h.name) });
     images.markerOverlay = arucoAdaptive.found
       ? generateArucoOverlay(loaded.canvas,arucoAdaptive)
       : generateMarkerOverlay(loaded.canvas, primary);
@@ -257,16 +263,24 @@ export async function runFullScan(
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
-      if (selected && selected.check.matched >= 40 && hypothesis.name.endsWith('/Otsu') && hypothesis.kind !== 'aruco') continue;
+      if (selected && selected.check.matched >= 44 && hypothesis.name.endsWith('/Otsu') && hypothesis.kind !== 'aruco') {
+        logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
+        continue;
+      }
       const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
-      const newScore = evaluated.check.matched +
-        (evaluated.hypothesis.kind === 'corner' ? 0.25 : 0);
-      const oldScore = selected
-        ? selected.check.matched + (selected.hypothesis.kind === 'corner' ? .25 : 0)
-        : -1;
+      const rank = (a: AcceptedAlignment) =>
+        a.check.matched + (a.qr.valid ? 1 : 0) +
+        (a.hypothesis.kind === 'corner' ? 0.25 : 0);
+      const newScore = rank(evaluated);
+      const oldScore = selected ? rank(selected) : -1;
+      logger.info('perspective', `${hypothesis.name}: alignment candidate verified`, {
+        score: newScore, timing: evaluated.check.matched,
+        left: evaluated.check.leftMatched, right: evaluated.check.rightMatched,
+        qrIdentityVerified: evaluated.qr.valid,
+      });
       if (newScore > oldScore) {
         if (selected) disposeAlignment(selected);
         selected = evaluated;
@@ -390,7 +404,7 @@ export async function runFullScan(
       );
     } else {
       logger.error('perspective',
-        'No trustworthy registration: corner/edge-midpoint attempts failed QR or timing-mark validation.');
+        'No trustworthy registration: corner, midpoint and ArUco attempts failed independent QR/timing validation.');
     }
 
     const partial: ScanResult = {
@@ -402,7 +416,7 @@ export async function runFullScan(
       stageLogs: [],
       warnings: [],
       errors: selected ? [] : [
-        'No registration hypothesis verified the QR position and side timing marks. Try a clearer photo of the complete sheet.'
+        'No registration hypothesis passed QR identity and independent left/right timing checks (corners, midpoint squares, ArUco). Try a sharper full-page image.'
       ],
       overallStatus: 'failed',
     };
