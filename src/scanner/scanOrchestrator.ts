@@ -5,6 +5,7 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
+import { refineByTimingSquares } from './timingRefinement';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
 import { detectArucoMarkers, predictMidpointsFromArucos } from './arucoDetector';
@@ -99,9 +100,58 @@ function evaluateHypothesis(
 
     gray = new cv.Mat();
     cv.cvtColor(persp.corrected, gray, cv.COLOR_RGBA2GRAY);
-    const check = verifyTimingMarks(gray, dpi);
+    let check = verifyTimingMarks(gray, dpi);
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
+    if (!check.passed && hypothesis.kind === 'aruco') {
+      // v5: four correctly decoded marker IDs produced an upright, QR-valid
+      // warp but a skewed timing lattice (0/50). Use four *independent*
+      // printed timing squares to perform a second bounded correction.
+      // Both QR and the original strict 50-row test MUST pass afterwards.
+      const rescued=refineByTimingSquares(persp.corrected,dpi);
+      if(rescued){
+        let updatedGray:any=null;
+        try{
+          const candidate=document.createElement('canvas');
+          candidate.width=rescued.corrected.cols;
+          candidate.height=rescued.corrected.rows;
+          cv.imshow(candidate,rescued.corrected);
+          const verifiedQR=decodeQRFromRegion(
+            candidate,OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+          if(verifiedQR.valid){
+            updatedGray=new cv.Mat();
+            cv.cvtColor(rescued.corrected,updatedGray,cv.COLOR_RGBA2GRAY);
+            const updatedCheck=verifyTimingMarks(updatedGray,dpi);
+            logger.info('perspective',`${hypothesis.name}: timing-assisted refinement`,{
+              shifts:rescued.shifts,
+              before:check.matched,after:updatedCheck.matched,
+              left:updatedCheck.leftMatched,right:updatedCheck.rightMatched,
+              qrReverified:verifiedQR.valid,
+            });
+            if(updatedCheck.passed && updatedCheck.matched>=check.matched+8){
+              cleanupMats(gray,persp.corrected);
+              persp.corrected=rescued.corrected;
+              persp.correctedDataUrl=candidate.toDataURL('image/png');
+              gray=updatedGray;updatedGray=null;
+              cv.imshow(canvas,persp.corrected);
+              check=updatedCheck;
+              qr=verifiedQR;
+              // The original first-stage transform remains owned by persp.
+            }else cleanupMats(rescued.corrected);
+          }else{
+            logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`);
+            cleanupMats(rescued.corrected);
+          }
+        }catch(error){
+          // On failure, keep only the unchanged original warp.
+          // If the refinement was adopted, persp owns the new image.
+          if(persp.corrected!==rescued.corrected)cleanupMats(rescued.corrected);
+          logger.warning('perspective','Timing-assisted correction failed',{reason:String(error)});
+        }finally{
+          cleanupMats(updatedGray,rescued.transform);
+        }
+      }
+    }
     if (!check.passed) {
       logger.warning('perspective', `${hypothesis.name}: rejected, insufficient independent timing-mark alignment`);
       return null;
