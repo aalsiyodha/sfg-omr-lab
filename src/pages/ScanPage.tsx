@@ -157,7 +157,7 @@ export default function ScanPage({ appState }: Props) {
   const handleCopyBetaReport = async () => {
     if (!scanResult) return;
     const ok = await copyText(generateBetaFeedbackPrompt({
-      scanResult, activeTestId: practice.activeTest?.testId,
+      scanResult, file: capturedFile, activeTestId: practice.activeTest?.testId,
     }));
     setLlmCopied(ok);
     setCopyFailed(!ok);
@@ -209,7 +209,7 @@ export default function ScanPage({ appState }: Props) {
   const hasAnswers = scanResult?.answers && scanResult.answers.length > 0;
   const hasErrorsOrWarnings = (scanResult?.errors && scanResult.errors.length > 0) || !hasAnswers;
 
-  const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult, activeTestId: practice.activeTest?.testId}) : '';
+  const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult, file: capturedFile, activeTestId: practice.activeTest?.testId}) : '';
   // Strict-invalid marks (ticks, crescents, dots and partials) are blanks,
   // not review cases. A manual edit resolves a previously flagged question.
   const reviewCount = scanResult?.answers.filter(needsReview).length ?? 0;
