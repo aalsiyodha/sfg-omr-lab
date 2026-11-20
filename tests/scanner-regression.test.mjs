@@ -1456,7 +1456,7 @@ test('diagnostics keep filenames and remove repetitive full-report instructions'
   const source=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
   assert.ok(source.includes("'File=' + (file?.name ?? 'camera/unknown')"));
   assert.ok(source.includes('Full bubble measurements'));
-  assert.ok(source.includes('Detailed optical evidence for flagged/edited rows'));
+  assert.ok(source.includes('Detailed optical evidence for flagged, edited or high-ink rejected rows'));
   assert.ok(source.includes('Important stage logs'));
   assert.equal(source.includes('## 8. Instructions for the LLM'),false);
   assert.equal(source.includes('Top | 2nd | Gap | Baseline'),false);
