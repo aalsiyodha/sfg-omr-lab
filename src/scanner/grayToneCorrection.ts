@@ -31,6 +31,8 @@ export interface ToneCorrectionResult {
   applied:boolean;
   topBottomDelta:number;
   description:string;
+  /** Map original-image ink threshold into the tone-corrected image domain. */
+  mapInkThreshold:(original:number,yPx?:number)=>number;
 }
 /** Returns an independent clone; caller owns/delete()s it. */
 export function applySevenToneCorrection(gray:any,calibration:GrayCalibration):ToneCorrectionResult{
@@ -38,7 +40,8 @@ export function applySevenToneCorrection(gray:any,calibration:GrayCalibration):T
   const lut=buildSevenToneLut(calibration);
   if(!lut || !corrected.data || corrected.channels()!==1) {
     return {corrected,applied:false,topBottomDelta:0,
-      description:'Seven-tone calibration unavailable; original grayscale retained'};
+      description:'Seven-tone calibration unavailable; original grayscale retained',
+      mapInkThreshold:(original:number)=>original};
   }
   const refs=calibration.whiteReferences;
   // White references are at distinct x too, so keep correction VERY small.
@@ -56,6 +59,15 @@ export function applySevenToneCorrection(gray:any,calibration:GrayCalibration):T
       output[at+x]=Math.min(255,Math.max(0,Math.round(lut[old]+vertical)));
     }
   }
-  return {corrected,applied:true,topBottomDelta:delta,
-    description:'Seven-tone bounded LUT (±14 levels) plus white-reference vertical correction (±4 levels)'};
+  const mapInkThreshold=(original:number,yPx?:number):number=>{
+    const intensity=Math.max(0,Math.min(255,Math.round(original)));
+    // Apply the EXACT same seven-tone mapping to the decision boundary as
+    // to the pixel values. The old code remapped ink pixels but retained the
+    // uncorrected ceiling (~158), losing Q18-D near the threshold.
+    const position=typeof yPx==='number'
+      ? yPx/Math.max(1,H-1)-.5 : 0;
+    return Math.max(0,Math.min(255,lut[intensity]+delta*position));
+  };
+  return {corrected,applied:true,topBottomDelta:delta,mapInkThreshold,
+    description:'Seven-tone bounded LUT with threshold/ceiling mapped into the same intensity domain; white-reference vertical correction'};
 }
