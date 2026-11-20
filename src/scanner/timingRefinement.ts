@@ -45,7 +45,7 @@ export function boundedTimingGeometry(
   return cross(lt,rt,rb)>0 && cross(rt,rb,lb)>0 &&
     cross(rb,lb,lt)>0 && cross(lb,lt,rt)>0;
 }
-function locateTimingSquare(gray:any,target:TimingPoint,threshold:number,dpi:number):TimingPoint|null{
+function locateTimingSquare(gray:any,target:TimingPoint,threshold:number,dpi:number,priorShiftY=0):TimingPoint|null{
   const dx=Math.ceil(mmToPx(3.7,dpi));
   const dy=Math.ceil(mmToPx(5.8,dpi));
   const left=Math.max(0,Math.round(target.x)-dx);
@@ -74,7 +74,7 @@ function locateTimingSquare(gray:any,target:TimingPoint,threshold:number,dpi:num
         if(Math.abs(rect.width/rect.height-1)>.55)continue;
         const x=left+rect.x+rect.width/2;
         const y=top+rect.y+rect.height/2;
-        const delta=Math.hypot((x-target.x)/dx,(y-target.y)/dy);
+        const delta=Math.hypot((x-target.x)/dx,(y-target.y-priorShiftY)/dy);
         const shape=Math.abs(Math.log(Math.max(1,area)/(nominal*nominal)));
         candidates.push({x,y,rank:delta+.13*shape});
       }finally{c.delete();}
@@ -95,7 +95,13 @@ export function refineByTimingSquares(corrected:any,dpi:number):TimingRefinement
     const anchors:Record<string,TimingPoint>={};
     const shifts:Record<string,{dx:number;dy:number}>={};
     for(const key of ['leftTop','rightTop','rightBottom','leftBottom']){
-      const found=locateTimingSquare(gray,targets[key],threshold,dpi);
+      // The bottom candidate can be closer to the preceding timing row
+      // than its own target when perspective drift exceeds half a row.
+      // Use the shift observed at the same-side TOP anchor to preserve
+      // row identity, never simply choose the nearest dark square.
+      const prior=key==='leftBottom'?shifts.leftTop?.dy??0
+        :key==='rightBottom'?shifts.rightTop?.dy??0 : 0;
+      const found=locateTimingSquare(gray,targets[key],threshold,dpi,prior);
       if(!found)return null;
       anchors[key]=found;
       shifts[key]={dx:Number((found.x-targets[key].x).toFixed(1)),
