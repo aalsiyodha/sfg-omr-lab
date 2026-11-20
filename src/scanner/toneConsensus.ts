@@ -41,7 +41,8 @@ export function reconcileToneAnswers(
     if (row.status==='detected' && baseline.status!=='detected') {
       final={...row, detectedAnswer:null,
         status:baseline.status==='blank'?'blank':'uncertain',
-        confidence:0, measurements:row.measurements.map(m=>({...m}))};
+        confidence:0, measurements:row.measurements.map(m=>({...m})),
+        policyRejectedBlank:baseline.status==='blank' && baseline.policyRejectedBlank===true};
       const m=final.measurements.find(x=>x.option===b.option);
       if(m)m.rejectReason='Tone-only selection vetoed by original grayscale';
       action=a.fillPercent<45
@@ -78,7 +79,7 @@ export function reconcileToneAnswers(
     if(final.status==='uncertain' && !disagreement &&
       baseline.status!=='detected' && clearInvalid) {
       final={...final,detectedAnswer:null,status:'blank',confidence:100,
-        measurements:final.measurements.map(m=>({...m}))};
+        measurements:final.measurements.map(m=>({...m})),policyRejectedBlank:true};
       const mark=final.measurements.find(m=>m.option===b.option);
       if(mark)mark.rejectReason='Invalid/non-solid mark; treated as blank by strict-fill policy'
         +(mark.rejectReason?' ('+mark.rejectReason+')':'');
