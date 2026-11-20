@@ -1,6 +1,6 @@
 // src/diagnostics/llmPromptGenerator.ts
 import { getSettings } from '../config/scannerSettings';
-import { APP_VERSION } from '../config/version';
+import { APP_VERSION, getBuildIdentity } from '../config/version';
 import { grayStripInkCeiling } from '../scanner/grayCalibration';
 import type { ScanResult } from '../types';
 
@@ -26,6 +26,7 @@ export function generateLLMDiagnosticPrompt({
 
   lines.push(`# SFG OMR LAB — SCAN DIAGNOSTIC REPORT FOR LLM DEBUGGING (${APP_VERSION})`);
   lines.push(`> Engine: SFG OMR Lab ${APP_VERSION} (Geometry-Verified • Multi-Mark • Adaptive Lighting)`);
+  lines.push(`> **Exact build:** ${getBuildIdentity()}`);
   lines.push('> Share this report together with the original scan image AND, if available, the bubble overlay screenshot.');
   lines.push('> This report contains measurements, not the source image pixels. Visual confirmation requires the image.');
   lines.push('> Personal/student identifiers are intentionally excluded from this shareable report.\n');
@@ -191,61 +192,67 @@ export function generateLLMDiagnosticPrompt({
  * optional coloured overlay should be attached separately, never embedded.
  * Includes the answer map plus measurements only for suspicious rows.
  */
-export function generateBetaFeedbackPrompt({ scanResult }: LLMReportOptions): string {
-  const formatQ = (n: number) => 'Q' + String(n).padStart(2, '0');
+export function generateBetaFeedbackPrompt({ scanResult, activeTestId }: LLMReportOptions): string {
+  // Compact by design: always include identity, overall result, 50 answer
+  // decisions and at most 12 detailed review samples. Never paste 50x4 verbose
+  // measurements or raw student/QR identifiers into an LLM by default.
   const counts = (['detected', 'blank', 'multiple', 'uncertain', 'error'] as const)
     .map(status => status + '=' + scanResult.answers.filter(q => q.status === status).length).join(', ');
-  const suspicious = scanResult.answers.filter(q => {
-    if (q.status === 'uncertain' || q.status === 'multiple' || q.status === 'error') return true;
-    const sorted = [...q.measurements].sort((a, b) => b.fillPercent - a.fillPercent);
-    const first = sorted[0], second = sorted[1];
-    return q.status === 'detected' && (
-      (first && first.fillPercent < 85) ||
-      (second && second.fillPercent >= 33) ||
-      q.measurements.some(m => !!m.strokeLike || (m.stabilitySpread ?? 0) >= 12 ||
-      m.radialShape === 'centre_dot' || m.radialShape === 'hollow_ring' || m.radialShape === 'partial')
-    );
-  });
-  const lines = [
-    'SFG OMR Lab ' + APP_VERSION + ' — Beta scan feedback',
-    'Please compare the attached photo and coloured overlay with this result.',
-    'Status: ' + scanResult.overallStatus.toUpperCase() +
-      ' | Test ID: ' + (scanResult.testId === null ? 'unknown' : String(scanResult.testId).padStart(2, '0')) +
-      ' | QR: ' + (scanResult.qrValid ? 'valid' : 'unverified'),
-    'Alignment: ' + (scanResult.registrationMethod || 'unverified') +
-      ' | timing: ' + (scanResult.alignmentMatched ?? '—') + '/50' +
-      ' | rotated: ' + (scanResult.orientationRotated ? 'yes' : 'no'),
-    'Results: ' + scanResult.answers.length + '/50 | ' + counts,
-    'Answer map (—=blank, ?=review, X=multiple):',
+  const lines: string[] = [
+    'SFG OMR Lab — compact scan diagnostic',
+    getBuildIdentity(),
+    'Attach original OMR photo separately; photo pixels are not in this report.',
+    'Status=' + scanResult.overallStatus +
+      ' | testId=' + (scanResult.testId === null ? 'missing' : String(scanResult.testId).padStart(2,'0')) +
+      ' | activeTest=' + (activeTestId == null ? 'none' : String(activeTestId).padStart(2,'0')) +
+      ' | QR=' + (scanResult.qrValid ? 'valid' : 'unverified'),
+    'Registration=' + (scanResult.registrationMethod || 'none') +
+      ' | timing=' + (scanResult.alignmentMatched ?? '?') + '/50' +
+      ' | verified=' + String(scanResult.alignmentVerified === true) +
+      ' | rotated180=' + String(Boolean(scanResult.orientationRotated)),
+    'Processing=' + scanResult.processingTimeMs + 'ms | ' + counts,
   ];
+  if (scanResult.grayCalibration)
+    lines.push('Calibration=' + scanResult.grayCalibration.status +
+      ' | patches=' + scanResult.grayCalibration.patchMedians.join(',') +
+      ' | contrast=' + (scanResult.grayCalibration.contrast ?? '?'));
+  if (scanResult.errors.length) lines.push('Errors=' + scanResult.errors.slice(0, 3).join('; '));
+  if (scanResult.warnings.length) lines.push('Warnings=' + scanResult.warnings.slice(0, 2).join('; '));
+
+  lines.push('Answer map (— blank, X multiple, ? uncertain/error):');
   for (let start = 1; start <= 50; start += 10) {
-    const items = Array.from({length: 10}, (_, i) => {
-      const q = scanResult.answers.find(item => item.question === start + i);
-      if (!q) return formatQ(start+i) + ':—';
-      const result = q.status === 'multiple' ? 'X' :
+    lines.push(Array.from({ length: 10 }, (_, i) => {
+      const n = start+i;
+      const q = scanResult.answers.find(a => a.question === n);
+      const value = !q ? '?' : q.status === 'multiple' ? 'X' :
         q.status === 'uncertain' || q.status === 'error' ? '?' :
         q.detectedAnswer || '—';
-      return String(start+i).padStart(2, '0') + ':' + result;
-    });
-    lines.push(items.join(' '));
+      return String(n).padStart(2,'0') + ':' + value;
+    }).join(' '));
   }
-  lines.push('Check these ' + suspicious.length + ' suspicious/borderline questions:');
-  if (!suspicious.length) lines.push('None flagged automatically; please still check visually.');
-  for (const q of suspicious) {
-    const candidates = [...q.measurements].sort((a,b) => b.fillPercent-a.fillPercent);
-    const details = candidates.slice(0, 2).map(m => m.option + '=' +
-      m.fillPercent.toFixed(1) + '%' +
-      (m.radialShape && m.radialShape !== 'no_ink' && m.radialShape !== 'solid_like' ? '/' + m.radialShape : '') +
-      (m.strokeLike ? '/stroke' : '') +
-      (m.stabilitySpread !== undefined ? '/spread' + m.stabilitySpread.toFixed(0) : '') +
-      (m.rejectReason ? '/' + m.rejectReason.slice(0, 60) : '')
-    ).join(', ');
-    lines.push(formatQ(q.question) + ' ' + q.status +
-      ' (' + (q.detectedAnswer || '—') + '): ' + details);
+
+  const suspect = scanResult.answers.filter(q => {
+    if (q.status === 'multiple' || q.status === 'uncertain' || q.status === 'error' || q.isManuallyEdited) return true;
+    const ranked=[...q.measurements].sort((a,b)=>b.fillPercent-a.fillPercent);
+    return q.status==='detected' && (ranked[0]?.fillPercent < 85 ||
+      ranked[1]?.fillPercent >= 33 || ranked.some(m=>m.strokeLike ||
+      (m.stabilitySpread ?? 0)>=12 || m.radialShape==='centre_dot' ||
+      m.radialShape==='hollow_ring' || m.radialShape==='partial'));
+  });
+  const saturation = scanResult.answers.filter(q=>q.measurements.length===4 &&
+    q.measurements.every(m=>m.fillPercent>=99)).length;
+  if (saturation > 0) lines.push('All-four-bubbles near 100% on ' + saturation +
+    '/50 rows: investigate paper/ink threshold or systematic misregistration.');
+  const samples=suspect.slice(0,12);
+  lines.push('Suspicious rows=' + suspect.length + '; detailed samples=' + samples.length +
+    (suspect.length>samples.length ? ' (+'+(suspect.length-samples.length)+' omitted; use full report)' : ''));
+  for (const q of samples) {
+    const m=q.measurements.map(b=>b.option+':'+Math.round(b.fillPercent)+'%'+
+      (b.localPaperBrightness===undefined?'':'/paper'+b.localPaperBrightness)+
+      (b.inkThreshold===undefined?'':'/thr'+b.inkThreshold)).join(' ');
+    lines.push('Q'+String(q.question).padStart(2,'0')+' '+q.status+' '+m);
   }
-  if (scanResult.errors.length) lines.push('Scan errors: ' + scanResult.errors.slice(0,2).join('; '));
-  lines.push('Tester notes (optional): What did it get wrong? ______');
-  lines.push('Please send the original OMR photo and the coloured bubble overlay separately.');
-  lines.push('Student ID and QR payload omitted. Hide personal details in any image before sharing.');
+  lines.push('Please compare with the original photo; do not infer optical correctness from answer key.');
+  lines.push('QR payload, student ID, file name and user-agent omitted.');
   return lines.join('\n');
 }
