@@ -296,6 +296,38 @@ export async function runFullScan(
       }
     }
 
+    // Deferred midpoint search: only pay for four alternate candidates
+    // when first-choice marker registrations did not reach strong timing
+    // agreement. A filled student bubble may out-rank a faded midpoint.
+    // Each alternate warp still needs its own QR and timing verification.
+    if (!selected || selected.check.matched < 48) {
+      for (const side of ['top','bottom','left','right'] as const) {
+        const alternateMid=detectMidpointMarkers(
+          preprocessed.thresholded,loaded.width,loaded.height,undefined,side);
+        if(!alternateMid.found)continue;
+        const hypothesis:Hypothesis={
+          kind:'midpoint',name:'midpoint/alternate-'+side,markers:alternateMid
+        };
+        const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi);
+        if(!attempt)continue;
+        const score=registrationScore({kind:'midpoint',
+          timingMatched:attempt.check.matched,
+          leftMatched:attempt.check.leftMatched,
+          rightMatched:attempt.check.rightMatched,
+          qrVerified:attempt.qr.valid});
+        const prior=selected?registrationScore({
+          kind:selected.hypothesis.kind,timingMatched:selected.check.matched,
+          leftMatched:selected.check.leftMatched,
+          rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid,
+        }): -Infinity;
+        if(score>prior){
+          if(selected)disposeAlignment(selected);
+          selected=attempt;
+        }else disposeAlignment(attempt);
+        if(selected?.check.matched===50)break;
+      }
+    }
+
     let answers: QuestionResult[] = [];
     let testId: number | null = null;
     let studentId: string | null = null;

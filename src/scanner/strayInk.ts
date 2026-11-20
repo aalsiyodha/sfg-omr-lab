@@ -112,11 +112,12 @@ export function hasExternalStroke(
     if(x<0||y<0||x>=mat.cols||y>=mat.rows)continue;
     if(grayAt(mat,x,y)<threshold)darkPoints.push({x:dx,y:dy});
   }
-  if(darkPoints.length<14)return false;
+  if(darkPoints.length<Math.ceil(0.45*scale*scale))return false;
   const xs=darkPoints.map(p=>p.x),ys=darkPoints.map(p=>p.y);
   const width=Math.max(...xs)-Math.min(...xs);
   const height=Math.max(...ys)-Math.min(...ys);
   // A substantial stroke (e.g. tick/cross) has both breadth and point count
-  return (width>=3 && height>=5 && darkPoints.length>=16) ||
-    (height>=3 && width>=6 && darkPoints.length>=16);
+  const areaCount = Math.ceil(0.46*scale*scale);
+  return (width>=0.50*scale && height>=0.85*scale && darkPoints.length>=areaCount) ||
+    (height>=0.50*scale && width>=1.02*scale && darkPoints.length>=areaCount);
 }
