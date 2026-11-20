@@ -31,7 +31,7 @@ export function ErrorLogBox({ title = 'Scan Error & Diagnostics', errorMessage, 
 
     lines.push('\n--- FILE & IMAGE DETAILS ---');
     if (file) {
-      lines.push('File Name: omitted for privacy');
+      lines.push(`File Name: ${file.name}`);
       lines.push(`File Size: ${(file.size / 1024).toFixed(1)} KB`);
       lines.push(`File Type: ${file.type}`);
     } else {
