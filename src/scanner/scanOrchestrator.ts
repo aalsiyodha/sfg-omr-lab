@@ -5,6 +5,7 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
+import { canStopRegistrationSearch } from './registrationFastPath';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import type { AlignmentCheck } from './alignmentValidator';
@@ -293,6 +294,20 @@ export async function runFullScan(
         selected = evaluated;
       } else {
         disposeAlignment(evaluated);
+      }
+      // v2.3: after *independent* QR identity and both timing
+      // bands reach a perfect 50/50, no later hypothesis can improve
+      // timing coverage. Avoid remaining costly perspective/QR warps.
+      // Do NOT stop at 47–49: the reference photos needed fallback.
+      if (selected && canStopRegistrationSearch(
+        selected.qr.valid, selected.check.matched,
+        selected.check.leftMatched, selected.check.rightMatched
+      )) {
+        logger.info('perspective',
+          'v2.3 fast-path: stopped registration after perfect QR + 50/50 timing',
+          {selected:selected.hypothesis.name,skipped:Math.max(0,
+            hypotheses.length-hypotheses.indexOf(hypothesis)-1)});
+        break;
       }
     }
 
