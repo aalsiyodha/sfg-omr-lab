@@ -4,7 +4,7 @@ import type { AppState } from '../App';
 import type { AnswerOption } from '../types';
 import { ErrorLogBox } from '../components/ErrorLogBox';
 import { generateLLMDiagnosticPrompt, generateBetaFeedbackPrompt } from '../diagnostics/llmPromptGenerator';
-import { APP_VERSION, APP_BUILD_NAME } from '../config/version';
+import { APP_VERSION } from '../config/version';
 
 interface Props { appState: AppState; }
 
@@ -237,14 +237,9 @@ export default function ScanPage({ appState }: Props) {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
-        <div>
-          <h2 className="mb-0 fw-bold">Scan your SFG sheet</h2>
-          <small className="text-muted">Upload a photo, review your answers, share feedback · {APP_BUILD_NAME}</small>
-        </div>
-        <span className="badge bg-primary px-3 py-2 fs-6 shadow-sm">
-          <i className="bi bi-cpu me-1" />{APP_VERSION}
-        </span>
+      <div className="product-scan-header">
+        <div><span className="product-kicker">YOUR SCANNING WORKSPACE</span><h1>Scan a sheet</h1><p>Upload your SFG answer sheet and inspect every detected mark.</p></div>
+        <span className="product-scan-version">{APP_VERSION}</span>
       </div>
 
       {opencv !== 'ready' && (
@@ -254,16 +249,16 @@ export default function ScanPage({ appState }: Props) {
         </div>
       )}
 
-      {!scanResult && <div className="beta-scan-intro mb-3">
-        <div><strong>1. Add a clear photo</strong><small>Entire A4 page and QR in frame</small></div>
-        <div><strong>2. Scan &amp; inspect</strong><small>We verify orientation and read the bubbles</small></div>
-        <div><strong>3. Send feedback</strong><small>Copy short report and save coloured overlay</small></div>
+      {!scanResult && <div className="product-scan-instructions">
+        <span><b>01</b> Add a photo</span><i className="bi bi-chevron-right" />
+        <span><b>02</b> Verify geometry</span><i className="bi bi-chevron-right" />
+        <span><b>03</b> Review answers</span>
       </div>}
       {/* Input section (hidden once scan result exists) */}
       {!scanResult && (
         <div className="row g-3">
           <div className="col-12">
-            <div className="d-flex flex-wrap gap-2 mb-2">
+            <div className="d-flex flex-wrap gap-2 mb-2 product-upload-actions">
               <button className="btn btn-primary" onClick={triggerNativeCamera} disabled={isScanning}>
                 <i className="bi bi-camera-fill me-2" />Take a photo
               </button>
@@ -288,7 +283,7 @@ export default function ScanPage({ appState }: Props) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".jpg,.jpeg,.png,image/*"
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                 hidden
                 onChange={handleFileChange}
               />
@@ -331,22 +326,22 @@ export default function ScanPage({ appState }: Props) {
           {isScanning && (
             <div className="col-12 col-md-10 col-lg-8 mx-auto my-3">
               <div className="scanner-animation-container">
-                <div className="scanner-viewport">
-                  <div className="scanner-laser-line" />
+                <div className="scanner-viewport product-scanning-sheet" role="img" aria-label="Illustration of a sheet being scanned">
+                  <div className="product-scan-paper-header"><span>SFG</span><span>OMR</span><span className="product-scan-qr" /></div>
                   <div className="viewport-grid">
-                    {[1, 2, 3, 4, 5, 6, 7].map(r => (
+                    {Array.from({length:12},(_,r)=>(
                       <div className="grid-row-mock" key={r}>
-                        <span className={`grid-dot-mock ${r % 3 === 0 ? 'filled' : ''}`} />
-                        <span className={`grid-dot-mock ${r % 2 === 1 ? 'filled' : ''}`} />
-                        <span className={`grid-dot-mock ${r % 4 === 0 ? 'filled' : ''}`} />
-                        <span className="grid-dot-mock" />
+                        <span className="product-scan-row-number">{String(r+1).padStart(2,'0')}</span>
+                        {Array.from({length:4},(_,i)=><span key={i} className={`grid-dot-mock ${(r*3+i)%7===0?'filled':''}`}/>)}
                       </div>
                     ))}
                   </div>
+                  <div className="scanner-laser-line" />
+                  <div className="product-scan-corner tl"/><div className="product-scan-corner tr"/><div className="product-scan-corner bl"/><div className="product-scan-corner br"/>
                 </div>
 
-                <h5 className="fw-bold mb-1" style={{ color: 'var(--text-main)' }}>
-                  Reading your OMR sheet
+                <div className="product-scan-live-label"><span className="product-live-dot" /> SCAN IN PROGRESS</div>\n                <h5 className="fw-bold mb-1" style={{ color: 'var(--text-main)' }}>
+                  Reading your answer sheet
                 </h5>
                 <p className="text-muted small mb-3">
                   {progress?.stage || 'Finding reference markers and checking bubble shapes…'}
@@ -354,7 +349,7 @@ export default function ScanPage({ appState }: Props) {
 
                 <div className="progress mb-3" style={{ height: 6, maxWidth: 440, margin: '0 auto' }}>
                   <div
-                    className="progress-bar progress-bar-striped progress-bar-animated"
+                    className="progress-bar product-scanning-progress"
                     style={{ width: `${progress?.percent || 20}%`, backgroundColor: 'var(--primary)' }}
                   />
                 </div>

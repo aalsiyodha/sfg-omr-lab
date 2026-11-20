@@ -35,40 +35,30 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="min-vh-100 d-flex flex-column">
-        <nav className="navbar navbar-expand-md navbar-dark py-2 sticky-top" style={{ background: 'var(--accent)' }}>
-          <div className="container-fluid" style={{ maxWidth: 1100 }}>
-            <NavLink to="/" className="text-decoration-none d-flex align-items-center gap-2">
-              <div className="d-flex align-items-center justify-content-center rounded-2 bg-primary text-white" style={{ width: 32, height: 32 }}>
-                <i className="bi bi-upc-scan" style={{ fontSize: '1rem' }} />
-              </div>
-              <span className="navbar-brand mb-0 text-white fw-bold" style={{ letterSpacing: '0.02em' }}>SFG OMR LAB</span>
-              <span className="badge bg-white text-dark ms-1 fw-bold" style={{ fontSize: '0.68rem' }}>{APP_VERSION}</span>
+        <nav className="navbar navbar-expand-md sticky-top product-navbar">
+          <div className="container-fluid" style={{ maxWidth: 1160 }}>
+            <NavLink to="/" className="product-brand text-decoration-none d-flex align-items-center gap-2">
+              <span className="product-brand-icon"><i className="bi bi-upc-scan" /></span>
+              <span className="product-brand-name">SFG <span>OMR Lab</span></span>
+              <span className="product-version-tag">{APP_VERSION}</span>
             </NavLink>
-
-            <button className="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-              <span className="navbar-toggler-icon" />
-            </button>
+            <button className="navbar-toggler product-navbar-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"><span className="navbar-toggler-icon" /></button>
             <div className="collapse navbar-collapse" id="navbarNav">
-              <ul className="navbar-nav ms-auto gap-1">
+              <ul className="navbar-nav ms-auto align-items-md-center gap-1">
                 {[
-                  ['/', 'Home', 'bi-house'],
-                  ['/practice', 'Practice Test', 'bi-pencil-square'],
-                  ['/scan', 'Scan a Sheet', 'bi-camera'],
-                  ['/results', 'Results', 'bi-bar-chart'],
-                  ['/diagnostics', 'Advanced', 'bi-gear'],
-                ].map(([to, label, icon]) => (
+                  ['/', 'Overview'], ['/practice', 'Practice'], ['/results', 'Results'], ['/diagnostics', 'Advanced'],
+                ].map(([to,label])=>(
                   <li className="nav-item" key={to}>
-                    <NavLink to={to} end={to==='/'} className={({isActive}) => `nav-link px-3 ${isActive ? 'active fw-bold' : ''}`}>
-                      <i className={`bi ${icon} me-1`} />{label}
-                    </NavLink>
+                    <NavLink to={to} end={to==='/'} className={({isActive})=>`nav-link product-nav-link ${isActive?'active':''}`}>{label}</NavLink>
                   </li>
                 ))}
+                <li className="nav-item ms-md-2"><NavLink to="/scan" className="btn btn-primary product-nav-cta"><i className="bi bi-upc-scan me-2" />Scan a sheet</NavLink></li>
               </ul>
             </div>
           </div>
         </nav>
 
-        <main className="container-fluid py-4 flex-grow-1" style={{ maxWidth: 1100 }}>
+        <main className="container-fluid py-4 flex-grow-1" style={{ maxWidth: 1160 }}>
           <Routes>
             <Route path="/" element={<HomePage appState={appState} />} />
             <Route path="/practice" element={<PracticeTestPage appState={appState} />} />
@@ -78,18 +68,11 @@ export default function App() {
           </Routes>
         </main>
 
-        <footer className="mt-auto py-3 border-top bg-white text-muted small">
-          <div className="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ maxWidth: 1100 }}>
-            <div className="d-flex align-items-center gap-2">
-              <span className="fw-semibold text-dark">SFG OMR LAB</span>
-              <span className="badge bg-light text-secondary border">{APP_RELEASE_LABEL}</span>
-            </div>
-            <div>
-              50-question SFG OMR scanning &bull; Beta release — review unclear marks
-            </div>
-            <div className="text-muted small">
-              On-device image processing &bull; Review before scoring
-            </div>
+        <footer className="mt-auto product-footer">
+          <div className="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ maxWidth: 1160 }}>
+            <span className="product-footer-brand">SFG OMR LAB <span>· {APP_RELEASE_LABEL}</span></span>
+            <span>Built for thoughtful practice. Processed on your device.</span>
+            <span>Beta · Verify before scoring</span>
           </div>
         </footer>
       </div>
