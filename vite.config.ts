@@ -1,27 +1,41 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 
-// The package release version is the only manually maintained version number.
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
-// Vercel and GitHub supply a new commit SHA for each deployment. This makes
-// builds distinguishable even if the semantic release version stays the same.
-const commit = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || 'local'
-const buildId = commit === 'local' ? 'local' : commit.slice(0, 7)
 
-export default defineConfig({
-  plugins: [
-    react(),
-    {
-      name: 'app-version-html',
-      transformIndexHtml: html => html.replaceAll('__APP_VERSION__', `v${version}`),
+function localGitSha(): string {
+  try { return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 2000 }).trim() }
+  catch { return 'unknown' }
+}
+function localDirty(): boolean {
+  try { return execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8', timeout: 2000 }).trim().length > 0 }
+  catch { return false }
+}
+
+export default defineConfig(({ command }) => {
+  const isVercel = Boolean(process.env.VERCEL)
+  const source = isVercel ? 'vercel' : command === 'serve' ? 'local-dev' : 'local-build'
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || localGitSha()
+  const environment = isVercel ? (process.env.VERCEL_ENV || 'unknown') : command === 'serve' ? 'development' : 'local-preview'
+  // Vite substitutes these literals at build time; never rely on the user-visible app
+  // version alone to distinguish older deployed bundles from newer GitHub commits.
+  const identity = {
+    version, source, environment,
+    sha, buildId: sha === 'unknown' ? 'unknown' : sha.slice(0, 7),
+    builtAt: new Date().toISOString(),
+    dirty: !isVercel && localDirty(),
+  }
+  return {
+    plugins: [
+      react(),
+      { name: 'app-version-html', transformIndexHtml: html => html.replaceAll('__APP_VERSION__', `v${version}`) },
+    ],
+    define: {
+      __APP_BUILD_ID__: JSON.stringify(identity.buildId),
+      __APP_BUILD_META__: JSON.stringify(identity),
     },
-  ],
-  define: {
-    __APP_BUILD_ID__: JSON.stringify(buildId),
-  },
-  server: {
-    host: true,
-    allowedHosts: true,
-  },
+    server: { host: true, allowedHosts: true },
+  }
 })
