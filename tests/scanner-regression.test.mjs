@@ -1491,3 +1491,21 @@ test('v2.2.5: policy-rejected partial marks are unanswered without penalty', () 
   assert.equal(result.incorrect, 0);
   assert.equal(result.totalMarks, 0);
 });
+
+
+test('v2.3: registration fast path requires verified QR and both complete timing bands', () => {
+  const { canStopRegistrationSearch } = loadTS('src/scanner/registrationFastPath.ts');
+  assert.equal(canStopRegistrationSearch(true,50,25,25),true);
+  assert.equal(canStopRegistrationSearch(false,50,25,25),false);
+  assert.equal(canStopRegistrationSearch(true,49,25,24),false);
+  assert.equal(canStopRegistrationSearch(true,47,25,22),false);
+  assert.equal(canStopRegistrationSearch(true,50,24,26),false);
+});
+
+test('v2.3: hatch evidence is reused from the measured bubble', () => {
+  const source = readFileSync('src/scanner/bubbleDetector.ts','utf8');
+  assert.match(source, /hatchGapRows: hatchEvidence\.gapRows/);
+  assert.match(source, /hatchLike: hatchEvidence\.hatchLike/);
+  assert.match(source, /hatchLike: top\.measurement\.hatchLike === true/);
+  assert.match(source, /const hatch = preRescueHatch/);
+});
