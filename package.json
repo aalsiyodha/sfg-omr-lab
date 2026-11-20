@@ -1,7 +1,7 @@
 {
   "name": "sfg-omr-lab",
   "private": true,
-  "version": "2.2.5",
+  "version": "2.2.6-lite.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
