@@ -1032,3 +1032,39 @@ test('v4 Q20/Q24: tone mapping cannot promote an original uncertain irregular ma
   assert.equal(c.answers[0].status,'uncertain');
   assert.equal(c.answers[0].detectedAnswer,null);
 });
+
+
+test('strict fill: dots crescents hatches and ticks are blank, Q18 is reviewed',()=>{
+  const {reconcileToneAnswers}=loadTS('src/scanner/toneConsensus.ts');
+  const mk=(question,option,fill,status,reason,radialShape='partial')=>({
+    question,status,detectedAnswer:status==='detected'?option:null,
+    isManuallyEdited:false,confidence:0,
+    measurements:['A','B','C','D'].map(o=>({
+      question,option:o,fillPercent:o===option?fill:0,xMm:0,yMm:0,
+      ...(o===option?{rejectReason:reason,radialShape}:{})
+    }))
+  });
+  const pairs=[
+    [20,'C',42.5,37.2,'uncertain','uncertain','Hatched/striped ink','partial','blank'],
+    [24,'B',78.8,67.3,'uncertain','uncertain','Asymmetric partial fill: left/right ink coverage differs','solid_like','blank'],
+    [35,'C',45.1,46,'uncertain','uncertain','Small central dot','centre_dot','blank'],
+    [17,'B',43.4,36.3,'uncertain','blank','Stroke-like tick','partial','blank'],
+    [46,'B',30.1,17.7,'uncertain','blank','Diagonal stroke outside outline','partial','blank'],
+    [18,'D',58.4,23,'uncertain','blank','Hatched/striped ink','solid_like','uncertain']
+  ];
+  for(const [q,opt,rawFill,toneFill,rawStatus,toneStatus,reason,shape,wanted] of pairs){
+    const raw=mk(q,opt,rawFill,rawStatus,reason,shape);
+    const tone=mk(q,opt,toneFill,toneStatus,reason,shape);
+    const got=reconcileToneAnswers([raw],[tone]).answers[0];
+    assert.equal(got.status,wanted,'Q'+q);
+    assert.equal(got.detectedAnswer,null,'Q'+q);
+  }
+  const faint=mk(42,'D',1.8,'blank','Low fill','no_ink');
+  const faintTone=mk(42,'D',0,'blank','Low fill','no_ink');
+  assert.equal(reconcileToneAnswers([faint],[faintTone]).answers[0].status,'blank');
+  const trueFill=mk(10,'D',96.5,'detected','none','solid_like');
+  const validTone=mk(10,'D',85,'detected','none','solid_like');
+  assert.equal(reconcileToneAnswers([trueFill],[validTone]).answers[0].detectedAnswer,'D');
+  const dbl=mk(22,'B',100,'multiple','Two marked options','solid_like');
+  assert.equal(reconcileToneAnswers([dbl],[dbl]).answers[0].status,'multiple');
+});
