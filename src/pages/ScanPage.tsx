@@ -5,6 +5,7 @@ import type { AnswerOption } from '../types';
 import { ErrorLogBox } from '../components/ErrorLogBox';
 import { generateLLMDiagnosticPrompt, generateBetaFeedbackPrompt } from '../diagnostics/llmPromptGenerator';
 import { APP_VERSION } from '../config/version';
+import { needsReview, filterReviewAnswers } from '../review/reviewPolicy';
 
 interface Props { appState: AppState; }
 
@@ -229,12 +230,9 @@ export default function ScanPage({ appState }: Props) {
   const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult}) : '';
   // Strict-invalid marks (ticks, crescents, dots and partials) are blanks,
   // not review cases. A manual edit resolves a previously flagged question.
-  const requiresReview = (a: {status: string; isManuallyEdited?: boolean}) =>
-    !a.isManuallyEdited && ['uncertain','multiple','error'].includes(a.status);
-  const reviewCount = scanResult?.answers.filter(requiresReview).length ?? 0;
+  const reviewCount = scanResult?.answers.filter(needsReview).length ?? 0;
   const resolvedCount = (scanResult?.answers.length ?? 0) - reviewCount;
-  const visibleAnswers = (scanResult?.answers ?? []).filter(a =>
-    reviewFilter === 'all' || requiresReview(a));
+  const visibleAnswers = filterReviewAnswers(scanResult?.answers ?? [], reviewFilter);
   const llmReportPreview = scanResult
     ? generateLLMDiagnosticPrompt({
         scanResult,
@@ -607,7 +605,7 @@ export default function ScanPage({ appState }: Props) {
                         <thead><tr><th scope="col">Question</th><th scope="col">Reading</th><th scope="col">Status</th><th scope="col">Confidence</th><th scope="col">Confirm or change answer</th></tr></thead>
                         <tbody>
                           {visibleAnswers.map(answer => {
-                            const flagged = requiresReview(answer);
+                            const flagged = needsReview(answer);
                             return (
                               <tr key={answer.question} className={flagged ? 'review-answer-flagged' : 'review-answer-resolved'}>
                                 <th scope="row" className="review-question-number">Q{String(answer.question).padStart(2,'0')}</th>
