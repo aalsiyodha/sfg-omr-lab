@@ -8,7 +8,7 @@ import DiagnosticsPage from './pages/DiagnosticsPage';
 import { usePracticeTest } from './hooks/usePracticeTest';
 import { useScanResult } from './hooks/useScanResult';
 
-import { APP_VERSION, APP_RELEASE_LABEL } from './config/version';
+import { APP_VERSION, APP_RELEASE_LABEL, APP_DEPLOY_LABEL, APP_BUILD_META } from './config/version';
 
 export type AppState = {
   opencv: 'loading' | 'ready' | 'error';
@@ -97,6 +97,7 @@ export default function App() {
           <div className="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ maxWidth: 1160 }}>
             <span className="product-footer-brand">SFG OMR LAB <span>· {APP_RELEASE_LABEL}</span></span>
             <span>Built for thoughtful practice. Processed on your device.</span>
+            <span className="product-deployment-label" title={`Commit: ${APP_BUILD_META.sha} · Built: ${APP_BUILD_META.builtAt}`}>{APP_DEPLOY_LABEL} · commit {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}</span>
             <span>Beta · Verify before scoring</span>
           </div>
         </footer>
