@@ -5,6 +5,7 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
+import { registrationScore, skipRedundantFallback } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
@@ -263,7 +264,7 @@ export async function runFullScan(
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
-      if (selected && selected.check.matched >= 44 && hypothesis.name.endsWith('/Otsu') && hypothesis.kind !== 'aruco') {
+      if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name, hypothesis.kind)) {
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
@@ -271,9 +272,11 @@ export async function runFullScan(
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
-      const rank = (a: AcceptedAlignment) =>
-        a.check.matched + (a.qr.valid ? 1 : 0) +
-        (a.hypothesis.kind === 'corner' ? 0.25 : 0);
+      const rank = (a: AcceptedAlignment) => registrationScore({
+        kind: a.hypothesis.kind, timingMatched: a.check.matched,
+        leftMatched: a.check.leftMatched, rightMatched: a.check.rightMatched,
+        qrVerified: a.qr.valid,
+      });
       const newScore = rank(evaluated);
       const oldScore = selected ? rank(selected) : -1;
       logger.info('perspective', `${hypothesis.name}: alignment candidate verified`, {
