@@ -1,4 +1,4 @@
-# SFG OMR Lab beta — discourage compliant web crawlers.
-# This does not stop malicious bots or restrict direct access.
+# SFG OMR Lab beta — requests compliant crawlers not to crawl the site.
+# robots.txt is advisory; it does NOT block malicious bots or attacks.
 User-agent: *
 Disallow: /
