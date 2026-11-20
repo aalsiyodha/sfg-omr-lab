@@ -6,9 +6,9 @@ import { APP_VERSION } from '../config/version';
 
 interface Props { appState: AppState; }
 const steps = [
-  { n:'01', icon:'bi-file-earmark-arrow-down', title:'Get the sheet', body:'Download the standard A4 format and print at 100%.' },
-  { n:'02', icon:'bi-pencil', title:'Fill your answers', body:'Shade bubbles fully. Ticks, dots and partial marks count as blank.' },
-  { n:'03', icon:'bi-camera', title:'Scan and review', body:'Upload a clear photo, then confirm the detected answers.' },
+  { n:'01', icon:'bi-file-earmark-arrow-down', title:'Print an answer sheet', body:'Download OMR 2.1 and print on A4 at Actual Size (100%).' },
+  { n:'02', icon:'bi-pencil', title:'Fill the Test ID and answers', body:'Shade one Test ID digit in each row. Fully fill answer bubbles; ticks and partial marks are blank.' },
+  { n:'03', icon:'bi-camera', title:'Photograph and review', body:'Keep all four corners visible, upload the photo and check any flagged results.' },
 ];
 
 export default function HomePage({ appState }: Props) {
@@ -25,14 +25,15 @@ export default function HomePage({ appState }: Props) {
       <section className="product-hero">
         <div className="product-hero-content">
           <div className="product-eyebrow"><span className="product-eyebrow-dot" /> SFG OMR LAB <span className="product-eyebrow-separator">/</span> {APP_VERSION}</div>
-          <h1>Every mark,<br/><span>clearly accounted for.</span></h1>
-          <p className="product-hero-lead">A faster way to read your SFG answer sheets. Upload a photo, verify the bubbles, and review your results — all in your browser.</p>
+          <h1>Scan your OMR sheet.<br/><span>Check your answers.</span></h1>
+          <p className="product-hero-lead">Turn a photo of your filled SFG answer sheet into a clear 50-question result. No setup needed: scan, review flagged questions and see what was detected.</p>
           <div className="product-actions">
-            <Link to="/scan" className="btn btn-primary btn-lg product-primary-cta"><i className="bi bi-upc-scan me-2" />Scan an OMR sheet <i className="bi bi-arrow-up-right ms-2" /></Link>
+            <Link to="/scan" className="btn btn-primary btn-lg product-primary-cta"><i className="bi bi-upc-scan me-2" />Scan my sheet <i className="bi bi-arrow-up-right ms-2" /></Link>
             <button type="button" className="btn btn-outline-secondary btn-lg product-secondary-cta" onClick={downloadSheet} disabled={downloading}>
-              <i className="bi bi-download me-2" />{downloading?'Preparing…':'Download OMR 2.1 sheet'}
+              <i className="bi bi-download me-2" />{downloading?'Preparing…':'Get printable OMR 2.1'}
             </button>
           </div>
+          <p className="product-hero-hint"><i className="bi bi-lightbulb me-2" />New here? Download the sheet, print it at 100%, then take a photo after marking your answers.</p>
           <div className="product-trust-row">
             <span><i className="bi bi-shield-lock" /> On-device processing</span>
             <span><i className="bi bi-list-check" /> 50-question SFG format</span>
@@ -62,7 +63,7 @@ export default function HomePage({ appState }: Props) {
 
       <section className="product-workflow" aria-labelledby="workflow-title">
         <div className="product-section-heading">
-          <div><span className="product-kicker">SIMPLE WORKFLOW</span><h2 id="workflow-title">From paper to clarity.</h2></div>
+          <div><span className="product-kicker">SIMPLE WORKFLOW</span><h2 id="workflow-title">How it works — just 3 steps.</h2></div>
           <span className={'product-engine-pill '+(opencv==='ready'?'ready':opencv==='error'?'error':'')}>
             <span className="status-dot" />{opencv==='ready'?'Scanner ready':opencv==='error'?'Scanner unavailable':'Preparing scanner'}
           </span>
@@ -76,11 +77,22 @@ export default function HomePage({ appState }: Props) {
           ))}
         </div>
       </section>
+      <section className="product-quick-guide" aria-labelledby="photo-guide-title">
+        <div className="product-quick-guide-heading">
+          <div><span className="product-kicker">FOR ACCURATE SCANNING</span><h2 id="photo-guide-title">Take a photo the scanner can read.</h2></div>
+          <Link to="/scan" className="product-inline-link">Open scanner <i className="bi bi-arrow-right" /></Link>
+        </div>
+        <div className="product-guide-grid">
+          <div className="product-guide-item"><i className="bi bi-bounding-box-circles" aria-hidden="true" /><div><strong>Keep the entire page visible</strong><span>Include all four corner squares and the QR code. Avoid cropping.</span></div></div>
+          <div className="product-guide-item"><i className="bi bi-brightness-high" aria-hidden="true" /><div><strong>Use even lighting</strong><span>Avoid shadows, glare, motion blur and strong perspective angles.</span></div></div>
+          <div className="product-guide-item"><i className="bi bi-check2-circle" aria-hidden="true" /><div><strong>Shade bubbles completely</strong><span>Dots, ticks, slashes, crosses and half-fills are treated as blank.</span></div></div>
+        </div>
+      </section>
       <section className="product-bottom-callout">
         <div><span className="product-kicker">OPTIONAL PRACTICE</span><h2>Ready to check your score?</h2><p>Create or resume a practice test, then scan your marked sheet against its answer key.</p></div>
         <Link to="/practice" className="btn btn-outline-primary">{practice.activeTest?.status==='active'?'Continue practice test':'Create practice test'} <i className="bi bi-arrow-right ms-2"/></Link>
       </section>
-      <p className="product-disclaimer">Designed for the official SFG sheet format. For practice and beta evaluation; verify unclear readings before relying on a score.</p>
+      <p className="product-disclaimer">Designed for the SFG OMR 2.1 printable sheet. For practice and beta evaluation; verify unclear readings before relying on a score.</p>
     </div>
   );
 }
