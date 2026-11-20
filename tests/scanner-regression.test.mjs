@@ -1068,3 +1068,46 @@ test('strict fill: dots crescents hatches and ticks are blank, Q18 is reviewed',
   const dbl=mk(22,'B',100,'multiple','Two marked options','solid_like');
   assert.equal(reconcileToneAnswers([dbl],[dbl]).answers[0].status,'multiple');
 });
+
+
+test('v4 seven-tone correction maps decision threshold with its pixels',()=>{
+  const {applySevenToneCorrection}=loadTS('src/scanner/grayToneCorrection.ts');
+  const W=256,H=40;
+  const data=Uint8Array.from({length:W*H},(_,i)=>i%256);
+  const image={cols:W,rows:H,data,channels:()=>1,
+    clone:()=>({cols:W,rows:H,data:Uint8Array.from(data),channels:()=>1})};
+  const calibration={status:'ok',ordered:true,
+    patchMedians:[42,47,60,99,150,174,210],
+    whiteReferences:[241,225]};
+  const tone=applySevenToneCorrection(image,calibration);
+  assert.equal(tone.applied,true);
+  const originalThreshold=153;
+  const transformed=tone.mapInkThreshold(originalThreshold,Math.floor(H/2));
+  assert.ok(transformed>originalThreshold+5,
+    'v4 threshold must move along with lightened ink');
+  // An ink pixel just below the raw threshold must not become paper solely
+  // because the LUT brightened it while the threshold remained unchanged.
+  const rawInk=149;
+  const outputInk=tone.corrected.data[Math.floor(H/2)*W+rawInk];
+  assert.ok(rawInk<originalThreshold);
+  assert.ok(outputInk<transformed);
+  assert.ok(Math.abs(tone.mapInkThreshold(158)-158)<=15);
+});
+
+test('v4 borderline textured solid can recover but malformed shapes cannot',()=>{
+  const engine=v201Engine();
+  const original=v201Image({shape:'solid',option:1});
+  const read=original.ucharPtr;
+  original.ucharPtr=(y,x)=>{
+    const dx=x-160,dy=y-120;
+    const interior=dx*dx+dy*dy<=(150/25.4*1.4)**2;
+    return [interior && (dx+dy*2)%3===0 ? 157 : read(y,x)[0]];
+  };
+  const recovered=engine.detectQuestion(original,18,150,152);
+  assert.equal(recovered.status,'detected','a broadly covered textured fill must be read');
+  assert.equal(recovered.answer,'B');
+  for(const shape of ['crescent','cross','blank']){
+    const result=engine.detectQuestion(v201Image({shape}),18,150,152);
+    assert.notEqual(result.status,'detected',shape+' must not be rescued as a fill');
+  }
+});
