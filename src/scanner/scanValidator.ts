@@ -14,7 +14,7 @@ export function validateScanResult(result: ScanResult): { warnings: string[]; er
     if (!errors.some(e => e.includes('orientation'))) errors.push('Page orientation could not be verified from QR position.');
     return { warnings, errors };
   }
-  if (result.alignmentVerified === false) {
+  if (result.alignmentVerified !== true) {
     if (errors.length === 0) errors.push('The timing marks do not align with the expected answer grid.');
     return { warnings, errors };
   }
@@ -23,6 +23,14 @@ export function validateScanResult(result: ScanResult): { warnings: string[]; er
   }
   if (result.answers.length !== 50) {
     errors.push(`Expected 50 question results, received ${result.answers.length}.`);
+    return { warnings, errors };
+  }
+
+  // Exactly one measurement row for every fixed-template question.
+  const indices = new Set(result.answers.map(a => a.question));
+  if (indices.size !== 50 || result.answers.some(a => !Number.isInteger(a.question) ||
+      a.question < 1 || a.question > 50)) {
+    errors.push('Answer question numbers must be unique and cover exactly 1–50.');
     return { warnings, errors };
   }
 
