@@ -228,22 +228,12 @@ export default function ScanPage({ appState }: Props) {
   return (
     <div>
       <div className="product-scan-header">
-        <div><span className="product-kicker">YOUR SCANNING WORKSPACE</span><h1>Scan a sheet</h1><p>Upload your SFG answer sheet and inspect every detected mark.</p></div>
+        <div><span className="product-kicker">PRECISION OMR SCANNING</span><h1>Scan your answer sheet</h1><p>Capture or upload a sheet, verify your marks, and review your results with confidence.</p></div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>
           <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
             <i className="bi bi-hdd-network me-1" />{APP_DEPLOY_LABEL} · {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}
           </span>
-        </div>
-      </div>
-
-      <div className="alert alert-info border mb-3" role="note">
-        <strong><i className="bi bi-stars me-2" />What's new in v2.2.5</strong>
-        <div className="small mt-1">
-          Strict partial-mark rejection (ticks, hatching, dots and half-fills);
-          fully shaded multiple options are flagged and scored as incorrect
-          (−0.66 for a 2-mark practice question). High-ink rejected bubbles
-          now appear in diagnostics. Results remain beta: inspect doubtful marks.
         </div>
       </div>
 
