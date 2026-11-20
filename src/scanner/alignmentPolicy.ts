@@ -24,3 +24,21 @@ export function skipRedundantFallback(
     (candidateName.endsWith('/Otsu') || candidateName.endsWith('-Otsu')) &&
     kind !== 'aruco';
 }
+
+/** A verified warp may be refined only with an independent, strictly better
+ * left/right timing result. Never replace a perfect or degraded registration.
+ * Weak initial registrations need a substantial gain (>=8) to avoid
+ * accepting spurious timing squares.
+ */
+export function shouldAdoptTimingRefinement(
+  before: {passed:boolean;matched:number;leftMatched:number;rightMatched:number},
+  after: {passed:boolean;matched:number;leftMatched:number;rightMatched:number},
+): boolean {
+  if (!after.passed || before.matched >= 50) return false;
+  if (before.passed) {
+    return after.matched > before.matched &&
+      after.leftMatched >= before.leftMatched &&
+      after.rightMatched >= before.rightMatched;
+  }
+  return after.matched >= before.matched + 8;
+}
