@@ -34,9 +34,19 @@ export function reconcileToneAnswers(
     const a=strongest(baseline),b=strongest(row);
     let action='retain_corrected';
     let final=row;
+    // A tone LUT must never manufacture a selected answer from a raw
+    // reading below the validated 45% fill floor. This is a safety veto,
+    // not evidence that an incomplete mark should count as an answer.
+    if (row.status==='detected' && a.fillPercent<45) {
+      final={...row, detectedAnswer:null, status:'blank', confidence:0,
+        measurements:row.measurements.map(m=>({...m}))};
+      const m=final.measurements.find(x=>x.option===b.option);
+      if(m)m.rejectReason='Tone-only selection rejected: original grayscale has insufficient ink';
+      action='reject_tone_only_promotion';
+    }
     // A manual-review indication may not be silently downgraded to blank
     // only because the tone calibration lowered its measured fill.
-    if(row.status==='blank' && strongInk(baseline)) {
+    if(action==='retain_corrected' && row.status==='blank' && strongInk(baseline)) {
       final={...row,detectedAnswer:null,status:'uncertain',
         confidence:0,measurements:row.measurements.map(m=>({...m}))};
       const m=final.measurements.find(x=>x.option===a.option);
@@ -45,7 +55,7 @@ export function reconcileToneAnswers(
     }
     // When a partially marked bubble is uncertain on original grayscale,
     // a tonal adjustment must not promote it into a confirmed selection.
-    else if(row.status==='detected' && baseline.status==='uncertain' &&
+    else if(action==='retain_corrected' && row.status==='detected' && baseline.status==='uncertain' &&
       a.option===b.option && a.fillPercent>=45) {
       final={...row,detectedAnswer:null,status:'uncertain',confidence:0};
       action='avoid_tonal_promotion';
