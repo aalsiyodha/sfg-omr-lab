@@ -246,7 +246,7 @@ export default function ScanPage({ appState }: Props) {
   return (
     <div>
       <div className="product-scan-header exam-scan-header">
-        <div><span className="product-kicker">SFG OMR LAB · TESTING WORKSPACE</span><h1>OMR Scanner</h1><p>Upload a completed sheet, verify alignment, then review the 50 answers.</p></div>
+        <div><span className="product-kicker">EXAM TOOLS / ANSWER SHEET SCANNER</span><h1>Scan an answer sheet</h1><p>A simple, reliable workspace for checking 50-question OMR sheets. Upload, verify, and review before scoring.</p></div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>
           <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
@@ -263,9 +263,9 @@ export default function ScanPage({ appState }: Props) {
       )}
 
       {!scanResult && <div className="product-scan-instructions exam-scan-steps">
-        <span><b>01</b> Add a photo</span><i className="bi bi-chevron-right" />
-        <span><b>02</b> Verify geometry</span><i className="bi bi-chevron-right" />
-        <span><b>03</b> Review answers</span>
+        <span><b>01</b> Choose image</span><i className="bi bi-chevron-right" />
+        <span><b>02</b> Check alignment</span><i className="bi bi-chevron-right" />
+        <span><b>03</b> Review responses</span>
       </div>}
       {/* Input section (hidden once scan result exists) */}
       {!scanResult && (
@@ -303,7 +303,7 @@ export default function ScanPage({ appState }: Props) {
             </div>
             <small className="text-muted d-block mb-3">
               <i className="bi bi-lightning-charge me-1 text-warning" />
-              <strong>Photo tip:</strong> Lay the page flat, include all edges, and avoid glare or blur. Flash is optional.
+              <strong>Before you scan:</strong> Use the latest printed sheet, keep it flat, and include all four corner squares. Original camera photos work best.
             </small>
           </div>
 
