@@ -5,6 +5,7 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
+import { diagnoseTimingLattice } from './timingDiagnostics';
 import { canStopRegistrationSearch } from './registrationFastPath';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
@@ -72,7 +73,11 @@ function evaluateHypothesis(
       : hypothesis.kind === 'midpoint'
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
       : correctPerspectiveFromArucos(source,hypothesis.markers);
-    if (!persp.success || !persp.corrected) return null;
+    if (!persp.success || !persp.corrected) {
+      logger.warning('perspective',`${hypothesis.name}: homography unavailable`,
+        {reason:persp.error ?? 'Perspective correction failed'});
+      return null;
+    }
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
     canvas.height = persp.corrected.rows;
@@ -96,7 +101,9 @@ function evaluateHypothesis(
       }
     }
     if (!qr.valid) {
-      logger.warning('qrDecoding', `${hypothesis.name}: QR missing from both expected corners`);
+      logger.warning('qrDecoding', `${hypothesis.name}: QR could not be verified after warp`,
+        {upright:{found:qr.found,valid:qr.valid,error:qr.error},
+          rotated180Checked:true,warp:{width:canvas.width,height:canvas.height}});
       return null;
     }
 
@@ -105,6 +112,25 @@ function evaluateHypothesis(
     let check = verifyTimingMarks(gray, dpi);
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
+    if (check.matched < 50) {
+      try {
+        const profile=diagnoseTimingLattice(gray,dpi);
+        logger.info('alignmentDiagnostics',
+          `${hypothesis.name}: independent timing lattice row evidence`,{
+            matched:profile.matches,
+            matchedRows:{left:profile.left,right:profile.right},
+            missingRows:{left:profile.unmatchedLeft,right:profile.unmatchedRight},
+            bestSharedTranslationPx:profile.bestShiftPx,
+            image:profile.imageSize,
+            threshold:profile.threshold,
+            note:'Exploratory shift score only; QR and timing must still reverify',
+          });
+      } catch (error) {
+        logger.warning('alignmentDiagnostics',
+          `${hypothesis.name}: timing profile unavailable`,{reason:String(error)});
+      }
+    }
+
     // Even a QR-valid ArUco candidate with 45–49 matched timing marks may
     // have measurable warp drift in the distant right column. Recheck with
     // four extreme printed timing squares, but only adopt a strictly better
@@ -143,9 +169,16 @@ function evaluateHypothesis(
               check=updatedCheck;
               qr=verifiedQR;
               // The original first-stage transform remains owned by persp.
-            }else cleanupMats(rescued.corrected);
+            }else {
+              logger.info('alignmentDiagnostics',`${hypothesis.name}: timing refinement not adopted`,
+                {before:check.matched,after:updatedCheck.matched,
+                  left:updatedCheck.leftMatched,right:updatedCheck.rightMatched});
+              cleanupMats(rescued.corrected);
+            }
           }else{
-            logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`);
+            logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`,
+              {found:verifiedQR.found,valid:verifiedQR.valid,
+                reason:verifiedQR.error ?? 'QR identity changed or moved'});
             cleanupMats(rescued.corrected);
           }
         }catch(error){
