@@ -214,3 +214,30 @@ export function generateArucoOverlay(
   ctx.fillText('ArUco IDs '+markers.count+'/4 | '+status+timing,12,21,src.width-20);
   return canvas.toDataURL('image/png');
 }
+
+/**
+ * Approximate the four corner-square centres from decoded ArUco IDs.
+ * This is ONLY a search guide for real square contours, never accepted as
+ * a registration. Corner hypotheses must still pass QR and timing checks.
+ */
+export function predictCornersFromArucos(markers:ArucoRegistration):{
+  topLeft:ImagePoint;topRight:ImagePoint;bottomLeft:ImagePoint;bottomRight:ImagePoint
+}|null {
+  if(!markers.found || [0,1,2,3].some(id=>!markers.points[id]))return null;
+  const upper=(x:number):ImagePoint=>{
+    const t=(x-83.5)/68, a=markers.points[0], b=markers.points[1];
+    return {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+  };
+  const lower=(x:number):ImagePoint=>{
+    const t=(x-51.5)/66, a=markers.points[2], b=markers.points[3];
+    return {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+  };
+  const point=(x:number,y:number):ImagePoint=>{
+    const a=upper(x),b=lower(x),t=(y-10)/277;
+    return {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+  };
+  return {
+    topLeft:point(9.5,9.5),topRight:point(200.5,9.5),
+    bottomLeft:point(9.5,287.5),bottomRight:point(200.5,287.5),
+  };
+}
