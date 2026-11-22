@@ -5,17 +5,12 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
-import { diagnoseTimingLattice } from './timingDiagnostics';
-import { drawRegistrationCandidateOverlay, drawTimingFailureOverlay } from './registrationEvidenceOverlay';
-import { canStopRegistrationSearch } from './registrationFastPath';
+import { canStopRegistrationSearch } from './litePolicy';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
-import { correctPerspectiveConsensus } from './consensusRegistration';
-import { correctMildPageWarp } from './mildCurveCorrection';
-import { timingMatchAtShift } from './timingDiagnostics';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
-import { detectArucoMarkers, predictMidpointsFromArucos, predictCornersFromArucos, generateArucoOverlay } from './arucoDetector';
+import { detectArucoMarkers, predictMidpointsFromArucos, generateArucoOverlay } from './arucoDetector';
 import type { ArucoRegistration } from './arucoDetector';
 import { applySevenToneCorrection } from './grayToneCorrection';
 import { reconcileToneAnswers } from './toneConsensus';
@@ -66,24 +61,18 @@ function disposeAlignment(alignment: AcceptedAlignment): void {
 function evaluateHypothesis(
   source: HTMLCanvasElement,
   hypothesis: Hypothesis,
-  dpi: number,
-  captureFailure?: (candidate: {name:string; matched:number; left:number; right:number; canvas:HTMLCanvasElement; profile:ReturnType<typeof diagnoseTimingLattice>; qrVerified:boolean})=>void,
-  preparedPerspective?:PerspectiveResult
+  dpi: number
 ): AcceptedAlignment | null {
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
   let keep = false;
   try {
-    persp = preparedPerspective ?? (hypothesis.kind === 'corner'
+    persp = hypothesis.kind === 'corner'
       ? correctPerspective(source, hypothesis.markers)
       : hypothesis.kind === 'midpoint'
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
-      : correctPerspectiveFromArucos(source,hypothesis.markers));
-    if (!persp.success || !persp.corrected) {
-      logger.warning('perspective',`${hypothesis.name}: homography unavailable`,
-        {reason:persp.error ?? 'Perspective correction failed'});
-      return null;
-    }
+      : correctPerspectiveFromArucos(source,hypothesis.markers);
+    if (!persp.success || !persp.corrected) return null;
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
     canvas.height = persp.corrected.rows;
@@ -107,10 +96,7 @@ function evaluateHypothesis(
       }
     }
     if (!qr.valid) {
-      logger.warning('qrDecoding', `${hypothesis.name}: QR could not be verified after warp`,
-        {upright:{found:qr.found,valid:qr.valid,
-          reason:qr.found?'identity-or-prefix-invalid':'not-detected'},
-          rotated180Checked:true,warp:{width:canvas.width,height:canvas.height}});
+      logger.warning('qrDecoding', `${hypothesis.name}: QR missing from both expected corners`);
       return null;
     }
 
@@ -119,80 +105,6 @@ function evaluateHypothesis(
     let check = verifyTimingMarks(gray, dpi);
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
-    // No expensive exploratory sweep when independent alignment already passes.
-    if (!check.passed) {
-      try {
-        const profile=diagnoseTimingLattice(gray,dpi);
-        captureFailure?.({name:hypothesis.name,matched:check.matched,
-          left:check.leftMatched,right:check.rightMatched,
-          canvas,profile,qrVerified:qr.valid});
-        logger.info('perspective',
-          `${hypothesis.name}: independent timing lattice row evidence`,{
-            matched:profile.matches,
-            matchedRows:{left:profile.left,right:profile.right},
-            missingRows:{left:profile.unmatchedLeft,right:profile.unmatchedRight},
-            bestSharedTranslationPx:profile.bestShiftPx,
-            image:profile.imageSize,
-            threshold:profile.threshold,
-            note:'Exploratory shift score only; QR and timing must still reverify',
-          });
-        // Only attempt a bounded global correction when *both* independent
-        // timing bands show a substantial improvement. Never use an
-        // exploratory timing score as acceptance evidence.
-        const shift=profile.bestShiftPx;
-        if (!check.passed && shift.matches >= 35 &&
-            shift.leftMatched >= 10 && shift.rightMatched >= 10 &&
-            shift.matches >= check.matched+8 &&
-            (shift.dx!==0 || shift.dy!==0)) {
-          let affine:any=null,translated:any=null,shiftGray:any=null;
-          try {
-            affine=cv.matFromArray(2,3,cv.CV_64F,
-              [1,0,-shift.dx,0,1,-shift.dy]);
-            translated=new cv.Mat();
-            cv.warpAffine(persp.corrected,translated,affine,
-              new cv.Size(persp.corrected.cols,persp.corrected.rows));
-            const shiftedCanvas=document.createElement('canvas');
-            shiftedCanvas.width=translated.cols;shiftedCanvas.height=translated.rows;
-            cv.imshow(shiftedCanvas,translated);
-            const shiftedQR=decodeQRFromRegion(shiftedCanvas,
-              OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
-            if(shiftedQR.valid && shiftedQR.raw===qr.raw){
-              shiftGray=new cv.Mat();
-              cv.cvtColor(translated,shiftGray,cv.COLOR_RGBA2GRAY);
-              const shiftedCheck=verifyTimingMarks(shiftGray,dpi);
-              logger.info('perspective',
-                `${hypothesis.name}: verified shared-shift fallback`,{
-                  dx:shift.dx,dy:shift.dy,
-                  before:check.matched,after:shiftedCheck.matched,
-                  left:shiftedCheck.leftMatched,right:shiftedCheck.rightMatched,
-                  sameQR:true});
-              if(shouldAdoptTimingRefinement(check,shiftedCheck)){
-                cleanupMats(gray,persp.corrected);
-                persp.corrected=translated;translated=null;
-                gray=shiftGray;shiftGray=null;
-                persp.correctedDataUrl=shiftedCanvas.toDataURL('image/png');
-                cv.imshow(canvas,persp.corrected);
-                check=shiftedCheck;
-              }
-            }else logger.info('perspective',
-              `${hypothesis.name}: shared-shift fallback rejected by QR`,{
-                dx:shift.dx,dy:shift.dy,found:shiftedQR.found,
-                valid:shiftedQR.valid});
-          }catch(error){
-            logger.warning('perspective',
-              `${hypothesis.name}: shared-shift fallback unavailable`,
-              {reason:String(error)});
-          }finally{
-            cleanupMats(affine,translated,shiftGray);
-          }
-        }
-
-      } catch (error) {
-        logger.warning('perspective',
-          `${hypothesis.name}: timing profile unavailable`,{reason:String(error)});
-      }
-    }
-
     // Even a QR-valid ArUco candidate with 45–49 matched timing marks may
     // have measurable warp drift in the distant right column. Recheck with
     // four extreme printed timing squares, but only adopt a strictly better
@@ -231,16 +143,9 @@ function evaluateHypothesis(
               check=updatedCheck;
               qr=verifiedQR;
               // The original first-stage transform remains owned by persp.
-            }else {
-              logger.info('perspective',`${hypothesis.name}: timing refinement not adopted`,
-                {before:check.matched,after:updatedCheck.matched,
-                  left:updatedCheck.leftMatched,right:updatedCheck.rightMatched});
-              cleanupMats(rescued.corrected);
-            }
+            }else cleanupMats(rescued.corrected);
           }else{
-            logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`,
-              {found:verifiedQR.found,valid:verifiedQR.valid,
-                reason:verifiedQR.found?'identity-or-prefix-invalid':'not-detected'});
+            logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`);
             cleanupMats(rescued.corrected);
           }
         }catch(error){
@@ -251,50 +156,6 @@ function evaluateHypothesis(
         }finally{
           cleanupMats(updatedGray,rescued.transform);
         }
-      }
-    }
-    if(!check.passed){
-      // Expensive, bounded curve recovery: only after global correction and
-      // corner/timing refinements have failed. Use alternating timing rows
-      // for fit and independent even rows for holdout validation.
-      const mesh=correctMildPageWarp(persp.corrected,dpi);
-      if(mesh){
-        let meshGray:any=null;
-        try{
-          const meshCanvas=document.createElement('canvas');
-          meshCanvas.width=mesh.corrected.cols;meshCanvas.height=mesh.corrected.rows;
-          cv.imshow(meshCanvas,mesh.corrected);
-          const meshQR=decodeQRFromRegion(meshCanvas,OMR_LAYOUT.qr.xMm,
-            OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
-          if(meshQR.valid && meshQR.raw===qr.raw){
-            meshGray=new cv.Mat();
-            cv.cvtColor(mesh.corrected,meshGray,cv.COLOR_RGBA2GRAY);
-            const meshCheck=verifyTimingMarks(meshGray,dpi);
-            const hits=timingMatchAtShift(meshGray,dpi,
-              computeAdaptiveDarkThreshold(meshGray),0,0);
-            const even=(a:number[])=>a.filter(row=>row%2===0).length;
-            const holdout={left:even(hits.left),right:even(hits.right)};
-            logger.info('perspective',`${hypothesis.name}: mild-curve mesh cross-validation`,{
-              before:check.matched,after:meshCheck.matched,
-              left:meshCheck.leftMatched,right:meshCheck.rightMatched,
-              holdout,controlRows:mesh.evidence.sampled,
-              maxShiftPx:mesh.evidence.maxAbsShiftPx,qrIdentityVerified:true});
-            if(meshCheck.passed && meshCheck.matched>check.matched &&
-               holdout.left>=8 && holdout.right>=8){
-              cleanupMats(gray,persp.corrected);
-              persp.corrected=mesh.corrected;gray=meshGray;meshGray=null;
-              persp.correctedDataUrl=meshCanvas.toDataURL('image/png');
-              cv.imshow(canvas,persp.corrected);check=meshCheck;
-            }else cleanupMats(mesh.corrected);
-          }else{
-            logger.info('perspective',`${hypothesis.name}: mesh rejected by QR identity`,
-              {found:meshQR.found,valid:meshQR.valid});
-            cleanupMats(mesh.corrected);
-          }
-        }catch(error){
-          if(persp.corrected!==mesh.corrected)cleanupMats(mesh.corrected);
-          logger.warning('perspective','Mild-curve recovery unavailable',{reason:String(error)});
-        }finally{cleanupMats(meshGray);}
       }
     }
     if (!check.passed) {
@@ -342,7 +203,6 @@ export async function runFullScan(
     // identified ArUco codes. Each alignment is verified after warping.
     const arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
     const arucoMidpointPrediction=predictMidpointsFromArucos(arucoAdaptive);
-    const arucoCornerPrediction=predictCornersFromArucos(arucoAdaptive);
     logger.info('markerDetection','ArUco 4x4 marker identification (adaptive)',{
       identified:arucoAdaptive.count,ids:Object.keys(arucoAdaptive.points),
       readyForRescue:arucoAdaptive.found});
@@ -384,46 +244,10 @@ export async function runFullScan(
       // Independent thresholding can recover a different set of marker
       // centres. Evaluate both, even if adaptive ArUco detection succeeded.
       if(arucoOtsu.found)hypotheses.push({kind:'aruco',name:'aruco/Otsu',markers:arucoOtsu});
-      // Additional independent corner candidate after ordinary detection:
-      // estimate where actual corner squares should lie using ArUco IDs, then
-      // locate nearby contours. The estimate itself is never a registration.
-      if(arucoCornerPrediction){
-        const guidedCorner=detectMarkers(
-          preprocessed.thresholded,loaded.width,loaded.height,arucoCornerPrediction);
-        if(guidedCorner.found){
-          const prior=primary;
-          const changed=!prior.found || (
-            Math.hypot(guidedCorner.topLeft!.x-prior.topLeft!.x,
-              guidedCorner.topLeft!.y-prior.topLeft!.y)>4 ||
-            Math.hypot(guidedCorner.topRight!.x-prior.topRight!.x,
-              guidedCorner.topRight!.y-prior.topRight!.y)>4 ||
-            Math.hypot(guidedCorner.bottomLeft!.x-prior.bottomLeft!.x,
-              guidedCorner.bottomLeft!.y-prior.bottomLeft!.y)>4 ||
-            Math.hypot(guidedCorner.bottomRight!.x-prior.bottomRight!.x,
-              guidedCorner.bottomRight!.y-prior.bottomRight!.y)>4);
-          if(changed)hypotheses.push({
-            kind:'corner',name:'corner/aruco-guided',markers:guidedCorner});
-          logger.info('markerDetection','ArUco-guided corner contour cross-check',{
-            distinct:changed,corners:guidedCorner,estimated:arucoCornerPrediction});
-        }else logger.info('markerDetection','ArUco-guided corner contours unavailable',
-          {estimated:arucoCornerPrediction});
-      }
-
     } finally {
       cleanupMats(alternate);
     }
 
-    if(arucoMidpointPrediction){
-      const delta=(p:{x:number;y:number}|null|undefined,q:{x:number;y:number}|null|undefined)=>
-        p&&q?Math.round(Math.hypot(p.x-q.x,p.y-q.y)*10)/10:null;
-      logger.info('markerDetection','Independent midpoint vs ArUco-predicted marker residuals (input pixels)',{
-        adaptive:{top:delta(mid.top,arucoMidpointPrediction.top),
-          bottom:delta(mid.bottom,arucoMidpointPrediction.bottom),
-          left:delta(mid.left,arucoMidpointPrediction.left),
-          right:delta(mid.right,arucoMidpointPrediction.right)},
-        note:'Large residuals suggest a wrong midpoint candidate; not an alignment acceptance test'
-      });
-    }
     logger.info('markerDetection', `${hypotheses.length} reference hypotheses available`,
       { cornerCandidates: hypotheses.filter(h => h.kind === 'corner').length,
         midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length,
@@ -434,34 +258,6 @@ export async function runFullScan(
       : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
-    let bestFailureScore=-1;
-    let bestFailureMethod='none';
-    const captureFailure=(e:{name:string;matched:number;left:number;right:number;canvas:HTMLCanvasElement;profile:ReturnType<typeof diagnoseTimingLattice>;qrVerified:boolean})=>{
-      // Evidence is a visual overlay only. Never treat this as an accepted scan.
-      if(!e.qrVerified || e.matched<=bestFailureScore)return;
-      bestFailureScore=e.matched;bestFailureMethod=e.name;
-      images.timingFailureOverlay=drawTimingFailureOverlay(e.canvas,e.profile,e.name,dpi,true);
-    };
-    // Exact-coordinate deduplication: two detection methods can return the
-    // same physical anchors. Re-warping identical coordinates cannot reveal
-    // new evidence; retain the first attempt and log the skipped duplicate.
-    const attemptedGeometry = new Set<string>();
-    const geometryKey=(hypothesis:Hypothesis):string=>{
-      const point=(p:{x:number;y:number}|null|undefined)=>p
-        ? p.x.toFixed(2)+','+p.y.toFixed(2) : 'missing';
-      if(hypothesis.kind==='corner'){
-        const m=hypothesis.markers;
-        return ['corner',point(m.topLeft),point(m.topRight),
-          point(m.bottomLeft),point(m.bottomRight)].join('|');
-      }
-      if(hypothesis.kind==='midpoint'){
-        const m=hypothesis.markers;
-        return ['midpoint',point(m.top),point(m.right),
-          point(m.bottom),point(m.left)].join('|');
-      }
-      const m=hypothesis.markers.points;
-      return ['aruco',point(m[0]),point(m[1]),point(m[2]),point(m[3])].join('|');
-    };
     for (const hypothesis of hypotheses) {
       logger.info('markerDetection', `${hypothesis.name}: candidate coordinates`,
         hypothesis.kind === 'corner'
@@ -477,15 +273,7 @@ export async function runFullScan(
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
-      const signature=geometryKey(hypothesis);
-      if(attemptedGeometry.has(signature)){
-        logger.info('markerDetection',
-          `${hypothesis.name}: skipped identical-geometry recheck`,
-          {reason:'same fiducial coordinates already evaluated'});
-        continue;
-      }
-      attemptedGeometry.add(signature);
-      const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi,captureFailure);
+      const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
@@ -507,7 +295,7 @@ export async function runFullScan(
       } else {
         disposeAlignment(evaluated);
       }
-      // v2.3: after *independent* QR identity and both timing
+      // LITE experiment: after *independent* QR identity and both timing
       // bands reach a perfect 50/50, no later hypothesis can improve
       // timing coverage. Avoid remaining costly perspective/QR warps.
       // Do NOT stop at 47–49: the reference photos needed fallback.
@@ -516,7 +304,7 @@ export async function runFullScan(
         selected.check.leftMatched, selected.check.rightMatched
       )) {
         logger.info('perspective',
-          'v2.3 fast-path: stopped registration after perfect QR + 50/50 timing',
+          'LITE fast-path: stopped registration after perfect QR + 50/50 timing',
           {selected:selected.hypothesis.name,skipped:Math.max(0,
             hypotheses.length-hypotheses.indexOf(hypothesis)-1)});
         break;
@@ -535,7 +323,7 @@ export async function runFullScan(
         const hypothesis:Hypothesis={
           kind:'midpoint',name:'midpoint/alternate-'+side,markers:alternateMid
         };
-        const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi,captureFailure);
+        const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi);
         if(!attempt)continue;
         const score=registrationScore({kind:'midpoint',
           timingMatched:attempt.check.matched,
@@ -553,37 +341,6 @@ export async function runFullScan(
         }else disposeAlignment(attempt);
         if(selected?.check.matched===50)break;
       }
-    }
-
-    if(!selected && arucoAdaptive.found){
-      const corners=hypotheses.filter((h):h is Extract<Hypothesis,{kind:'corner'}>=>
-        h.kind==='corner').map(h=>h.markers);
-      const midpoints=hypotheses.filter((h):h is Extract<Hypothesis,{kind:'midpoint'}>=>
-        h.kind==='midpoint').map(h=>h.markers);
-      const consensus=correctPerspectiveConsensus(loaded.canvas,{
-        aruco:arucoAdaptive,corners,midpoints});
-      if(consensus){
-        logger.info('perspective','Multi-marker RANSAC consensus candidate',{
-          ...consensus.evidence,
-          note:'Never accepted until QR and both timing columns pass independently'});
-        const h:Hypothesis={kind:'aruco',name:'consensus/aruco-corners-midpoints',
-          markers:arucoAdaptive};
-        const candidate=evaluateHypothesis(loaded.canvas,h,dpi,captureFailure,
-          consensus.perspective);
-        if(candidate)selected=candidate;
-      }else logger.info('perspective','Multi-marker consensus unavailable',{
-        reason:'Insufficient compatible observed markers, high residual, or homography API unavailable'});
-    }
-
-    if(!selected){
-      images.markerOverlay=drawRegistrationCandidateOverlay(
-        loaded.canvas,hypotheses,arucoAdaptive);
-      logger.info('perspective','Best rejected QR-verified timing evidence',{
-        candidate:bestFailureMethod,
-        matched:bestFailureScore<0?0:bestFailureScore,
-        visualOverlayAvailable:Boolean(images.timingFailureOverlay),
-        noAnswersRead:true,
-      });
     }
 
     let answers: QuestionResult[] = [];

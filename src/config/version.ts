@@ -1,18 +1,8 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
 declare const __APP_BUILD_META__: { version:string; source:'vercel'|'local-dev'|'local-build'; environment:string; sha:string; buildId:string; builtAt:string; dirty:boolean };
-export const APP_VERSION = version === '2.3.3'
-  ? 'v2.3.3 · Adaptive Geometry & Diagnostics'
-  : version === '2.3.22'
-  ? 'v2.3.22 · Visual Registration Diagnostics'
-  : version === '2.3.21'
-  ? 'v2.3.21 · Scanner Reliability & Diagnostics'
-  : version === '2.3.2'
-  ? 'v2.3.2 · Timing Diagnostics Experiment'
-  : version === '2.3.1'
-  ? 'v2.3.1 · Registration Field Test'
-  : version === '2.3.0'
-  ? 'v2.3 · Precision Scanning'
+export const APP_VERSION = version === '2.2.6-lite.1'
+  ? 'v2.2.6 LITE • Fast Registration Experiment'
   : version === '2.2.5'
   ? 'v2.2.5 Strict Marks • Multiple-Answer Scoring'
   : version === '2.2.4'

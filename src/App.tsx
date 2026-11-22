@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, HashRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import PracticeTestPage from './pages/PracticeTestPage';
 import ScanPage from './pages/ScanPage';
@@ -45,15 +45,41 @@ export default function App() {
 
   const appState: AppState = { opencv: opencvStatus, practice, scanning };
 
-  const Router = import.meta.env.BASE_URL === '/sfg-omr-lab/' ? HashRouter : BrowserRouter;
   return (
-    <Router>
+    <BrowserRouter>
       <div className="min-vh-100 d-flex flex-column">
+        {/* Conspicuous LITE branch identity, independent of the Antigravity reference. */}
+        <div role="status" aria-label="Experimental Lite build" style={{
+          background: '#064e3b', color: '#ffffff', borderBottom: '6px solid #2dd4bf',
+          padding: '14px 18px', position: 'relative', zIndex: 1040,
+        }}>
+          <div style={{ maxWidth: 1160, margin: '0 auto', display: 'flex',
+            flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+            <div>
+              <div style={{ color: '#a7f3d0', fontWeight: 900, fontSize: 'clamp(17px, 3vw, 25px)',
+                letterSpacing: '0.07em', lineHeight: 1.3 }}>
+                ⚡ SFG OMR LAB LITE · EXPERIMENTAL
+              </div>
+              <div style={{ fontSize: '13px', marginTop: 4, fontWeight: 600 }}>
+                FAST REGISTRATION · REUSED HATCH ANALYSIS · NOT ANTIGRAVITY 5173
+              </div>
+            </div>
+            <div style={{ background: '#a7f3d0', color: '#064e3b', borderRadius: '9px',
+              padding: '9px 13px', fontWeight: 900, lineHeight: 1.45, textAlign: 'center' }}>
+              <div>v{APP_BUILD_META.version} · {APP_BUILD_META.buildId}</div>
+              <div style={{ fontSize: '12px' }}>LOCAL PORT {window.location.port || 'default'}</div>
+            </div>
+          </div>
+        </div>
         <nav className="navbar navbar-expand-md sticky-top product-navbar">
           <div className="container-fluid" style={{ maxWidth: 1160 }}>
             <NavLink to="/" className="product-brand text-decoration-none d-flex align-items-center gap-2">
               <span className="product-brand-icon"><i className="bi bi-upc-scan" /></span>
-              <span className="product-brand-name">SFG <span>OMR Lab</span></span>
+              <span className="product-brand-name">SFG <span>OMR Lab <span style={{ color: '#0d9488', fontWeight: 900 }}>Lite</span></span></span>
+              <span style={{ background: 'linear-gradient(125deg,#059669,#0d9488)',
+                color:'#ffffff', borderRadius:999, padding:'4px 11px',
+                fontSize:11, fontWeight:900, letterSpacing:'0.09em',
+                boxShadow:'0 3px 10px rgba(13,148,136,.22)' }}>LITE</span>
               <span className="product-version-tag">{APP_VERSION}</span>
             </NavLink>
             <div className="product-header-controls">
@@ -72,7 +98,7 @@ export default function App() {
             <div className="collapse navbar-collapse" id="navbarNav">
               <ul className="navbar-nav ms-auto align-items-md-center gap-1">
                 {[
-                  ['/', 'Home'], ['/practice', 'Practice'], ['/results', 'Results'], ['/diagnostics', 'Diagnostics'],
+                  ['/', 'Overview'], ['/practice', 'Practice'], ['/results', 'Results'], ['/diagnostics', 'Advanced'],
                 ].map(([to,label])=>(
                   <li className="nav-item" key={to}>
                     <NavLink to={to} end={to==='/'} className={({isActive})=>`nav-link product-nav-link ${isActive?'active':''}`}>{label}</NavLink>
@@ -96,13 +122,13 @@ export default function App() {
 
         <footer className="mt-auto product-footer">
           <div className="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ maxWidth: 1160 }}>
-            <span className="product-footer-brand">SFG OMR LAB <span>· {APP_RELEASE_LABEL}</span></span>
+            <span className="product-footer-brand">SFG OMR LAB LITE <span>· {APP_RELEASE_LABEL}</span></span>
             <span>Built for thoughtful practice. Processed on your device.</span>
             <span className="product-deployment-label" title={`Commit: ${APP_BUILD_META.sha} · Built: ${APP_BUILD_META.builtAt}`}>{APP_DEPLOY_LABEL} · commit {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}</span>
             <span>Beta · Verify before scoring</span>
           </div>
         </footer>
       </div>
-    </Router>
+    </BrowserRouter>
   );
 }

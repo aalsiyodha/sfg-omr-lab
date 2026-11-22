@@ -537,7 +537,7 @@ export function detectQuestion(
   // physical mark was rejected at 58% in Sample 02. A later rescue must
   // never promote a confirmed hatch to a valid answer.
   const selectedIndex = options.indexOf(top.measurement.option);
-  // v2.3: reuse the initial hatch measurement rather than walking the
+  // LITE: reuse the initial hatch measurement rather than walking the
   // same pixels again at the same location and threshold.
   const preRescueHatch = {
     gapRows: top.measurement.hatchGapRows ?? 0,
@@ -607,7 +607,7 @@ export function detectQuestion(
   // Evaluate inner fill topology even when the global fill score is high:
   // v3 Q20-C's diagonal hatching left a persistent bright channel and Q24-B
   // was dark on one side but only half-shaded on the other.
-  const hatch = preRescueHatch; // v2.3: avoid a third identical hatch scan.
+  const hatch = preRescueHatch; // LITE: avoid a third identical hatch scan.
   // Outer annular darkness may be contaminated by one heavily shaded half
   // or by printed-ring interpolation. Test left/right asymmetry directly
   // even when the outer zone looks dark (v4/v5 Q24 half-filled B).

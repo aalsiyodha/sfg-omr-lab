@@ -11,7 +11,7 @@ import { needsReview, filterReviewAnswers, countRejectedBlankMarks } from '../re
 interface Props { appState: AppState; }
 
 type InputMode = 'none' | 'upload' | 'camera';
-type ResultViewTab = 'overlay' | 'markers' | 'timing' | 'table' | 'llm';
+type ResultViewTab = 'overlay' | 'markers' | 'table' | 'llm';
 
 export default function ScanPage({ appState }: Props) {
   const { scanning, practice, opencv } = appState;
@@ -163,32 +163,6 @@ export default function ScanPage({ appState }: Props) {
     setCopyFailed(!ok);
   };
 
-  const downloadDiagnostic = () => {
-    if (!scanResult) return;
-    const content=generateLLMDiagnosticPrompt({
-      scanResult,file:capturedFile,
-      activeTestId:practice.activeTest?.testId,
-      answerKey:practice.activeTest?.answerKey,
-    });
-    const blob=new Blob([content],{type:'text/plain;charset=utf-8'});
-    const url=URL.createObjectURL(blob);
-    const link=document.createElement('a');
-    link.href=url;
-    const base=(capturedFile?.name ?? 'scan').replace(/\.[^.]+$/,'')
-      .replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,65);
-    link.download=base+'-full-diagnostic.txt';
-    document.body.appendChild(link);link.click();link.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  const downloadFailureOverlay = () => {
-    if (!intermediateImages.timingFailureOverlay) return;
-    const link=document.createElement('a');
-    link.href=intermediateImages.timingFailureOverlay;
-    link.download='sfg-omr-failed-timing-evidence.png';
-    document.body.appendChild(link);link.click();link.remove();
-  };
-
   const downloadOverlay = () => {
     if (!intermediateImages.bubbleOverlay) return;
     const link = document.createElement('a');
@@ -253,13 +227,27 @@ export default function ScanPage({ appState }: Props) {
 
   return (
     <div>
-      <div className="product-scan-header exam-scan-header">
-        <div><span className="product-kicker">ANSWER SHEET SCANNER</span><h1>Scan answer sheet</h1><p>Upload a clear photo. Review detected answers before scoring.</p></div>
+      <div className="product-scan-header">
+        <div>
+          <span className="product-kicker" style={{ color:'#0d9488',fontWeight:900 }}>LITE EXPERIMENT · PORT 5175</span>
+          <h1 style={{ letterSpacing:'-.035em' }}>SFG OMR Lab <span style={{ color:'#0d9488' }}>Lite</span></h1>
+          <p>Fast comparison scanner · upload the same sheet to Antigravity 5173 and Lite 5175 to compare accuracy and speed.</p>
+        </div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>
           <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
             <i className="bi bi-hdd-network me-1" />{APP_DEPLOY_LABEL} · {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}
           </span>
+        </div>
+      </div>
+
+      <div className="alert alert-info border mb-3" role="note">
+        <strong><i className="bi bi-stars me-2" />LITE v2.2.6 — 5175 experiment</strong>
+        <div className="small mt-1">
+          Faster candidate alignment: stop when QR and both timing bands verify
+          at 50/50. Reuse hatch-shape measurements instead of recalculating them.
+          Strict partial-mark and multiple-answer policies are unchanged.
+          Compare identical photos against ANTIGRAVITY on port 5173.
         </div>
       </div>
 
@@ -270,10 +258,10 @@ export default function ScanPage({ appState }: Props) {
         </div>
       )}
 
-      {!scanResult && <div className="product-scan-instructions exam-scan-steps">
-        <span><b>01</b> Choose image</span><i className="bi bi-chevron-right" />
-        <span><b>02</b> Check alignment</span><i className="bi bi-chevron-right" />
-        <span><b>03</b> Review responses</span>
+      {!scanResult && <div className="product-scan-instructions">
+        <span><b>01</b> Add a photo</span><i className="bi bi-chevron-right" />
+        <span><b>02</b> Verify geometry</span><i className="bi bi-chevron-right" />
+        <span><b>03</b> Review answers</span>
       </div>}
       {/* Input section (hidden once scan result exists) */}
       {!scanResult && (
@@ -311,7 +299,7 @@ export default function ScanPage({ appState }: Props) {
             </div>
             <small className="text-muted d-block mb-3">
               <i className="bi bi-lightning-charge me-1 text-warning" />
-              <strong>Before you scan:</strong> Use the latest printed sheet, keep it flat, and include all four corner squares. Original camera photos work best.
+              <strong>Photo tip:</strong> Lay the page flat, include all edges, and avoid glare or blur. Flash is optional.
             </small>
           </div>
 
@@ -346,7 +334,7 @@ export default function ScanPage({ appState }: Props) {
 
           {isScanning && (
             <div className="col-12 col-md-10 col-lg-8 mx-auto my-3">
-              <div className="scanner-animation-container exam-scan-progress">
+              <div className="scanner-animation-container">
                 <div className="scanner-viewport product-scanning-sheet" role="img" aria-label="Illustration of a sheet being scanned">
                   <div className="product-scan-paper-header"><span>SFG</span><span>OMR</span><span className="product-scan-qr" /></div>
                   <div className="viewport-grid">
@@ -436,7 +424,7 @@ export default function ScanPage({ appState }: Props) {
       {scanResult && (
         <div>
           <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-            <h4 className="mb-0">Scan report</h4>
+            <h4 className="mb-0">Scan Result ({APP_VERSION})</h4>
             <StatusBadge status={scanResult.overallStatus} />
             <span className="text-muted small">({scanResult.processingTimeMs} ms)</span>
 
@@ -447,13 +435,7 @@ export default function ScanPage({ appState }: Props) {
               <button className="btn btn-sm btn-outline-secondary" onClick={handleCopyLLMReport}>
                 <i className="bi bi-clipboard me-1"/>Copy full diagnostic
               </button>
-              <button className="btn btn-sm btn-outline-secondary" onClick={downloadDiagnostic}>
-                <i className="bi bi-file-earmark-text me-1"/>Save full report (.txt)
-              </button>
             </div>
-            {intermediateImages.timingFailureOverlay && <button className="btn btn-sm btn-outline-primary" onClick={downloadFailureOverlay}>
-              <i className="bi bi-download me-1"/>Save timing evidence
-            </button>}
             <button className="btn btn-sm btn-outline-primary" onClick={downloadOverlay} disabled={!intermediateImages.bubbleOverlay}>
               <i className="bi bi-download me-1"/>Save overlay
             </button>
@@ -475,10 +457,9 @@ export default function ScanPage({ appState }: Props) {
             <div>
               <strong>{scanResult.overallStatus === 'failed' ? 'This photo could not be verified' : reviewCount ? `${reviewCount} question(s) need review` : 'Scan complete — please check the answers'}</strong>
               <p className="mb-0 small">{scanResult.overallStatus === 'failed'
-                ? 'Registration did not verify. Save the full diagnostic and retry with the same original photo or a new capture; no answers were scored.'
+                ? 'Try another full-page photo; this result cannot be scored.'
                 : 'Green = detected · Red = multiple · Yellow = unclear · Grey = blank. Confirm against the photograph.'}</p>
             </div>
-            {scanResult.overallStatus === 'failed' && intermediateImages.timingFailureOverlay && <button className="btn btn-sm btn-outline-danger" onClick={() => setActiveTab('timing')}>Inspect timing mismatch</button>}
             {scanResult.overallStatus !== 'failed' && <button className="btn btn-sm btn-outline-primary" onClick={() => setActiveTab('table')}>Review answers</button>}
           </div>
 
@@ -553,12 +534,6 @@ export default function ScanPage({ appState }: Props) {
                     <i className="bi bi-clipboard-check me-1" />Review answers {reviewCount > 0 && <span className="review-nav-count">{reviewCount}</span>}
                   </button>
                 </li>
-                {intermediateImages.timingFailureOverlay && <li className="nav-item">
-                  <button className={`nav-link py-1 px-3 ${activeTab === 'timing' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('timing')}>
-                    <i className="bi bi-grid-3x3 me-1"/>Timing mismatch
-                  </button>
-                </li>}
                 <li className="nav-item ms-auto">
                   <button
                     className={`nav-link py-1 px-3 ${activeTab === 'llm' ? 'active' : ''}`}
@@ -606,15 +581,6 @@ export default function ScanPage({ appState }: Props) {
                   ) : (
                     <div className="alert alert-secondary small mb-0">Marker overlay not available.</div>
                   )}
-                </div>
-              )}
-
-              {activeTab === 'timing' && (
-                <div className="text-center">
-                  <p className="small text-muted mb-2">Best rejected perspective candidate. Green circles match the expected timing positions; red crosses are misses. This image is NOT accepted for answer scoring.</p>
-                  {intermediateImages.timingFailureOverlay ? <img className="img-fluid border rounded" style={{maxHeight:650}}
-                    alt="Unverified warped answer sheet showing timing-row matches and misses"
-                    src={intermediateImages.timingFailureOverlay}/> : <p>No timing evidence image available.</p>}
                 </div>
               )}
 

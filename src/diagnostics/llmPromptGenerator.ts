@@ -99,58 +99,20 @@ export function generateLLMDiagnosticPrompt({
       (q.policyRejectedBlank?' policyRejectedBlank=true':'')+': '+parts.join(' ; '));
   }
 
-  // A failed scan has zero answer measurements, so registration evidence
-  // must be front-and-centre rather than hidden among pipeline stage logs.
-  const registrationLogs = scanResult.stageLogs ?? [];
-  lines.push('Registration investigation (v2.3.2):');
-  lines.push('Final QR=' + (scanResult.qrValid ? 'verified' : 'unverified') +
-    ' | A final unverified QR does not mean every hypothesis failed QR decoding.');
-  const input=registrationLogs.find(l=>l.message.startsWith('Image loaded:'));
-  if (input) lines.push('Normalized input=' + input.message);
-  const candidates=registrationLogs.filter(l=>
-    l.message.includes('reference hypotheses available'));
-  for(const item of candidates)
-    lines.push('Candidate families=' + (item.data ? JSON.stringify(item.data) : item.message));
-  const rowProfiles=registrationLogs.filter(l=>
-    l.message.includes('independent timing lattice row evidence'));
-  if(rowProfiles.length){
-    lines.push('Per-hypothesis timing row evidence (rows numbered 1-25):');
-    for(const item of rowProfiles)
-      lines.push(item.message + (item.data ? ' ' + JSON.stringify(item.data) : ''));
-  }else lines.push('Per-row timing profiles=none (candidate may have failed QR before timing checks).');
-  const recovery=registrationLogs.filter(l=>
-    /shared-shift fallback|timing refinement|QR could not be verified/i.test(l.message));
-  if(recovery.length){
-    lines.push('Recovery attempts and QR rejection reasons:');
-    for(const item of recovery)
-      lines.push(item.message + (item.data ? ' ' + JSON.stringify(item.data) : ''));
-  }
-  lines.push('Registration acceptance remains fail-closed: QR identity and independent left/right timing evidence required.');
-  lines.push('Do not interpret exploratory timing offsets as verified bubble alignment.');
-  lines.push('Diagnostic report cannot substitute for inspecting the actual photograph and marker overlay.');
-  const residuals=registrationLogs.filter(l=>l.message.includes('Independent midpoint vs ArUco-predicted marker residuals'));
-  for(const entry of residuals)lines.push('Marker-consensus residuals (px)='+JSON.stringify(entry.data??{}));
-  const failure=registrationLogs.filter(l=>l.message.includes('Best rejected QR-verified timing evidence'));
-  for(const entry of failure)lines.push('Best failed warp evidence='+JSON.stringify(entry.data??{}));
-  lines.push('For failed scans, export Reference markers and Timing mismatch overlays separately; the text report does not embed photographs.');
-
   // Preserve per-scan logs, but remove noisy successful stage messages.
   // Never omit warnings/errors: those often explain a rejected registration.
   const logs = scanResult.stageLogs ?? [];
   const significant = logs.filter(l =>
     l.level==='ERROR' || l.level==='WARNING' ||
-    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|shared-shift|qr could not|residuals/i.test(l.message));
-  lines.push('Important stage logs ('+significant.length+'/'+logs.length+'; repeated structured data summarized above):');
+    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate/i.test(l.message));
+  lines.push('Important stage logs ('+significant.length+'/'+logs.length+'):');
   if (!significant.length) lines.push('None.');
   const redact=(s:string)=>s
     .replace(/SFGOMR1:[^\s"'|,}]+/gi,'[REDACTED_QR]')
     .replace(/("?(?:studentId|qrRaw|raw)"?\s*:\s*)"[^"]*"/gi,'$1"[REDACTED]"');
-  for (const log of significant) {
-    const alreadyDetailed=/independent timing lattice row evidence|shared-shift fallback|timing refinement|QR could not be verified/i.test(log.message);
+  for (const log of significant)
     lines.push(redact('['+log.level+'/'+log.stage+'] '+log.message+
-      (alreadyDetailed?' [structured evidence above]' :
-        log.data?' '+JSON.stringify(log.data):'')));
-  }
+      (log.data?' '+JSON.stringify(log.data):'')));
 
   lines.push('Original photograph and optional bubble overlay should be attached separately.');
   lines.push('Filename is included for image/report matching; student and QR identities are omitted.');
@@ -183,32 +145,6 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
       ' | rotated180=' + String(Boolean(scanResult.orientationRotated)),
     'Processing=' + scanResult.processingTimeMs + 'ms | ' + counts,
   ];
-  // Summarise failure geometry without repeating lengthy per-row arrays.
-  if (scanResult.overallStatus === 'failed') {
-    const logs=scanResult.stageLogs ?? [];
-    const attempts=logs.filter(l=>l.message.includes('candidate coordinates')).length;
-    const skipped=logs.filter(l=>l.message.includes('skipped identical-geometry recheck')).length;
-    const missedQR=logs.filter(l=>l.message.includes('QR could not be verified after warp')).length;
-    lines.push('Registration triage: evaluated candidates=' + (attempts-skipped) +
-      ' | duplicate skips=' + skipped + ' | QR-region failures=' + missedQR);
-    const candidates=logs.flatMap(l=>{
-      const m=l.message.match(/^(.*?): timing marks (\d+)\/50/);
-      return m ? [{name:m[1],total:Number(m[2]),
-        left:Number(l.data?.left ?? 0),right:Number(l.data?.right ?? 0)}] : [];
-    }).sort((a,b)=>b.total-a.total);
-    const best=candidates[0];
-    lines.push(best ?
-      'Best timing candidate=' + best.name + ' ' + best.total +
-        '/50 (left ' + best.left + '/25, right '+best.right+'/25)' :
-      'Best timing candidate=none reached timing validation');
-    const profiles=logs.filter(l=>l.message.includes('independent timing lattice row evidence'))
-      .sort((a,b)=>Number(b.data?.matched ?? 0)-Number(a.data?.matched ?? 0));
-    const shift=profiles[0]?.data?.bestSharedTranslationPx as
-      {dx:number;dy:number;matches:number;leftMatched:number;rightMatched:number}|undefined;
-    if(shift) lines.push('Exploratory timing shift=dx '+shift.dx+
-      'px, dy '+shift.dy+'px, matched '+shift.matches+'/50');
-    lines.push('Use full diagnostic for every timing row, QR outcome and fallback attempt.');
-  }
   if (scanResult.grayCalibration)
     lines.push('Calibration=' + scanResult.grayCalibration.status +
       ' | patches=' + scanResult.grayCalibration.patchMedians.join(',') +
