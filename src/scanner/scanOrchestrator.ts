@@ -10,7 +10,7 @@ import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement }
 import { refineByTimingSquares } from './timingRefinement';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
-import { detectArucoMarkers, predictMidpointsFromArucos, generateArucoOverlay } from './arucoDetector';
+import { detectArucoMarkers, predictMidpointsFromArucos, predictCornersFromArucos, generateArucoOverlay } from './arucoDetector';
 import type { ArucoRegistration } from './arucoDetector';
 import { applySevenToneCorrection } from './grayToneCorrection';
 import { reconcileToneAnswers } from './toneConsensus';
@@ -203,6 +203,7 @@ export async function runFullScan(
     // identified ArUco codes. Each alignment is verified after warping.
     const arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
     const arucoMidpointPrediction=predictMidpointsFromArucos(arucoAdaptive);
+    const arucoCornerPrediction=predictCornersFromArucos(arucoAdaptive);
     logger.info('markerDetection','ArUco 4x4 marker identification (adaptive)',{
       identified:arucoAdaptive.count,ids:Object.keys(arucoAdaptive.points),
       readyForRescue:arucoAdaptive.found});
@@ -244,6 +245,31 @@ export async function runFullScan(
       // Independent thresholding can recover a different set of marker
       // centres. Evaluate both, even if adaptive ArUco detection succeeded.
       if(arucoOtsu.found)hypotheses.push({kind:'aruco',name:'aruco/Otsu',markers:arucoOtsu});
+      // Additional independent corner candidate after ordinary detection:
+      // estimate where actual corner squares should lie using ArUco IDs, then
+      // locate nearby contours. The estimate itself is never a registration.
+      if(arucoCornerPrediction){
+        const guidedCorner=detectMarkers(
+          preprocessed.thresholded,loaded.width,loaded.height,arucoCornerPrediction);
+        if(guidedCorner.found){
+          const prior=primary;
+          const changed=!prior.found || (
+            Math.hypot(guidedCorner.topLeft!.x-prior.topLeft!.x,
+              guidedCorner.topLeft!.y-prior.topLeft!.y)>4 ||
+            Math.hypot(guidedCorner.topRight!.x-prior.topRight!.x,
+              guidedCorner.topRight!.y-prior.topRight!.y)>4 ||
+            Math.hypot(guidedCorner.bottomLeft!.x-prior.bottomLeft!.x,
+              guidedCorner.bottomLeft!.y-prior.bottomLeft!.y)>4 ||
+            Math.hypot(guidedCorner.bottomRight!.x-prior.bottomRight!.x,
+              guidedCorner.bottomRight!.y-prior.bottomRight!.y)>4);
+          if(changed)hypotheses.push({
+            kind:'corner',name:'corner/aruco-guided',markers:guidedCorner});
+          logger.info('markerDetection','ArUco-guided corner contour cross-check',{
+            distinct:changed,corners:guidedCorner,estimated:arucoCornerPrediction});
+        }else logger.info('markerDetection','ArUco-guided corner contours unavailable',
+          {estimated:arucoCornerPrediction});
+      }
+
     } finally {
       cleanupMats(alternate);
     }
