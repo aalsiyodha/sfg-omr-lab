@@ -1532,7 +1532,7 @@ test('registration fallback: ArUco corner estimates correspond to physical corne
 test('registration fallback: guided anchors still require QR and timing verification', () => {
   const src=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
   assert.ok(src.includes("name:'corner/aruco-guided'"));
-  assert.ok(src.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi)'));
+  assert.ok(src.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi,captureFailure)'));
   assert.ok(src.includes('verifyTimingMarks(gray, dpi)'));
 });
 
@@ -1573,7 +1573,7 @@ test('v2.3.2: identical registration coordinates are skipped, without weakening 
   const source=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
   assert.ok(source.includes('attemptedGeometry.has(signature)'));
   assert.ok(source.includes('skipped identical-geometry recheck'));
-  assert.ok(source.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi)'));
+  assert.ok(source.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi,captureFailure)'));
   assert.ok(source.includes('verifyTimingMarks(gray, dpi)'));
 });
 
