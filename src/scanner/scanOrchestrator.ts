@@ -8,6 +8,7 @@ import { verifyTimingMarks } from './alignmentValidator';
 import { canStopRegistrationSearch } from './litePolicy';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
+import { correctMildPageWarp, countHeldOutTimingMarks } from './mildCurveCorrection';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
 import { detectArucoMarkers, predictMidpointsFromArucos, generateArucoOverlay } from './arucoDetector';
@@ -61,7 +62,8 @@ function disposeAlignment(alignment: AcceptedAlignment): void {
 function evaluateHypothesis(
   source: HTMLCanvasElement,
   hypothesis: Hypothesis,
-  dpi: number
+  dpi: number,
+  curveBudget: { remaining: number }
 ): AcceptedAlignment | null {
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
@@ -155,6 +157,63 @@ function evaluateHypothesis(
           logger.warning('perspective','Timing-assisted correction failed',{reason:String(error)});
         }finally{
           cleanupMats(updatedGray,rescued.transform);
+        }
+      }
+    }
+    // Only one lightweight curvature trial per scan. An already verified
+    // clean sheet never pays for this fallback. No change to acceptance rules.
+    if (!check.passed && check.matched >= 12 &&
+        check.leftMatched >= 5 && check.rightMatched >= 5 &&
+        curveBudget.remaining > 0) {
+      curveBudget.remaining--;
+      logger.info('perspective',`${hypothesis.name}: Lite gentle-curve trial`,{
+        timingBefore:check.matched, left:check.leftMatched, right:check.rightMatched,
+        trialsRemaining:curveBudget.remaining});
+      const mesh = correctMildPageWarp(persp.corrected, dpi);
+      if (!mesh) {
+        logger.info('perspective',`${hypothesis.name}: gentle-curve control points insufficient or implausible`);
+      } else {
+        let meshGray:any=null;
+        let adopted=false;
+        try {
+          const candidate=document.createElement('canvas');
+          candidate.width=mesh.corrected.cols;
+          candidate.height=mesh.corrected.rows;
+          cv.imshow(candidate,mesh.corrected);
+          const meshQR=decodeQRFromRegion(candidate,OMR_LAYOUT.qr.xMm,
+            OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+          if(meshQR.valid && meshQR.raw===qr.raw){
+            meshGray=new cv.Mat();
+            cv.cvtColor(mesh.corrected,meshGray,cv.COLOR_RGBA2GRAY);
+            const after=verifyTimingMarks(meshGray,dpi);
+            const holdout=countHeldOutTimingMarks(meshGray,dpi);
+            logger.info('perspective',`${hypothesis.name}: Lite gentle-curve validation`,{
+              before:check.matched,after:after.matched,
+              left:after.leftMatched,right:after.rightMatched,
+              withheldEvenRows:holdout,
+              controls:mesh.evidence.sampled,
+              maxShiftPx:mesh.evidence.maxAbsShiftPx,
+              qrIdentityUnchanged:true});
+            if(after.passed && after.matched>check.matched &&
+               holdout.left>=8 && holdout.right>=8){
+              const correctedUrl=candidate.toDataURL('image/png');
+              cv.imshow(canvas,mesh.corrected);
+              cleanupMats(gray,persp.corrected);
+              persp.corrected=mesh.corrected;
+              persp.correctedDataUrl=correctedUrl;
+              gray=meshGray;meshGray=null;
+              qr=meshQR;check=after;adopted=true;
+            }
+          }else{
+            logger.info('qrDecoding',`${hypothesis.name}: Lite gentle-curve rejected by QR`,{
+              found:meshQR.found,valid:meshQR.valid});
+          }
+        }catch(error){
+          logger.warning('perspective','Lite gentle-curve attempt failed',{
+            reason:String(error)});
+        }finally{
+          if(!adopted)cleanupMats(mesh.corrected);
+          cleanupMats(meshGray);
         }
       }
     }
@@ -258,6 +317,7 @@ export async function runFullScan(
       : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
+    const curveBudget={remaining:1};
     for (const hypothesis of hypotheses) {
       logger.info('markerDetection', `${hypothesis.name}: candidate coordinates`,
         hypothesis.kind === 'corner'
@@ -273,7 +333,7 @@ export async function runFullScan(
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
-      const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi);
+      const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi, curveBudget);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
@@ -323,7 +383,7 @@ export async function runFullScan(
         const hypothesis:Hypothesis={
           kind:'midpoint',name:'midpoint/alternate-'+side,markers:alternateMid
         };
-        const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi);
+        const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
         if(!attempt)continue;
         const score=registrationScore({kind:'midpoint',
           timingMatched:attempt.check.matched,
