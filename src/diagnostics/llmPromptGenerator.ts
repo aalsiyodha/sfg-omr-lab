@@ -21,7 +21,7 @@ export function generateLLMDiagnosticPrompt({
   scanResult, file, activeTestId, answerKey,
 }: LLMReportOptions): string {
   const lines: string[] = [
-    '# SFG OMR LAB — full scan diagnostic',
+    '# SFG OMR LAB — 2.2.6 OLD VERSION RETEST diagnostic',
     getBuildIdentity(),
     'Generated=' + new Date().toISOString(),
     'File=' + (file?.name ?? 'camera/unknown') +
