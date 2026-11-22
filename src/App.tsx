@@ -72,7 +72,7 @@ export default function App() {
             <div className="collapse navbar-collapse" id="navbarNav">
               <ul className="navbar-nav ms-auto align-items-md-center gap-1">
                 {[
-                  ['/', 'Overview'], ['/practice', 'Practice'], ['/results', 'Results'], ['/diagnostics', 'Advanced'],
+                  ['/', 'Home'], ['/practice', 'Practice'], ['/results', 'Results'], ['/diagnostics', 'Diagnostics'],
                 ].map(([to,label])=>(
                   <li className="nav-item" key={to}>
                     <NavLink to={to} end={to==='/'} className={({isActive})=>`nav-link product-nav-link ${isActive?'active':''}`}>{label}</NavLink>
