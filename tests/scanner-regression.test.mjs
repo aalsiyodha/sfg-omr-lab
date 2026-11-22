@@ -1509,3 +1509,43 @@ test('LITE: hatch evidence is reused after the initial per-bubble measurement', 
   assert.match(source, /hatchLike: top\.measurement\.hatchLike === true/);
   assert.match(source, /const hatch = preRescueHatch/);
 });
+
+test('Lite 2.2.6 retest: bounded correction is a single fail-only trial with strict gates',()=>{
+  const source=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  const mesh=readFileSync('src/scanner/mildCurveCorrection.ts','utf8');
+  assert.ok(source.includes('const curveBudget={remaining:1}'));
+  assert.ok(source.includes('!check.passed && check.matched >= 12'));
+  assert.ok(source.includes('meshQR.valid && meshQR.raw===qr.raw'));
+  assert.ok(source.includes('after.passed && after.matched>check.matched'));
+  assert.ok(source.includes('holdout.left>=8 && holdout.right>=8'));
+  assert.ok(mesh.includes('if(!isPlausibleDrift(controls.left'));
+  assert.ok(source.includes("if (!check.passed)"));
+});
+
+test('Lite 2.2.6 retest: curved-page control interpolation remains bounded and smooth',()=>{
+  const mesh=loadTS('src/scanner/mildCurveCorrection.ts',{
+    '../config/omrLayout': { OMR_LAYOUT:{answers:{rowStartY:83,rowSpacingY:7.4,questionsPerCol:25}},
+      mmToPx:n=>n },
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>128}
+  });
+  const control=[{row:0,dx:-2,dy:1},{row:12,dx:4,dy:3},{row:24,dx:8,dy:5}];
+  assert.deepEqual(mesh.smoothDrift(control,6),{dx:1,dy:2});
+  assert.deepEqual(mesh.smoothDrift(control,18),{dx:6,dy:4});
+  assert.equal(mesh.isPlausibleDrift(control,10,7),false); // only 3 controls
+});
+
+test('Lite 2.2.6 retest: withheld timing validation samples only even-numbered rows',()=>{
+  const mesh=loadTS('src/scanner/mildCurveCorrection.ts',{
+    '../config/omrLayout': { OMR_LAYOUT:{answers:{rowStartY:30,rowSpacingY:8,questionsPerCol:25}},
+      mmToPx:n=>n },
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>128}
+  });
+  const w=220,h=240,data=new Uint8Array(w*h).fill(255);
+  for(let i=1;i<25;i+=2){
+    const y=Math.round(30+i*8);
+    for(const x of [13,197])for(let dy=-1;dy<=1;dy++)
+      for(let dx=-1;dx<=1;dx++)data[(y+dy)*w+x+dx]=0;
+  }
+  const result=mesh.countHeldOutTimingMarks({cols:w,rows:h,data},150);
+  assert.deepEqual(result,{left:12,right:12});
+});
