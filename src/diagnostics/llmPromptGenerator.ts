@@ -128,13 +128,18 @@ export function generateLLMDiagnosticPrompt({
   lines.push('Registration acceptance remains fail-closed: QR identity and independent left/right timing evidence required.');
   lines.push('Do not interpret exploratory timing offsets as verified bubble alignment.');
   lines.push('Diagnostic report cannot substitute for inspecting the actual photograph and marker overlay.');
+  const residuals=registrationLogs.filter(l=>l.message.includes('Independent midpoint vs ArUco-predicted marker residuals'));
+  for(const entry of residuals)lines.push('Marker-consensus residuals (px)='+JSON.stringify(entry.data??{}));
+  const failure=registrationLogs.filter(l=>l.message.includes('Best rejected QR-verified timing evidence'));
+  for(const entry of failure)lines.push('Best failed warp evidence='+JSON.stringify(entry.data??{}));
+  lines.push('For failed scans, export Reference markers and Timing mismatch overlays separately; the text report does not embed photographs.');
 
   // Preserve per-scan logs, but remove noisy successful stage messages.
   // Never omit warnings/errors: those often explain a rejected registration.
   const logs = scanResult.stageLogs ?? [];
   const significant = logs.filter(l =>
     l.level==='ERROR' || l.level==='WARNING' ||
-    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|shared-shift|qr could not/i.test(l.message));
+    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|shared-shift|qr could not|residuals/i.test(l.message));
   lines.push('Important stage logs ('+significant.length+'/'+logs.length+'; repeated structured data summarized above):');
   if (!significant.length) lines.push('None.');
   const redact=(s:string)=>s
