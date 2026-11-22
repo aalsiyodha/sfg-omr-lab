@@ -1532,7 +1532,7 @@ test('registration fallback: ArUco corner estimates correspond to physical corne
 test('registration fallback: guided anchors still require QR and timing verification', () => {
   const src=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
   assert.ok(src.includes("name:'corner/aruco-guided'"));
-  assert.ok(src.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi)'));
+  assert.ok(src.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi,captureFailure)'));
   assert.ok(src.includes('verifyTimingMarks(gray, dpi)'));
 });
 
@@ -1573,7 +1573,7 @@ test('v2.3.2: identical registration coordinates are skipped, without weakening 
   const source=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
   assert.ok(source.includes('attemptedGeometry.has(signature)'));
   assert.ok(source.includes('skipped identical-geometry recheck'));
-  assert.ok(source.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi)'));
+  assert.ok(source.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi,captureFailure)'));
   assert.ok(source.includes('verifyTimingMarks(gray, dpi)'));
 });
 
@@ -1604,4 +1604,26 @@ test('v2.3.2 optimization: contiguous grayscale and pointer probes agree', () =>
   const direct={...pointer,data,step:140};
   assert.deepEqual(d.diagnoseTimingLattice(direct,150),
     d.diagnoseTimingLattice(pointer,150));
+});
+
+test('v2.3.22: rejected registrations preserve visual evidence without scoring', () => {
+  const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  const overlay=readFileSync('src/scanner/registrationEvidenceOverlay.ts','utf8');
+  const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(scanner.includes('if(!selected){'));
+  assert.ok(scanner.includes('drawRegistrationCandidateOverlay('));
+  assert.ok(scanner.includes('images.timingFailureOverlay=drawTimingFailureOverlay('));
+  assert.ok(scanner.includes('if(!e.qrVerified || e.matched<=bestFailureScore)return;'));
+  assert.ok(overlay.includes('NOT ACCEPTED'));
+  assert.ok(page.includes("activeTab === 'timing'"));
+  assert.ok(page.includes('downloadFailureOverlay'));
+  assert.ok(scanner.includes("if (!check.passed)"));
+});
+test('v2.3.22: visual timing evidence maps to template timing coordinates', () => {
+  const overlay=readFileSync('src/scanner/registrationEvidenceOverlay.ts','utf8');
+  const verifier=readFileSync('src/scanner/alignmentValidator.ts','utf8');
+  for(const expected of ["13.3","196.7","rowStartY","rowSpacingY"]){
+    assert.ok(overlay.includes(expected));
+    assert.ok(verifier.includes(expected));
+  }
 });

@@ -136,6 +136,8 @@ export interface IntermediateImages {
   grayscale?: string;
   thresholded?: string;
   markerOverlay?: string;
+  /** Best QR-verified but timing-rejected warp, marked with expected timing positions. */
+  timingFailureOverlay?: string;
   perspectiveCorrected?: string;
   bubbleOverlay?: string;
 }

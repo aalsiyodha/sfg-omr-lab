@@ -11,7 +11,7 @@ import { needsReview, filterReviewAnswers, countRejectedBlankMarks } from '../re
 interface Props { appState: AppState; }
 
 type InputMode = 'none' | 'upload' | 'camera';
-type ResultViewTab = 'overlay' | 'markers' | 'table' | 'llm';
+type ResultViewTab = 'overlay' | 'markers' | 'timing' | 'table' | 'llm';
 
 export default function ScanPage({ appState }: Props) {
   const { scanning, practice, opencv } = appState;
@@ -179,6 +179,14 @@ export default function ScanPage({ appState }: Props) {
     link.download=base+'-full-diagnostic.txt';
     document.body.appendChild(link);link.click();link.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadFailureOverlay = () => {
+    if (!intermediateImages.timingFailureOverlay) return;
+    const link=document.createElement('a');
+    link.href=intermediateImages.timingFailureOverlay;
+    link.download='sfg-omr-failed-timing-evidence.png';
+    document.body.appendChild(link);link.click();link.remove();
   };
 
   const downloadOverlay = () => {
@@ -443,6 +451,9 @@ export default function ScanPage({ appState }: Props) {
                 <i className="bi bi-file-earmark-text me-1"/>Save full report (.txt)
               </button>
             </div>
+            {intermediateImages.timingFailureOverlay && <button className="btn btn-sm btn-outline-primary" onClick={downloadFailureOverlay}>
+              <i className="bi bi-download me-1"/>Save timing evidence
+            </button>}
             <button className="btn btn-sm btn-outline-primary" onClick={downloadOverlay} disabled={!intermediateImages.bubbleOverlay}>
               <i className="bi bi-download me-1"/>Save overlay
             </button>
@@ -467,6 +478,7 @@ export default function ScanPage({ appState }: Props) {
                 ? 'Registration did not verify. Save the full diagnostic and retry with the same original photo or a new capture; no answers were scored.'
                 : 'Green = detected · Red = multiple · Yellow = unclear · Grey = blank. Confirm against the photograph.'}</p>
             </div>
+            {scanResult.overallStatus === 'failed' && intermediateImages.timingFailureOverlay && <button className="btn btn-sm btn-outline-danger" onClick={() => setActiveTab('timing')}>Inspect timing mismatch</button>}
             {scanResult.overallStatus !== 'failed' && <button className="btn btn-sm btn-outline-primary" onClick={() => setActiveTab('table')}>Review answers</button>}
           </div>
 
@@ -541,6 +553,12 @@ export default function ScanPage({ appState }: Props) {
                     <i className="bi bi-clipboard-check me-1" />Review answers {reviewCount > 0 && <span className="review-nav-count">{reviewCount}</span>}
                   </button>
                 </li>
+                {intermediateImages.timingFailureOverlay && <li className="nav-item">
+                  <button className={`nav-link py-1 px-3 ${activeTab === 'timing' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('timing')}>
+                    <i className="bi bi-grid-3x3 me-1"/>Timing mismatch
+                  </button>
+                </li>}
                 <li className="nav-item ms-auto">
                   <button
                     className={`nav-link py-1 px-3 ${activeTab === 'llm' ? 'active' : ''}`}
@@ -588,6 +606,15 @@ export default function ScanPage({ appState }: Props) {
                   ) : (
                     <div className="alert alert-secondary small mb-0">Marker overlay not available.</div>
                   )}
+                </div>
+              )}
+
+              {activeTab === 'timing' && (
+                <div className="text-center">
+                  <p className="small text-muted mb-2">Best rejected perspective candidate. Green circles match the expected timing positions; red crosses are misses. This image is NOT accepted for answer scoring.</p>
+                  {intermediateImages.timingFailureOverlay ? <img className="img-fluid border rounded" style={{maxHeight:650}}
+                    alt="Unverified warped answer sheet showing timing-row matches and misses"
+                    src={intermediateImages.timingFailureOverlay}/> : <p>No timing evidence image available.</p>}
                 </div>
               )}
 
