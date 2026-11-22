@@ -5,6 +5,7 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
+import { diagnoseTimingLattice } from './timingDiagnostics';
 import { canStopRegistrationSearch } from './registrationFastPath';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
@@ -72,7 +73,11 @@ function evaluateHypothesis(
       : hypothesis.kind === 'midpoint'
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
       : correctPerspectiveFromArucos(source,hypothesis.markers);
-    if (!persp.success || !persp.corrected) return null;
+    if (!persp.success || !persp.corrected) {
+      logger.warning('perspective',`${hypothesis.name}: homography unavailable`,
+        {reason:persp.error ?? 'Perspective correction failed'});
+      return null;
+    }
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
     canvas.height = persp.corrected.rows;
@@ -96,7 +101,10 @@ function evaluateHypothesis(
       }
     }
     if (!qr.valid) {
-      logger.warning('qrDecoding', `${hypothesis.name}: QR missing from both expected corners`);
+      logger.warning('qrDecoding', `${hypothesis.name}: QR could not be verified after warp`,
+        {upright:{found:qr.found,valid:qr.valid,
+          reason:qr.found?'identity-or-prefix-invalid':'not-detected'},
+          rotated180Checked:true,warp:{width:canvas.width,height:canvas.height}});
       return null;
     }
 
@@ -105,6 +113,76 @@ function evaluateHypothesis(
     let check = verifyTimingMarks(gray, dpi);
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
+    if (check.matched < 50) {
+      try {
+        const profile=diagnoseTimingLattice(gray,dpi);
+        logger.info('perspective',
+          `${hypothesis.name}: independent timing lattice row evidence`,{
+            matched:profile.matches,
+            matchedRows:{left:profile.left,right:profile.right},
+            missingRows:{left:profile.unmatchedLeft,right:profile.unmatchedRight},
+            bestSharedTranslationPx:profile.bestShiftPx,
+            image:profile.imageSize,
+            threshold:profile.threshold,
+            note:'Exploratory shift score only; QR and timing must still reverify',
+          });
+        // Only attempt a bounded global correction when *both* independent
+        // timing bands show a substantial improvement. Never use an
+        // exploratory timing score as acceptance evidence.
+        const shift=profile.bestShiftPx;
+        if (!check.passed && shift.matches >= 35 &&
+            shift.leftMatched >= 10 && shift.rightMatched >= 10 &&
+            shift.matches >= check.matched+8 &&
+            (shift.dx!==0 || shift.dy!==0)) {
+          let affine:any=null,translated:any=null,shiftGray:any=null;
+          try {
+            affine=cv.matFromArray(2,3,cv.CV_64F,
+              [1,0,-shift.dx,0,1,-shift.dy]);
+            translated=new cv.Mat();
+            cv.warpAffine(persp.corrected,translated,affine,
+              new cv.Size(persp.corrected.cols,persp.corrected.rows));
+            const shiftedCanvas=document.createElement('canvas');
+            shiftedCanvas.width=translated.cols;shiftedCanvas.height=translated.rows;
+            cv.imshow(shiftedCanvas,translated);
+            const shiftedQR=decodeQRFromRegion(shiftedCanvas,
+              OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+            if(shiftedQR.valid && shiftedQR.raw===qr.raw){
+              shiftGray=new cv.Mat();
+              cv.cvtColor(translated,shiftGray,cv.COLOR_RGBA2GRAY);
+              const shiftedCheck=verifyTimingMarks(shiftGray,dpi);
+              logger.info('perspective',
+                `${hypothesis.name}: verified shared-shift fallback`,{
+                  dx:shift.dx,dy:shift.dy,
+                  before:check.matched,after:shiftedCheck.matched,
+                  left:shiftedCheck.leftMatched,right:shiftedCheck.rightMatched,
+                  sameQR:true});
+              if(shouldAdoptTimingRefinement(check,shiftedCheck)){
+                cleanupMats(gray,persp.corrected);
+                persp.corrected=translated;translated=null;
+                gray=shiftGray;shiftGray=null;
+                persp.correctedDataUrl=shiftedCanvas.toDataURL('image/png');
+                cv.imshow(canvas,persp.corrected);
+                check=shiftedCheck;
+              }
+            }else logger.info('perspective',
+              `${hypothesis.name}: shared-shift fallback rejected by QR`,{
+                dx:shift.dx,dy:shift.dy,found:shiftedQR.found,
+                valid:shiftedQR.valid});
+          }catch(error){
+            logger.warning('perspective',
+              `${hypothesis.name}: shared-shift fallback unavailable`,
+              {reason:String(error)});
+          }finally{
+            cleanupMats(affine,translated,shiftGray);
+          }
+        }
+
+      } catch (error) {
+        logger.warning('perspective',
+          `${hypothesis.name}: timing profile unavailable`,{reason:String(error)});
+      }
+    }
+
     // Even a QR-valid ArUco candidate with 45–49 matched timing marks may
     // have measurable warp drift in the distant right column. Recheck with
     // four extreme printed timing squares, but only adopt a strictly better
@@ -143,9 +221,16 @@ function evaluateHypothesis(
               check=updatedCheck;
               qr=verifiedQR;
               // The original first-stage transform remains owned by persp.
-            }else cleanupMats(rescued.corrected);
+            }else {
+              logger.info('perspective',`${hypothesis.name}: timing refinement not adopted`,
+                {before:check.matched,after:updatedCheck.matched,
+                  left:updatedCheck.leftMatched,right:updatedCheck.rightMatched});
+              cleanupMats(rescued.corrected);
+            }
           }else{
-            logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`);
+            logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`,
+              {found:verifiedQR.found,valid:verifiedQR.valid,
+                reason:verifiedQR.found?'identity-or-prefix-invalid':'not-detected'});
             cleanupMats(rescued.corrected);
           }
         }catch(error){

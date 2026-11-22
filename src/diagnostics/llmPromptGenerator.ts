@@ -99,12 +99,42 @@ export function generateLLMDiagnosticPrompt({
       (q.policyRejectedBlank?' policyRejectedBlank=true':'')+': '+parts.join(' ; '));
   }
 
+  // A failed scan has zero answer measurements, so registration evidence
+  // must be front-and-centre rather than hidden among pipeline stage logs.
+  const registrationLogs = scanResult.stageLogs ?? [];
+  lines.push('Registration investigation (v2.3.2):');
+  lines.push('Final QR=' + (scanResult.qrValid ? 'verified' : 'unverified') +
+    ' | A final unverified QR does not mean every hypothesis failed QR decoding.');
+  const input=registrationLogs.find(l=>l.message.startsWith('Image loaded:'));
+  if (input) lines.push('Normalized input=' + input.message);
+  const candidates=registrationLogs.filter(l=>
+    l.message.includes('reference hypotheses available'));
+  for(const item of candidates)
+    lines.push('Candidate families=' + (item.data ? JSON.stringify(item.data) : item.message));
+  const rowProfiles=registrationLogs.filter(l=>
+    l.message.includes('independent timing lattice row evidence'));
+  if(rowProfiles.length){
+    lines.push('Per-hypothesis timing row evidence (rows numbered 1-25):');
+    for(const item of rowProfiles)
+      lines.push(item.message + (item.data ? ' ' + JSON.stringify(item.data) : ''));
+  }else lines.push('Per-row timing profiles=none (candidate may have failed QR before timing checks).');
+  const recovery=registrationLogs.filter(l=>
+    /shared-shift fallback|timing refinement|QR could not be verified/i.test(l.message));
+  if(recovery.length){
+    lines.push('Recovery attempts and QR rejection reasons:');
+    for(const item of recovery)
+      lines.push(item.message + (item.data ? ' ' + JSON.stringify(item.data) : ''));
+  }
+  lines.push('Registration acceptance remains fail-closed: QR identity and independent left/right timing evidence required.');
+  lines.push('Do not interpret exploratory timing offsets as verified bubble alignment.');
+  lines.push('Diagnostic report cannot substitute for inspecting the actual photograph and marker overlay.');
+
   // Preserve per-scan logs, but remove noisy successful stage messages.
   // Never omit warnings/errors: those often explain a rejected registration.
   const logs = scanResult.stageLogs ?? [];
   const significant = logs.filter(l =>
     l.level==='ERROR' || l.level==='WARNING' ||
-    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate/i.test(l.message));
+    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|shared-shift|qr could not/i.test(l.message));
   lines.push('Important stage logs ('+significant.length+'/'+logs.length+'):');
   if (!significant.length) lines.push('None.');
   const redact=(s:string)=>s
