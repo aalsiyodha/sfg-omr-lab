@@ -135,7 +135,7 @@ export function generateLLMDiagnosticPrompt({
   const significant = logs.filter(l =>
     l.level==='ERROR' || l.level==='WARNING' ||
     /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|shared-shift|qr could not/i.test(l.message));
-  lines.push('Important stage logs ('+significant.length+'/'+logs.length+'):');
+  lines.push('Important stage logs ('+significant.length+'/'+logs.length+'; repeated structured data summarized above):');
   if (!significant.length) lines.push('None.');
   const redact=(s:string)=>s
     .replace(/SFGOMR1:[^\s"'|,}]+/gi,'[REDACTED_QR]')

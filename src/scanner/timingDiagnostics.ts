@@ -20,6 +20,10 @@ export const timingRows = (count=25): number[] => Array.from({length:count},(_,i
 export function timingMatchAtShift(gray:any,dpi:number,threshold:number,dx:number,dy:number){
   const r=Math.max(1,Math.round(mmToPx(.35,dpi)));
   const rows=OMR_LAYOUT.answers.questionsPerCol;
+  // Fast contiguous grayscale access; retain ucharPtr for test doubles.
+  const pixels:Uint8Array|undefined=gray.data;
+  const stride=typeof gray.step==='number'?gray.step:gray.cols;
+  const pixel=(y:number,x:number)=>pixels?pixels[y*stride+x]:gray.ucharPtr(y,x)[0];
   const matched={left:[] as number[],right:[] as number[]};
   for(let i=0;i<rows;i++){
     const y=Math.round(mmToPx(OMR_LAYOUT.answers.rowStartY+
@@ -30,7 +34,7 @@ export function timingMatchAtShift(gray:any,dpi:number,threshold:number,dx:numbe
       let dark=0,samples=0;
       for(let yy=-r;yy<=r;yy++)for(let xx=-r;xx<=r;xx++){
         samples++;
-        if(gray.ucharPtr(y+yy,x+xx)[0]<threshold)dark++;
+        if(pixel(y+yy,x+xx)<threshold)dark++;
       }
       if(dark/samples>=.4)matched[side].push(i+1);
     }

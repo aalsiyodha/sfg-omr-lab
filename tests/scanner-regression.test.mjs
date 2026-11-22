@@ -1586,3 +1586,22 @@ test('v2.3.2: diagnostics separate compact failure triage from complete evidence
   assert.ok(ui.includes('Save full report (.txt)'));
   assert.ok(ui.includes('exam-scan-header'));
 });
+
+test('v2.3.2 optimization: contiguous grayscale and pointer probes agree', () => {
+  const d=loadTS('src/scanner/timingDiagnostics.ts',{
+    '../config/omrLayout': {
+      mmToPx:n=>n>190?n-100:n,
+      OMR_LAYOUT:{answers:{questionsPerCol:3,rowStartY:20,rowSpacingY:10}}
+    },
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>100}
+  });
+  const data=new Uint8Array(140*100).fill(255);
+  for(const y of [20,30,40])for(const x of [13,97]){
+    for(let yy=-2;yy<=2;yy++)for(let xx=-2;xx<=2;xx++)
+      data[(y+3+yy)*140+x+2+xx]=0;
+  }
+  const pointer={cols:140,rows:100,ucharPtr:(y,x)=>[data[y*140+x]]};
+  const direct={...pointer,data,step:140};
+  assert.deepEqual(d.diagnoseTimingLattice(direct,150),
+    d.diagnoseTimingLattice(pointer,150));
+});

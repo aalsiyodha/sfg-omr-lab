@@ -113,7 +113,8 @@ function evaluateHypothesis(
     let check = verifyTimingMarks(gray, dpi);
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
-    if (check.matched < 50) {
+    // No expensive exploratory sweep when independent alignment already passes.
+    if (!check.passed) {
       try {
         const profile=diagnoseTimingLattice(gray,dpi);
         logger.info('perspective',
