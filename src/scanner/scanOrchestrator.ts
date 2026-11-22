@@ -6,6 +6,7 @@ import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetect
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import { diagnoseTimingLattice } from './timingDiagnostics';
+import { drawRegistrationCandidateOverlay, drawTimingFailureOverlay } from './registrationEvidenceOverlay';
 import { canStopRegistrationSearch } from './registrationFastPath';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
@@ -62,7 +63,8 @@ function disposeAlignment(alignment: AcceptedAlignment): void {
 function evaluateHypothesis(
   source: HTMLCanvasElement,
   hypothesis: Hypothesis,
-  dpi: number
+  dpi: number,
+  captureFailure?: (candidate: {name:string; matched:number; left:number; right:number; canvas:HTMLCanvasElement; profile:ReturnType<typeof diagnoseTimingLattice>; qrVerified:boolean})=>void
 ): AcceptedAlignment | null {
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
@@ -117,6 +119,9 @@ function evaluateHypothesis(
     if (!check.passed) {
       try {
         const profile=diagnoseTimingLattice(gray,dpi);
+        captureFailure?.({name:hypothesis.name,matched:check.matched,
+          left:check.leftMatched,right:check.rightMatched,
+          canvas,profile,qrVerified:qr.valid});
         logger.info('perspective',
           `${hypothesis.name}: independent timing lattice row evidence`,{
             matched:profile.matches,
@@ -360,6 +365,17 @@ export async function runFullScan(
       cleanupMats(alternate);
     }
 
+    if(arucoMidpointPrediction){
+      const delta=(p:{x:number;y:number}|null|undefined,q:{x:number;y:number}|null|undefined)=>
+        p&&q?Math.round(Math.hypot(p.x-q.x,p.y-q.y)*10)/10:null;
+      logger.info('markerDetection','Independent midpoint vs ArUco-predicted marker residuals (input pixels)',{
+        adaptive:{top:delta(mid.top,arucoMidpointPrediction.top),
+          bottom:delta(mid.bottom,arucoMidpointPrediction.bottom),
+          left:delta(mid.left,arucoMidpointPrediction.left),
+          right:delta(mid.right,arucoMidpointPrediction.right)},
+        note:'Large residuals suggest a wrong midpoint candidate; not an alignment acceptance test'
+      });
+    }
     logger.info('markerDetection', `${hypotheses.length} reference hypotheses available`,
       { cornerCandidates: hypotheses.filter(h => h.kind === 'corner').length,
         midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length,
@@ -370,6 +386,14 @@ export async function runFullScan(
       : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
+    let bestFailureScore=-1;
+    let bestFailureMethod='none';
+    const captureFailure=(e:{name:string;matched:number;left:number;right:number;canvas:HTMLCanvasElement;profile:ReturnType<typeof diagnoseTimingLattice>;qrVerified:boolean})=>{
+      // Evidence is a visual overlay only. Never treat this as an accepted scan.
+      if(!e.qrVerified || e.matched<=bestFailureScore)return;
+      bestFailureScore=e.matched;bestFailureMethod=e.name;
+      images.timingFailureOverlay=drawTimingFailureOverlay(e.canvas,e.profile,e.name,dpi,true);
+    };
     // Exact-coordinate deduplication: two detection methods can return the
     // same physical anchors. Re-warping identical coordinates cannot reveal
     // new evidence; retain the first attempt and log the skipped duplicate.
@@ -413,7 +437,7 @@ export async function runFullScan(
         continue;
       }
       attemptedGeometry.add(signature);
-      const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi);
+      const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi,captureFailure);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
@@ -463,7 +487,7 @@ export async function runFullScan(
         const hypothesis:Hypothesis={
           kind:'midpoint',name:'midpoint/alternate-'+side,markers:alternateMid
         };
-        const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi);
+        const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi,captureFailure);
         if(!attempt)continue;
         const score=registrationScore({kind:'midpoint',
           timingMatched:attempt.check.matched,
@@ -481,6 +505,17 @@ export async function runFullScan(
         }else disposeAlignment(attempt);
         if(selected?.check.matched===50)break;
       }
+    }
+
+    if(!selected){
+      images.markerOverlay=drawRegistrationCandidateOverlay(
+        loaded.canvas,hypotheses,arucoAdaptive);
+      logger.info('perspective','Best rejected QR-verified timing evidence',{
+        candidate:bestFailureMethod,
+        matched:bestFailureScore<0?0:bestFailureScore,
+        visualOverlayAvailable:Boolean(images.timingFailureOverlay),
+        noAnswersRead:true,
+      });
     }
 
     let answers: QuestionResult[] = [];
