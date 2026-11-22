@@ -1420,10 +1420,10 @@ test('mobile UX: theme toggle stays outside collapsed navigation and persists se
 });
 test('onboarding UX: printable sheet and photo guidance remain clear',()=>{
   const home=readFileSync('src/pages/HomePage.tsx','utf8');
-  assert.ok(home.includes("Get printable OMR 2.1"));
-  assert.ok(home.includes("print at 100%") || home.includes("print on A4 at Actual Size (100%)"));
-  assert.ok(home.includes("Keep the entire page visible"));
-  assert.ok(home.includes("Shade bubbles completely"));
+  assert.ok(home.includes("Download OMR 2.1"));
+  assert.ok(home.includes("actual size (100%)"));
+  assert.ok(home.includes("Photograph the entire sheet"));
+  assert.ok(home.includes("Completely fill the Test ID and answer bubbles"));
 });
 
 test('reports identify exact Vercel or local build, not just release version',()=>{
