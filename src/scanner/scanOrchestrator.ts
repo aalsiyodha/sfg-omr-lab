@@ -102,7 +102,8 @@ function evaluateHypothesis(
     }
     if (!qr.valid) {
       logger.warning('qrDecoding', `${hypothesis.name}: QR could not be verified after warp`,
-        {upright:{found:qr.found,valid:qr.valid,error:qr.error},
+        {upright:{found:qr.found,valid:qr.valid,
+          reason:qr.found?'identity-or-prefix-invalid':'not-detected'},
           rotated180Checked:true,warp:{width:canvas.width,height:canvas.height}});
       return null;
     }
@@ -229,7 +230,7 @@ function evaluateHypothesis(
           }else{
             logger.warning('qrDecoding',`${hypothesis.name}: timing refinement failed QR recheck`,
               {found:verifiedQR.found,valid:verifiedQR.valid,
-                reason:verifiedQR.error ?? 'QR identity changed or moved'});
+                reason:verifiedQR.found?'identity-or-prefix-invalid':'not-detected'});
             cleanupMats(rescued.corrected);
           }
         }catch(error){
