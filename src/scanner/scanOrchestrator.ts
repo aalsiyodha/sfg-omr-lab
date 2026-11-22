@@ -10,6 +10,9 @@ import { drawRegistrationCandidateOverlay, drawTimingFailureOverlay } from './re
 import { canStopRegistrationSearch } from './registrationFastPath';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
+import { correctPerspectiveConsensus } from './consensusRegistration';
+import { correctMildPageWarp } from './mildCurveCorrection';
+import { timingMatchAtShift } from './timingDiagnostics';
 import type { AlignmentCheck } from './alignmentValidator';
 import { correctPerspective, correctPerspectiveFromMidpoints, correctPerspectiveFromArucos } from './perspectiveCorrection';
 import { detectArucoMarkers, predictMidpointsFromArucos, predictCornersFromArucos, generateArucoOverlay } from './arucoDetector';
@@ -64,17 +67,18 @@ function evaluateHypothesis(
   source: HTMLCanvasElement,
   hypothesis: Hypothesis,
   dpi: number,
-  captureFailure?: (candidate: {name:string; matched:number; left:number; right:number; canvas:HTMLCanvasElement; profile:ReturnType<typeof diagnoseTimingLattice>; qrVerified:boolean})=>void
+  captureFailure?: (candidate: {name:string; matched:number; left:number; right:number; canvas:HTMLCanvasElement; profile:ReturnType<typeof diagnoseTimingLattice>; qrVerified:boolean})=>void,
+  preparedPerspective?:PerspectiveResult
 ): AcceptedAlignment | null {
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
   let keep = false;
   try {
-    persp = hypothesis.kind === 'corner'
+    persp = preparedPerspective ?? (hypothesis.kind === 'corner'
       ? correctPerspective(source, hypothesis.markers)
       : hypothesis.kind === 'midpoint'
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
-      : correctPerspectiveFromArucos(source,hypothesis.markers);
+      : correctPerspectiveFromArucos(source,hypothesis.markers));
     if (!persp.success || !persp.corrected) {
       logger.warning('perspective',`${hypothesis.name}: homography unavailable`,
         {reason:persp.error ?? 'Perspective correction failed'});
@@ -247,6 +251,50 @@ function evaluateHypothesis(
         }finally{
           cleanupMats(updatedGray,rescued.transform);
         }
+      }
+    }
+    if(!check.passed){
+      // Expensive, bounded curve recovery: only after global correction and
+      // corner/timing refinements have failed. Use alternating timing rows
+      // for fit and independent even rows for holdout validation.
+      const mesh=correctMildPageWarp(persp.corrected,dpi);
+      if(mesh){
+        let meshGray:any=null;
+        try{
+          const meshCanvas=document.createElement('canvas');
+          meshCanvas.width=mesh.corrected.cols;meshCanvas.height=mesh.corrected.rows;
+          cv.imshow(meshCanvas,mesh.corrected);
+          const meshQR=decodeQRFromRegion(meshCanvas,OMR_LAYOUT.qr.xMm,
+            OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+          if(meshQR.valid && meshQR.raw===qr.raw){
+            meshGray=new cv.Mat();
+            cv.cvtColor(mesh.corrected,meshGray,cv.COLOR_RGBA2GRAY);
+            const meshCheck=verifyTimingMarks(meshGray,dpi);
+            const hits=timingMatchAtShift(meshGray,dpi,
+              computeAdaptiveDarkThreshold(meshGray),0,0);
+            const even=(a:number[])=>a.filter(row=>row%2===0).length;
+            const holdout={left:even(hits.left),right:even(hits.right)};
+            logger.info('perspective',`${hypothesis.name}: mild-curve mesh cross-validation`,{
+              before:check.matched,after:meshCheck.matched,
+              left:meshCheck.leftMatched,right:meshCheck.rightMatched,
+              holdout,controlRows:mesh.evidence.sampled,
+              maxShiftPx:mesh.evidence.maxAbsShiftPx,qrIdentityVerified:true});
+            if(meshCheck.passed && meshCheck.matched>check.matched &&
+               holdout.left>=8 && holdout.right>=8){
+              cleanupMats(gray,persp.corrected);
+              persp.corrected=mesh.corrected;gray=meshGray;meshGray=null;
+              persp.correctedDataUrl=meshCanvas.toDataURL('image/png');
+              cv.imshow(canvas,persp.corrected);check=meshCheck;
+            }else cleanupMats(mesh.corrected);
+          }else{
+            logger.info('perspective',`${hypothesis.name}: mesh rejected by QR identity`,
+              {found:meshQR.found,valid:meshQR.valid});
+            cleanupMats(mesh.corrected);
+          }
+        }catch(error){
+          if(persp.corrected!==mesh.corrected)cleanupMats(mesh.corrected);
+          logger.warning('perspective','Mild-curve recovery unavailable',{reason:String(error)});
+        }finally{cleanupMats(meshGray);}
       }
     }
     if (!check.passed) {
@@ -505,6 +553,26 @@ export async function runFullScan(
         }else disposeAlignment(attempt);
         if(selected?.check.matched===50)break;
       }
+    }
+
+    if(!selected && arucoAdaptive.found){
+      const corners=hypotheses.filter((h):h is Extract<Hypothesis,{kind:'corner'}>=>
+        h.kind==='corner').map(h=>h.markers);
+      const midpoints=hypotheses.filter((h):h is Extract<Hypothesis,{kind:'midpoint'}>=>
+        h.kind==='midpoint').map(h=>h.markers);
+      const consensus=correctPerspectiveConsensus(loaded.canvas,{
+        aruco:arucoAdaptive,corners,midpoints});
+      if(consensus){
+        logger.info('perspective','Multi-marker RANSAC consensus candidate',{
+          ...consensus.evidence,
+          note:'Never accepted until QR and both timing columns pass independently'});
+        const h:Hypothesis={kind:'aruco',name:'consensus/aruco-corners-midpoints',
+          markers:arucoAdaptive};
+        const candidate=evaluateHypothesis(loaded.canvas,h,dpi,captureFailure,
+          consensus.perspective);
+        if(candidate)selected=candidate;
+      }else logger.info('perspective','Multi-marker consensus unavailable',{
+        reason:'Insufficient compatible observed markers, high residual, or homography API unavailable'});
     }
 
     if(!selected){
