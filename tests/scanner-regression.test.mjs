@@ -1535,3 +1535,35 @@ test('registration fallback: guided anchors still require QR and timing verifica
   assert.ok(src.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi)'));
   assert.ok(src.includes('verifyTimingMarks(gray, dpi)'));
 });
+
+test('v2.3.2: per-row timing diagnostics locate a uniform translation', () => {
+  const d=loadTS('src/scanner/timingDiagnostics.ts',{
+    '../config/omrLayout': {
+      mmToPx: n=>n,
+      OMR_LAYOUT:{answers:{questionsPerCol:3,rowStartY:20,rowSpacingY:10}}
+    },
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>100}
+  });
+  const data=new Uint8Array(140*100).fill(255);
+  for(const y of [20,30,40])for(const x of [13,97]){
+    for(let yy=-2;yy<=2;yy++)for(let xx=-2;xx<=2;xx++)
+      data[(y+3+yy)*140+x+2+xx]=0;
+  }
+  const gray={cols:140,rows:100,ucharPtr:(y,x)=>[data[y*140+x]]};
+  const p=d.diagnoseTimingLattice(gray,150);
+  assert.equal(p.bestShiftPx.matches,6);
+  assert.equal(p.bestShiftPx.leftMatched,3);
+  assert.equal(p.bestShiftPx.rightMatched,3);
+  assert.equal(p.bestShiftPx.dx,2);
+  assert.equal(p.bestShiftPx.dy,3);
+});
+
+test('v2.3.2: QR re-verification is mandatory before a shifted warp is adopted', () => {
+  const source=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.ok(source.includes('shiftedQR.valid && shiftedQR.raw===qr.raw'));
+  assert.ok(source.includes('shouldAdoptTimingRefinement(check,shiftedCheck)'));
+  assert.ok(source.includes('diagnoseTimingLattice(gray,dpi)'));
+  const report=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  assert.ok(report.includes('Per-hypothesis timing row evidence'));
+  assert.ok(report.includes('Recovery attempts and QR rejection reasons'));
+});
