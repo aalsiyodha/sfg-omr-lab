@@ -254,7 +254,7 @@ export default function ScanPage({ appState }: Props) {
   return (
     <div>
       <div className="product-scan-header exam-scan-header">
-        <div><span className="product-kicker">EXAM TOOLS / ANSWER SHEET SCANNER</span><h1>Scan an answer sheet</h1><p>A simple, reliable workspace for checking 50-question OMR sheets. Upload, verify, and review before scoring.</p></div>
+        <div><span className="product-kicker">ANSWER SHEET SCANNER</span><h1>Scan answer sheet</h1><p>Upload a clear photo. Review detected answers before scoring.</p></div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>
           <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
