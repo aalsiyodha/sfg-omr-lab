@@ -115,7 +115,7 @@ function evaluateHypothesis(
     if (check.matched < 50) {
       try {
         const profile=diagnoseTimingLattice(gray,dpi);
-        logger.info('alignmentDiagnostics',
+        logger.info('perspective',
           `${hypothesis.name}: independent timing lattice row evidence`,{
             matched:profile.matches,
             matchedRows:{left:profile.left,right:profile.right},
@@ -149,7 +149,7 @@ function evaluateHypothesis(
               shiftGray=new cv.Mat();
               cv.cvtColor(translated,shiftGray,cv.COLOR_RGBA2GRAY);
               const shiftedCheck=verifyTimingMarks(shiftGray,dpi);
-              logger.info('alignmentDiagnostics',
+              logger.info('perspective',
                 `${hypothesis.name}: verified shared-shift fallback`,{
                   dx:shift.dx,dy:shift.dy,
                   before:check.matched,after:shiftedCheck.matched,
@@ -163,12 +163,12 @@ function evaluateHypothesis(
                 cv.imshow(canvas,persp.corrected);
                 check=shiftedCheck;
               }
-            }else logger.info('alignmentDiagnostics',
+            }else logger.info('perspective',
               `${hypothesis.name}: shared-shift fallback rejected by QR`,{
                 dx:shift.dx,dy:shift.dy,found:shiftedQR.found,
                 valid:shiftedQR.valid});
           }catch(error){
-            logger.warning('alignmentDiagnostics',
+            logger.warning('perspective',
               `${hypothesis.name}: shared-shift fallback unavailable`,
               {reason:String(error)});
           }finally{
@@ -177,7 +177,7 @@ function evaluateHypothesis(
         }
 
       } catch (error) {
-        logger.warning('alignmentDiagnostics',
+        logger.warning('perspective',
           `${hypothesis.name}: timing profile unavailable`,{reason:String(error)});
       }
     }
@@ -221,7 +221,7 @@ function evaluateHypothesis(
               qr=verifiedQR;
               // The original first-stage transform remains owned by persp.
             }else {
-              logger.info('alignmentDiagnostics',`${hypothesis.name}: timing refinement not adopted`,
+              logger.info('perspective',`${hypothesis.name}: timing refinement not adopted`,
                 {before:check.matched,after:updatedCheck.matched,
                   left:updatedCheck.leftMatched,right:updatedCheck.rightMatched});
               cleanupMats(rescued.corrected);
