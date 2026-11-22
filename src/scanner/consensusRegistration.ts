@@ -31,7 +31,7 @@ export function correctPerspectiveConsensus(src:HTMLCanvasElement,input:Consensu
   if(!input.aruco.found||[0,1,2,3].some(id=>!input.aruco.points[id]))return null;
   if(typeof cv.findHomography!=='function')return null;
   const dpi=getSettings().scanDpi,px=(n:number)=>mmToPx(n,dpi);
-  const ordered=[0,1,3,2];
+  const ordered=[0,1,3,2] as const;
   const targets=new Map(ARUCO_MARKERS_MM.map(a=>[a.id,{x:px(a.x),y:px(a.y)}]));
   const base:Anchor[]=ordered.map(id=>({name:'aruco-'+id,
     source:input.aruco.points[id],target:targets.get(id)!}));
