@@ -114,7 +114,7 @@ export function correctMildPageWarp(rectified:any,dpi:number):
     const out=corrected;corrected=null;
     return {corrected:out,evidence:{
       sampled:{left:controls.left.length,right:controls.right.length},
-      controls,maxAbsShiftPx:Math.max(...controls.left,...controls.right)
+      controls,maxAbsShiftPx:[...controls.left,...controls.right]
         .reduce((v,p)=>Math.max(v,Math.abs(p.dx),Math.abs(p.dy)),0),
       holdoutRows:Array.from({length:12},(_,i)=>i*2+2)
     }};
