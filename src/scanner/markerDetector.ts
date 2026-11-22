@@ -152,7 +152,7 @@ function classifyCorners(markers: DetectedMarker[], W: number, H: number,
       const left = Math.hypot(bl.cx - tl.cx, bl.cy - tl.cy);
       const right = Math.hypot(br.cx - tr.cx, br.cy - tr.cy);
       const aspect = (top + bottom) / (left + right);
-      const expected = 191 / 278;
+      const expectedAspect = 191 / 278;
       const widthSpread = Math.abs(top - bottom) / Math.max(top, bottom);
       const heightSpread = Math.abs(left - right) / Math.max(left, right);
       // Penalize implausibly different marker sizes and interior false anchors.
@@ -164,7 +164,7 @@ function classifyCorners(markers: DetectedMarker[], W: number, H: number,
         const m=[tl,tr,bl,br][i], p=expected[key];
         return sum+Math.hypot(m.cx-p.x,m.cy-p.y)/Math.max(1,Math.min(W,H)*.075);
       },0) : 0;
-      const score = 5 * Math.abs(Math.log(aspect / expected)) +
+      const score = 5 * Math.abs(Math.log(aspect / expectedAspect)) +
         widthSpread + heightSpread + sizeSpread + cornerDistance + guidePenalty;
       if (score < bestScore) { bestScore = score; best = current; }
     }
