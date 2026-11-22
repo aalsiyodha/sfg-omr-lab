@@ -229,25 +229,15 @@ export default function ScanPage({ appState }: Props) {
     <div>
       <div className="product-scan-header">
         <div>
-          <span className="product-kicker" style={{ color:'#0d9488',fontWeight:900 }}>LITE EXPERIMENT · PORT 5175</span>
-          <h1 style={{ letterSpacing:'-.035em' }}>SFG OMR Lab <span style={{ color:'#0d9488' }}>Lite</span></h1>
-          <p>Fast comparison scanner · upload the same sheet to Antigravity 5173 and Lite 5175 to compare accuracy and speed.</p>
+          <span className="product-kicker" style={{ color:'#0d9488',fontWeight:900 }}>2.2.6 · OLD VERSION RETEST</span>
+          <h1 style={{ letterSpacing:'-.035em' }}>SFG OMR Lab <span style={{ color:'#0d9488' }}>2.2.6 Retest</span></h1>
+          <p>Original Lite scanner with one limited gentle-curvature fallback. Upload a sheet, scan, and share diagnostics.</p>
         </div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>
           <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
             <i className="bi bi-hdd-network me-1" />{APP_DEPLOY_LABEL} · {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}
           </span>
-        </div>
-      </div>
-
-      <div className="alert alert-info border mb-3" role="note">
-        <strong><i className="bi bi-stars me-2" />LITE v2.2.6 — 5175 experiment</strong>
-        <div className="small mt-1">
-          Faster candidate alignment: stop when QR and both timing bands verify
-          at 50/50. Reuse hatch-shape measurements instead of recalculating them.
-          Strict partial-mark and multiple-answer policies are unchanged.
-          Compare identical photos against ANTIGRAVITY on port 5173.
         </div>
       </div>
 
