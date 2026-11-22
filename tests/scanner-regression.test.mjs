@@ -1627,3 +1627,43 @@ test('v2.3.22: visual timing evidence maps to template timing coordinates', () =
     assert.ok(verifier.includes(expected));
   }
 });
+
+test('v2.3.3: robust homography projection handles perspective with denominator', () => {
+  const m=loadTS('src/scanner/consensusRegistration.ts',{
+    '../config/omrLayout':{},'./arucoDetector':{},'./midpointDetector':{},
+    '../config/scannerSettings':{}
+  });
+  assert.deepEqual(m.projectPoint([1,0,5,0,1,-3,0,0,1],{x:4,y:10}),
+    {x:9,y:7});
+  assert.equal(m.projectPoint([1,0,0,0,1,0,0,0,0],{x:1,y:1}),null);
+});
+test('v2.3.3: constrained curved-page fitting does not extrapolate erratic markers', () => {
+  const m=loadTS('src/scanner/mildCurveCorrection.ts',{
+    '../config/omrLayout':{},'./bubbleDetector':{}
+  });
+  const smooth=Array.from({length:13},(_,i)=>({row:i*2,dx:i,dy:0}));
+  assert.equal(m.isPlausibleDrift(smooth,40,9),true);
+  assert.deepEqual(m.smoothDrift(smooth,11),{dx:5.5,dy:0});
+  const bad=smooth.map(x=>({...x}));
+  bad[8].dx=45;
+  assert.equal(m.isPlausibleDrift(bad,40,9),false);
+  assert.equal(m.isPlausibleDrift(smooth.slice(0,3),40,9),false);
+});
+test('v2.3.3: curve correction still requires QR and independent held-out timing validation',()=>{
+  const s=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.ok(s.includes('meshQR.valid && meshQR.raw===qr.raw'));
+  assert.ok(s.includes('holdout.left>=8 && holdout.right>=8'));
+  assert.ok(s.includes('meshCheck.passed && meshCheck.matched>check.matched'));
+  assert.ok(s.includes('correctPerspectiveConsensus('));
+  assert.ok(s.includes('if(!selected && arucoAdaptive.found)'));
+  const r=readFileSync('src/scanner/consensusRegistration.ts','utf8');
+  assert.ok(r.includes('cv.findHomography('));
+  assert.ok(r.includes('inliers.length<6'));
+});
+test('v2.3.3: home presents only core student actions and optional diagnostics',()=>{
+  const home=readFileSync('src/pages/HomePage.tsx','utf8');
+  assert.ok(home.includes('Download OMR 2.1'));
+  assert.ok(home.includes('Scan a sheet'));
+  assert.ok(home.includes('Advanced diagnostics'));
+  assert.ok(!home.includes('product-hero-preview'));
+});
