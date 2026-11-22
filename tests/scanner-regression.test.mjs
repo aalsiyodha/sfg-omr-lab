@@ -1509,3 +1509,29 @@ test('v2.3: hatch evidence is reused from the measured bubble', () => {
   assert.match(source, /hatchLike: top\.measurement\.hatchLike === true/);
   assert.match(source, /const hatch = preRescueHatch/);
 });
+
+
+test('registration fallback: ArUco corner estimates correspond to physical corner targets', () => {
+  const { predictCornersFromArucos } = loadTS('src/scanner/arucoDetector.ts');
+  const a={found:true,count:4,points:{
+    0:{x:83.5,y:10},1:{x:151.5,y:10},
+    2:{x:51.5,y:287},3:{x:117.5,y:287}
+  }};
+  const p=predictCornersFromArucos(a);
+  assert.ok(p);
+  for(const [k,xy] of Object.entries({
+    topLeft:[9.5,9.5], topRight:[200.5,9.5],
+    bottomLeft:[9.5,287.5], bottomRight:[200.5,287.5],
+  })){
+    assert.ok(Math.abs(p[k].x-xy[0])<0.001,k+' x');
+    assert.ok(Math.abs(p[k].y-xy[1])<0.001,k+' y');
+  }
+  assert.equal(predictCornersFromArucos({found:false,count:0,points:{}}),null);
+});
+
+test('registration fallback: guided anchors still require QR and timing verification', () => {
+  const src=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.ok(src.includes("name:'corner/aruco-guided'"));
+  assert.ok(src.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi)'));
+  assert.ok(src.includes('verifyTimingMarks(gray, dpi)'));
+});

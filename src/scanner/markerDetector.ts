@@ -13,7 +13,8 @@ export interface DetectedMarker {
 export function detectMarkers(
   thresholded: any, // cv.Mat, binary image
   imageWidth: number,
-  imageHeight: number
+  imageHeight: number,
+  expected?: Record<'topLeft'|'topRight'|'bottomLeft'|'bottomRight',{x:number;y:number}>
 ): MarkerDetectionResult {
   const settings = getSettings();
   const contours = new cv.MatVector();
@@ -69,7 +70,7 @@ export function detectMarkers(
     // Evaluate combinations, not the four extremal contours. Small QR finder
     // patterns, edge timing marks and degraded corner outlines can be mistaken
     // for the reference squares, particularly in compressed pictures.
-    const corners = classifyCorners(candidates, imageWidth, imageHeight);
+    const corners = classifyCorners(candidates, imageWidth, imageHeight, expected);
     const validGeom = corners.count >= 4 && validateGeometry(corners, imageWidth, imageHeight);
     
     return {
@@ -98,7 +99,8 @@ export function detectMarkers(
  * approach often selected inner midpoints in degraded/low-contrast scans.
  * Prefer wide, rectangular sets while rejecting non-convex or warped sets.
  */
-function classifyCorners(markers: DetectedMarker[], W: number, H: number) {
+function classifyCorners(markers: DetectedMarker[], W: number, H: number,
+  expected?: Record<'topLeft'|'topRight'|'bottomLeft'|'bottomRight',{x:number;y:number}>) {
   const empty = { count: 0, topLeft: null, topRight: null, bottomLeft: null, bottomRight: null };
   if (markers.length < 4) return { ...empty, count: markers.length };
 
@@ -111,6 +113,18 @@ function classifyCorners(markers: DetectedMarker[], W: number, H: number) {
   const count = quadrants.filter(q => q.length > 0).length;
   if (count < 4) return { ...empty, count };
 
+  // A correctly decoded ArUco family supplies an independent position estimate.
+  // Restrict the guided hypothesis to actually detected square contours near
+  // those positions. Never invent corner markers from the prediction alone.
+  const keys = ['topLeft','topRight','bottomLeft','bottomRight'] as const;
+  if (expected) {
+    const radius = Math.max(18, Math.min(W,H)*.075);
+    for (let i=0; i<4; i++) {
+      quadrants[i] = quadrants[i].filter(m =>
+        Math.hypot(m.cx-expected[keys[i]].x,m.cy-expected[keys[i]].y) < radius);
+    }
+    if (quadrants.some(q=>q.length===0))return {...empty,count:quadrants.filter(q=>q.length>0).length};
+  }
   // Bound combinations for images that have hundreds of candidate contours.
   const corners = quadrants.map((items, index) =>
     [...items].sort((a, b) => {
@@ -120,7 +134,10 @@ function classifyCorners(markers: DetectedMarker[], W: number, H: number) {
         const dy = index < 2 ? ny : 1 - ny;
         return dx * dx + dy * dy;
       };
-      return score(a) - score(b);
+      return expected
+        ? Math.hypot(a.cx-expected[keys[index]].x,a.cy-expected[keys[index]].y)
+          - Math.hypot(b.cx-expected[keys[index]].x,b.cy-expected[keys[index]].y)
+        : score(a) - score(b);
     }).slice(0, 7)
   );
 
@@ -135,7 +152,7 @@ function classifyCorners(markers: DetectedMarker[], W: number, H: number) {
       const left = Math.hypot(bl.cx - tl.cx, bl.cy - tl.cy);
       const right = Math.hypot(br.cx - tr.cx, br.cy - tr.cy);
       const aspect = (top + bottom) / (left + right);
-      const expected = 191 / 278;
+      const expectedAspect = 191 / 278;
       const widthSpread = Math.abs(top - bottom) / Math.max(top, bottom);
       const heightSpread = Math.abs(left - right) / Math.max(left, right);
       // Penalize implausibly different marker sizes and interior false anchors.
@@ -143,8 +160,12 @@ function classifyCorners(markers: DetectedMarker[], W: number, H: number) {
       const sizeSpread = (Math.max(...sizes) - Math.min(...sizes)) / Math.max(...sizes);
       const cornerDistance = (tl.cx + tl.cy + (W - tr.cx) + tr.cy +
         bl.cx + (H - bl.cy) + (W - br.cx) + (H - br.cy)) / (2 * (W + H));
-      const score = 5 * Math.abs(Math.log(aspect / expected)) +
-        widthSpread + heightSpread + sizeSpread + cornerDistance;
+      const guidePenalty = expected ? keys.reduce((sum,key,i) => {
+        const m=[tl,tr,bl,br][i], p=expected[key];
+        return sum+Math.hypot(m.cx-p.x,m.cy-p.y)/Math.max(1,Math.min(W,H)*.075);
+      },0) : 0;
+      const score = 5 * Math.abs(Math.log(aspect / expectedAspect)) +
+        widthSpread + heightSpread + sizeSpread + cornerDistance + guidePenalty;
       if (score < bestScore) { bestScore = score; best = current; }
     }
   }
