@@ -1539,7 +1539,7 @@ test('registration fallback: guided anchors still require QR and timing verifica
 test('v2.3.2: per-row timing diagnostics locate a uniform translation', () => {
   const d=loadTS('src/scanner/timingDiagnostics.ts',{
     '../config/omrLayout': {
-      mmToPx: n=>n,
+      mmToPx: n=>n>190?n-100:n,
       OMR_LAYOUT:{answers:{questionsPerCol:3,rowStartY:20,rowSpacingY:10}}
     },
     './bubbleDetector':{computeAdaptiveDarkThreshold:()=>100}
