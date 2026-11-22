@@ -1,5 +1,30 @@
 # SFG OMR LAB — Browser-Based OMR Scanner & Evaluation Laboratory
 
+## v2.2.6-lite.1 — Fast scanner comparison (test/lite-experiment only)
+
+Lite is a **separate experiment**, intended for `http://192.168.1.13:5175/scan`, compared with Antigravity `test/antigravity-build-diagnostics` on port 5173.
+
+- **Registration fast path:** after *valid QR identity* and **25/25 left + 25/25 right timing marks**, stop evaluating further registration hypotheses. Retain all candidates and normal fallbacks whenever the best verification is below 50/50. This intentionally trades away extra redundant verification after a perfect match for potential scan-time savings.
+- **Hatch measurement reuse:** store the hatch gap count / hatch shape once per visibly inked bubble, reusing it in the final classification and diagnostics instead of reading the same pixels multiple times.
+- **No threshold or policy changes:** half-fills, strokes, dots and ticks remain blanks; two fully filled bubbles remain multiple; scoring treats multiple as incorrect.
+- **High-contrast green/teal LITE 5175 UI** with its own v2.2.6-lite.1 version identity and explicit differences.
+- **Comparison plan:** upload the *same* five reference photos to each port, compare exact 50-question classifications, verified QR / timing results and wall-clock scan time. Then repeat several times to measure speed variation. Fail if previously recognized valid answers disappear or policy-rejected marks become selected.
+- **Unverified until local execution:** run `npm run test:scanner` and `npm run build` in Lite worktree, and rescan real photos. Do not modify main or Vercel production.
+
+To sync an existing local Lite worktree that was created before the remote Lite branch:
+```powershell
+cd "C:\Users\ank\.gemini\antigravity\scratch\sfg-omr-lite"
+git fetch origin
+git switch test/lite-experiment
+git merge --ff-only origin/test/lite-experiment
+npm run test:scanner
+npm run build
+npm run dev -- --host 0.0.0.0 --port 5175 --strictPort
+```
+
+---
+
+
 ## v2.2.5 — Strict marks, multiple-answer scoring, and clearer review (Antigravity test branch)
 
 This test release incorporates five photographed-sheet assessments (Test IDs 35 and 04). It does **not** alter the printable OMR geometry or production `main` branch.

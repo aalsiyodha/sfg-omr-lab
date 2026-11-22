@@ -1420,10 +1420,10 @@ test('mobile UX: theme toggle stays outside collapsed navigation and persists se
 });
 test('onboarding UX: printable sheet and photo guidance remain clear',()=>{
   const home=readFileSync('src/pages/HomePage.tsx','utf8');
-  assert.ok(home.includes("Download OMR 2.1"));
-  assert.ok(home.includes("actual size (100%)"));
-  assert.ok(home.includes("Photograph the entire sheet"));
-  assert.ok(home.includes("Completely fill the Test ID and answer bubbles"));
+  assert.ok(home.includes("Get printable OMR 2.1"));
+  assert.ok(home.includes("print at 100%") || home.includes("print on A4 at Actual Size (100%)"));
+  assert.ok(home.includes("Keep the entire page visible"));
+  assert.ok(home.includes("Shade bubbles completely"));
 });
 
 test('reports identify exact Vercel or local build, not just release version',()=>{
@@ -1493,8 +1493,8 @@ test('v2.2.5: policy-rejected partial marks are unanswered without penalty', () 
 });
 
 
-test('v2.3: registration fast path requires verified QR and both complete timing bands', () => {
-  const { canStopRegistrationSearch } = loadTS('src/scanner/registrationFastPath.ts');
+test('LITE: only QR-valid 50/50 with two complete timing bands exits early', () => {
+  const { canStopRegistrationSearch } = loadTS('src/scanner/litePolicy.ts');
   assert.equal(canStopRegistrationSearch(true,50,25,25),true);
   assert.equal(canStopRegistrationSearch(false,50,25,25),false);
   assert.equal(canStopRegistrationSearch(true,49,25,24),false);
@@ -1502,7 +1502,7 @@ test('v2.3: registration fast path requires verified QR and both complete timing
   assert.equal(canStopRegistrationSearch(true,50,24,26),false);
 });
 
-test('v2.3: hatch evidence is reused from the measured bubble', () => {
+test('LITE: hatch evidence is reused after the initial per-bubble measurement', () => {
   const source = readFileSync('src/scanner/bubbleDetector.ts','utf8');
   assert.match(source, /hatchGapRows: hatchEvidence\.gapRows/);
   assert.match(source, /hatchLike: hatchEvidence\.hatchLike/);
@@ -1510,160 +1510,42 @@ test('v2.3: hatch evidence is reused from the measured bubble', () => {
   assert.match(source, /const hatch = preRescueHatch/);
 });
 
-
-test('registration fallback: ArUco corner estimates correspond to physical corner targets', () => {
-  const { predictCornersFromArucos } = loadTS('src/scanner/arucoDetector.ts');
-  const a={found:true,count:4,points:{
-    0:{x:83.5,y:10},1:{x:151.5,y:10},
-    2:{x:51.5,y:287},3:{x:117.5,y:287}
-  }};
-  const p=predictCornersFromArucos(a);
-  assert.ok(p);
-  for(const [k,xy] of Object.entries({
-    topLeft:[9.5,9.5], topRight:[200.5,9.5],
-    bottomLeft:[9.5,287.5], bottomRight:[200.5,287.5],
-  })){
-    assert.ok(Math.abs(p[k].x-xy[0])<0.001,k+' x');
-    assert.ok(Math.abs(p[k].y-xy[1])<0.001,k+' y');
-  }
-  assert.equal(predictCornersFromArucos({found:false,count:0,points:{}}),null);
-});
-
-test('registration fallback: guided anchors still require QR and timing verification', () => {
-  const src=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
-  assert.ok(src.includes("name:'corner/aruco-guided'"));
-  assert.ok(src.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi,captureFailure)'));
-  assert.ok(src.includes('verifyTimingMarks(gray, dpi)'));
-});
-
-test('v2.3.2: per-row timing diagnostics locate a uniform translation', () => {
-  const d=loadTS('src/scanner/timingDiagnostics.ts',{
-    '../config/omrLayout': {
-      mmToPx: n=>n>190?n-100:n,
-      OMR_LAYOUT:{answers:{questionsPerCol:3,rowStartY:20,rowSpacingY:10}}
-    },
-    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>100}
-  });
-  const data=new Uint8Array(140*100).fill(255);
-  for(const y of [20,30,40])for(const x of [13,97]){
-    for(let yy=-2;yy<=2;yy++)for(let xx=-2;xx<=2;xx++)
-      data[(y+3+yy)*140+x+2+xx]=0;
-  }
-  const gray={cols:140,rows:100,ucharPtr:(y,x)=>[data[y*140+x]]};
-  const p=d.diagnoseTimingLattice(gray,150);
-  assert.equal(p.bestShiftPx.matches,6);
-  assert.equal(p.bestShiftPx.leftMatched,3);
-  assert.equal(p.bestShiftPx.rightMatched,3);
-  assert.ok(p.bestShiftPx.matches > p.matches);
-  assert.ok(Math.abs(p.bestShiftPx.dx-2)<=2);
-  assert.ok(Math.abs(p.bestShiftPx.dy-3)<=2);
-});
-
-test('v2.3.2: QR re-verification is mandatory before a shifted warp is adopted', () => {
+test('Lite 2.2.6 retest: bounded correction is a single fail-only trial with strict gates',()=>{
   const source=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
-  assert.ok(source.includes('shiftedQR.valid && shiftedQR.raw===qr.raw'));
-  assert.ok(source.includes('shouldAdoptTimingRefinement(check,shiftedCheck)'));
-  assert.ok(source.includes('diagnoseTimingLattice(gray,dpi)'));
-  const report=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
-  assert.ok(report.includes('Per-hypothesis timing row evidence'));
-  assert.ok(report.includes('Recovery attempts and QR rejection reasons'));
+  const mesh=readFileSync('src/scanner/mildCurveCorrection.ts','utf8');
+  assert.ok(source.includes('const curveBudget={remaining:1}'));
+  assert.ok(source.includes('!check.passed && check.matched >= 12'));
+  assert.ok(source.includes('meshQR.valid && meshQR.raw===qr.raw'));
+  assert.ok(source.includes('after.passed && after.matched>check.matched'));
+  assert.ok(source.includes('holdout.left>=8 && holdout.right>=8'));
+  assert.ok(mesh.includes('if(!isPlausibleDrift(controls.left'));
+  assert.ok(source.includes("if (!check.passed)"));
 });
 
-test('v2.3.2: identical registration coordinates are skipped, without weakening acceptance', () => {
-  const source=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
-  assert.ok(source.includes('attemptedGeometry.has(signature)'));
-  assert.ok(source.includes('skipped identical-geometry recheck'));
-  assert.ok(source.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi,captureFailure)'));
-  assert.ok(source.includes('verifyTimingMarks(gray, dpi)'));
-});
-
-test('v2.3.2: diagnostics separate compact failure triage from complete evidence', () => {
-  const source=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
-  assert.ok(source.includes('Registration triage: evaluated candidates='));
-  assert.ok(source.includes('Per-hypothesis timing row evidence'));
-  assert.ok(source.includes('structured evidence above'));
-  const ui=readFileSync('src/pages/ScanPage.tsx','utf8');
-  assert.ok(ui.includes('Save full report (.txt)'));
-  assert.ok(ui.includes('exam-scan-header'));
-});
-
-test('v2.3.2 optimization: contiguous grayscale and pointer probes agree', () => {
-  const d=loadTS('src/scanner/timingDiagnostics.ts',{
-    '../config/omrLayout': {
-      mmToPx:n=>n>190?n-100:n,
-      OMR_LAYOUT:{answers:{questionsPerCol:3,rowStartY:20,rowSpacingY:10}}
-    },
-    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>100}
+test('Lite 2.2.6 retest: curved-page control interpolation remains bounded and smooth',()=>{
+  const mesh=loadTS('src/scanner/mildCurveCorrection.ts',{
+    '../config/omrLayout': { OMR_LAYOUT:{answers:{rowStartY:83,rowSpacingY:7.4,questionsPerCol:25}},
+      mmToPx:n=>n },
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>128}
   });
-  const data=new Uint8Array(140*100).fill(255);
-  for(const y of [20,30,40])for(const x of [13,97]){
-    for(let yy=-2;yy<=2;yy++)for(let xx=-2;xx<=2;xx++)
-      data[(y+3+yy)*140+x+2+xx]=0;
+  const control=[{row:0,dx:-2,dy:1},{row:12,dx:4,dy:3},{row:24,dx:8,dy:5}];
+  assert.deepEqual(mesh.smoothDrift(control,6),{dx:1,dy:2});
+  assert.deepEqual(mesh.smoothDrift(control,18),{dx:6,dy:4});
+  assert.equal(mesh.isPlausibleDrift(control,10,7),false); // only 3 controls
+});
+
+test('Lite 2.2.6 retest: withheld timing validation samples only even-numbered rows',()=>{
+  const mesh=loadTS('src/scanner/mildCurveCorrection.ts',{
+    '../config/omrLayout': { OMR_LAYOUT:{answers:{rowStartY:30,rowSpacingY:8,questionsPerCol:25}},
+      mmToPx:n=>n },
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>128}
+  });
+  const w=220,h=240,data=new Uint8Array(w*h).fill(255);
+  for(let i=1;i<25;i+=2){
+    const y=Math.round(30+i*8);
+    for(const x of [13,197])for(let dy=-1;dy<=1;dy++)
+      for(let dx=-1;dx<=1;dx++)data[(y+dy)*w+x+dx]=0;
   }
-  const pointer={cols:140,rows:100,ucharPtr:(y,x)=>[data[y*140+x]]};
-  const direct={...pointer,data,step:140};
-  assert.deepEqual(d.diagnoseTimingLattice(direct,150),
-    d.diagnoseTimingLattice(pointer,150));
-});
-
-test('v2.3.22: rejected registrations preserve visual evidence without scoring', () => {
-  const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
-  const overlay=readFileSync('src/scanner/registrationEvidenceOverlay.ts','utf8');
-  const page=readFileSync('src/pages/ScanPage.tsx','utf8');
-  assert.ok(scanner.includes('if(!selected){'));
-  assert.ok(scanner.includes('drawRegistrationCandidateOverlay('));
-  assert.ok(scanner.includes('images.timingFailureOverlay=drawTimingFailureOverlay('));
-  assert.ok(scanner.includes('if(!e.qrVerified || e.matched<=bestFailureScore)return;'));
-  assert.ok(overlay.includes('NOT ACCEPTED'));
-  assert.ok(page.includes("activeTab === 'timing'"));
-  assert.ok(page.includes('downloadFailureOverlay'));
-  assert.ok(scanner.includes("if (!check.passed)"));
-});
-test('v2.3.22: visual timing evidence maps to template timing coordinates', () => {
-  const overlay=readFileSync('src/scanner/registrationEvidenceOverlay.ts','utf8');
-  const verifier=readFileSync('src/scanner/alignmentValidator.ts','utf8');
-  for(const expected of ["13.3","196.7","rowStartY","rowSpacingY"]){
-    assert.ok(overlay.includes(expected));
-    assert.ok(verifier.includes(expected));
-  }
-});
-
-test('v2.3.3: robust homography projection handles perspective with denominator', () => {
-  const m=loadTS('src/scanner/consensusRegistration.ts',{
-    '../config/omrLayout':{},'./arucoDetector':{},'./midpointDetector':{},
-    '../config/scannerSettings':{}
-  });
-  assert.deepEqual(m.projectPoint([1,0,5,0,1,-3,0,0,1],{x:4,y:10}),
-    {x:9,y:7});
-  assert.equal(m.projectPoint([1,0,0,0,1,0,0,0,0],{x:1,y:1}),null);
-});
-test('v2.3.3: constrained curved-page fitting does not extrapolate erratic markers', () => {
-  const m=loadTS('src/scanner/mildCurveCorrection.ts',{
-    '../config/omrLayout':{},'./bubbleDetector':{}
-  });
-  const smooth=Array.from({length:13},(_,i)=>({row:i*2,dx:i,dy:0}));
-  assert.equal(m.isPlausibleDrift(smooth,40,9),true);
-  assert.deepEqual(m.smoothDrift(smooth,11),{dx:5.5,dy:0});
-  const bad=smooth.map(x=>({...x}));
-  bad[8].dx=45;
-  assert.equal(m.isPlausibleDrift(bad,40,9),false);
-  assert.equal(m.isPlausibleDrift(smooth.slice(0,3),40,9),false);
-});
-test('v2.3.3: curve correction still requires QR and independent held-out timing validation',()=>{
-  const s=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
-  assert.ok(s.includes('meshQR.valid && meshQR.raw===qr.raw'));
-  assert.ok(s.includes('holdout.left>=8 && holdout.right>=8'));
-  assert.ok(s.includes('meshCheck.passed && meshCheck.matched>check.matched'));
-  assert.ok(s.includes('correctPerspectiveConsensus('));
-  assert.ok(s.includes('if(!selected && arucoAdaptive.found)'));
-  const r=readFileSync('src/scanner/consensusRegistration.ts','utf8');
-  assert.ok(r.includes('cv.findHomography('));
-  assert.ok(r.includes('inliers.length<6'));
-});
-test('v2.3.3: home presents only core student actions and optional diagnostics',()=>{
-  const home=readFileSync('src/pages/HomePage.tsx','utf8');
-  assert.ok(home.includes('Download OMR 2.1'));
-  assert.ok(home.includes('Scan a sheet'));
-  assert.ok(home.includes('Advanced diagnostics'));
-  assert.ok(!home.includes('product-hero-preview'));
+  const result=mesh.countHeldOutTimingMarks({cols:w,rows:h,data},150);
+  assert.deepEqual(result,{left:12,right:12});
 });

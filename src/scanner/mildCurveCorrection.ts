@@ -1,3 +1,6 @@
+/** LITE RETEST: conservative, optional recovery ONLY for failed QR-verified registrations.
+ * This is a bounded displacement trial, not full document dewarping.
+ */
 /** Conservative curved-page fallback for QR-verified global alignments.
  * Uses alternate (odd) timing rows as independent control points, leaving
  * even timing rows out of the fit for validation by the caller.
@@ -41,7 +44,7 @@ export function isPlausibleDrift(control:Drift[],maxDx:number,maxDy:number):bool
 }
 function findSquare(gray:any,targetX:number,targetY:number,threshold:number,dpi:number):
   {x:number;y:number}|null {
-  const sx=Math.ceil(mmToPx(8,dpi)),sy=Math.ceil(mmToPx(1.7,dpi));
+  const sx=Math.ceil(mmToPx(5.5,dpi)),sy=Math.ceil(mmToPx(2.8,dpi));
   const left=Math.max(0,Math.round(targetX)-sx),top=Math.max(0,Math.round(targetY)-sy);
   const w=Math.min(gray.cols-left,sx*2+1),h=Math.min(gray.rows-top,sy*2+1);
   if(w<12||h<10)return null;
@@ -86,7 +89,7 @@ export function correctMildPageWarp(rectified:any,dpi:number):
         if(found)controls[side].push({row:i,dx:found.x-x,dy:found.y-y});
       }
     }
-    const maxDx=mmToPx(7.8,dpi),maxDy=mmToPx(1.5,dpi);
+    const maxDx=mmToPx(5.4,dpi),maxDy=mmToPx(2.7,dpi);
     if(!isPlausibleDrift(controls.left,maxDx,maxDy)||
       !isPlausibleDrift(controls.right,maxDx,maxDy))return null;
     // Conservative mesh: interpolate both side displacements across the
@@ -121,4 +124,30 @@ export function correctMildPageWarp(rectified:any,dpi:number):
   }catch{return null;}finally{
     for(const m of [gray,mapX,mapY,corrected])try{m?.delete?.();}catch{/* cleanup */}
   }
+}
+
+/** Independently count withheld even-numbered timing rows; those rows are
+ * never used as control points by correctMildPageWarp. No bubble content read.
+ */
+export function countHeldOutTimingMarks(gray:any,dpi:number):{left:number;right:number}{
+  const threshold=computeAdaptiveDarkThreshold(gray);
+  const radius=Math.max(1,Math.round(mmToPx(.35,dpi)));
+  const pixels:Uint8Array|undefined=gray.data;
+  const stride=typeof gray.step==='number'?gray.step:gray.cols;
+  const pixel=(y:number,x:number)=>pixels?pixels[y*stride+x]:gray.ucharPtr(y,x)[0];
+  const result={left:0,right:0};
+  for(let row=1;row<OMR_LAYOUT.answers.questionsPerCol;row+=2){
+    const y=Math.round(mmToPx(OMR_LAYOUT.answers.rowStartY+
+      row*OMR_LAYOUT.answers.rowSpacingY,dpi));
+    for(const [side,xMm] of [['left',13.3],['right',196.7]] as const){
+      const x=Math.round(mmToPx(xMm,dpi));
+      if(x-radius<0||y-radius<0||x+radius>=gray.cols||y+radius>=gray.rows)continue;
+      let dark=0,n=0;
+      for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+        n++;if(pixel(y+dy,x+dx)<threshold)dark++;
+      }
+      if(dark/n>=.4)result[side]++;
+    }
+  }
+  return result;
 }

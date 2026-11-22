@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, HashRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import PracticeTestPage from './pages/PracticeTestPage';
 import ScanPage from './pages/ScanPage';
@@ -45,15 +45,14 @@ export default function App() {
 
   const appState: AppState = { opencv: opencvStatus, practice, scanning };
 
-  const Router = import.meta.env.BASE_URL === '/sfg-omr-lab/' ? HashRouter : BrowserRouter;
   return (
-    <Router>
+    <BrowserRouter>
       <div className="min-vh-100 d-flex flex-column">
         <nav className="navbar navbar-expand-md sticky-top product-navbar">
           <div className="container-fluid" style={{ maxWidth: 1160 }}>
             <NavLink to="/" className="product-brand text-decoration-none d-flex align-items-center gap-2">
               <span className="product-brand-icon"><i className="bi bi-upc-scan" /></span>
-              <span className="product-brand-name">SFG <span>OMR Lab</span></span>
+              <span className="product-brand-name">SFG <span>OMR Lab <span style={{ color: '#0d9488', fontWeight: 700 }}>2.2.6 Retest</span></span></span>
               <span className="product-version-tag">{APP_VERSION}</span>
             </NavLink>
             <div className="product-header-controls">
@@ -72,7 +71,7 @@ export default function App() {
             <div className="collapse navbar-collapse" id="navbarNav">
               <ul className="navbar-nav ms-auto align-items-md-center gap-1">
                 {[
-                  ['/', 'Home'], ['/practice', 'Practice'], ['/results', 'Results'], ['/diagnostics', 'Diagnostics'],
+                  ['/', 'Overview'], ['/practice', 'Practice'], ['/results', 'Results'], ['/diagnostics', 'Advanced'],
                 ].map(([to,label])=>(
                   <li className="nav-item" key={to}>
                     <NavLink to={to} end={to==='/'} className={({isActive})=>`nav-link product-nav-link ${isActive?'active':''}`}>{label}</NavLink>
@@ -96,13 +95,13 @@ export default function App() {
 
         <footer className="mt-auto product-footer">
           <div className="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ maxWidth: 1160 }}>
-            <span className="product-footer-brand">SFG OMR LAB <span>· {APP_RELEASE_LABEL}</span></span>
+            <span className="product-footer-brand">SFG OMR LAB · 2.2.6 OLD VERSION RETEST <span>· {APP_RELEASE_LABEL}</span></span>
             <span>Built for thoughtful practice. Processed on your device.</span>
             <span className="product-deployment-label" title={`Commit: ${APP_BUILD_META.sha} · Built: ${APP_BUILD_META.builtAt}`}>{APP_DEPLOY_LABEL} · commit {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}</span>
             <span>Beta · Verify before scoring</span>
           </div>
         </footer>
       </div>
-    </Router>
+    </BrowserRouter>
   );
 }
