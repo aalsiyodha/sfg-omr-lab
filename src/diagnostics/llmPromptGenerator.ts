@@ -140,9 +140,12 @@ export function generateLLMDiagnosticPrompt({
   const redact=(s:string)=>s
     .replace(/SFGOMR1:[^\s"'|,}]+/gi,'[REDACTED_QR]')
     .replace(/("?(?:studentId|qrRaw|raw)"?\s*:\s*)"[^"]*"/gi,'$1"[REDACTED]"');
-  for (const log of significant)
+  for (const log of significant) {
+    const alreadyDetailed=/independent timing lattice row evidence|shared-shift fallback|timing refinement|QR could not be verified/i.test(log.message);
     lines.push(redact('['+log.level+'/'+log.stage+'] '+log.message+
-      (log.data?' '+JSON.stringify(log.data):'')));
+      (alreadyDetailed?' [structured evidence above]' :
+        log.data?' '+JSON.stringify(log.data):'')));
+  }
 
   lines.push('Original photograph and optional bubble overlay should be attached separately.');
   lines.push('Filename is included for image/report matching; student and QR identities are omitted.');
@@ -175,6 +178,32 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
       ' | rotated180=' + String(Boolean(scanResult.orientationRotated)),
     'Processing=' + scanResult.processingTimeMs + 'ms | ' + counts,
   ];
+  // Summarise failure geometry without repeating lengthy per-row arrays.
+  if (scanResult.overallStatus === 'failed') {
+    const logs=scanResult.stageLogs ?? [];
+    const attempts=logs.filter(l=>l.message.includes('candidate coordinates')).length;
+    const skipped=logs.filter(l=>l.message.includes('skipped identical-geometry recheck')).length;
+    const missedQR=logs.filter(l=>l.message.includes('QR could not be verified after warp')).length;
+    lines.push('Registration triage: evaluated candidates=' + (attempts-skipped) +
+      ' | duplicate skips=' + skipped + ' | QR-region failures=' + missedQR);
+    const candidates=logs.flatMap(l=>{
+      const m=l.message.match(/^(.*?): timing marks (\d+)\/50/);
+      return m ? [{name:m[1],total:Number(m[2]),
+        left:Number(l.data?.left ?? 0),right:Number(l.data?.right ?? 0)}] : [];
+    }).sort((a,b)=>b.total-a.total);
+    const best=candidates[0];
+    lines.push(best ?
+      'Best timing candidate=' + best.name + ' ' + best.total +
+        '/50 (left ' + best.left + '/25, right '+best.right+'/25)' :
+      'Best timing candidate=none reached timing validation');
+    const profiles=logs.filter(l=>l.message.includes('independent timing lattice row evidence'))
+      .sort((a,b)=>Number(b.data?.matched ?? 0)-Number(a.data?.matched ?? 0));
+    const shift=profiles[0]?.data?.bestSharedTranslationPx as
+      {dx:number;dy:number;matches:number;leftMatched:number;rightMatched:number}|undefined;
+    if(shift) lines.push('Exploratory timing shift=dx '+shift.dx+
+      'px, dy '+shift.dy+'px, matched '+shift.matches+'/50');
+    lines.push('Use full diagnostic for every timing row, QR outcome and fallback attempt.');
+  }
   if (scanResult.grayCalibration)
     lines.push('Calibration=' + scanResult.grayCalibration.status +
       ' | patches=' + scanResult.grayCalibration.patchMedians.join(',') +

@@ -369,6 +369,26 @@ export async function runFullScan(
       : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
+    // Exact-coordinate deduplication: two detection methods can return the
+    // same physical anchors. Re-warping identical coordinates cannot reveal
+    // new evidence; retain the first attempt and log the skipped duplicate.
+    const attemptedGeometry = new Set<string>();
+    const geometryKey=(hypothesis:Hypothesis):string=>{
+      const point=(p:{x:number;y:number}|null|undefined)=>p
+        ? p.x.toFixed(2)+','+p.y.toFixed(2) : 'missing';
+      if(hypothesis.kind==='corner'){
+        const m=hypothesis.markers;
+        return ['corner',point(m.topLeft),point(m.topRight),
+          point(m.bottomLeft),point(m.bottomRight)].join('|');
+      }
+      if(hypothesis.kind==='midpoint'){
+        const m=hypothesis.markers;
+        return ['midpoint',point(m.top),point(m.right),
+          point(m.bottom),point(m.left)].join('|');
+      }
+      const m=hypothesis.markers.points;
+      return ['aruco',point(m[0]),point(m[1]),point(m[2]),point(m[3])].join('|');
+    };
     for (const hypothesis of hypotheses) {
       logger.info('markerDetection', `${hypothesis.name}: candidate coordinates`,
         hypothesis.kind === 'corner'
@@ -384,6 +404,14 @@ export async function runFullScan(
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
+      const signature=geometryKey(hypothesis);
+      if(attemptedGeometry.has(signature)){
+        logger.info('markerDetection',
+          `${hypothesis.name}: skipped identical-geometry recheck`,
+          {reason:'same fiducial coordinates already evaluated'});
+        continue;
+      }
+      attemptedGeometry.add(signature);
       const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in

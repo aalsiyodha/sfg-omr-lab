@@ -1568,3 +1568,21 @@ test('v2.3.2: QR re-verification is mandatory before a shifted warp is adopted',
   assert.ok(report.includes('Per-hypothesis timing row evidence'));
   assert.ok(report.includes('Recovery attempts and QR rejection reasons'));
 });
+
+test('v2.3.2: identical registration coordinates are skipped, without weakening acceptance', () => {
+  const source=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.ok(source.includes('attemptedGeometry.has(signature)'));
+  assert.ok(source.includes('skipped identical-geometry recheck'));
+  assert.ok(source.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi)'));
+  assert.ok(source.includes('verifyTimingMarks(gray, dpi)'));
+});
+
+test('v2.3.2: diagnostics separate compact failure triage from complete evidence', () => {
+  const source=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  assert.ok(source.includes('Registration triage: evaluated candidates='));
+  assert.ok(source.includes('Per-hypothesis timing row evidence'));
+  assert.ok(source.includes('structured evidence above'));
+  const ui=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(ui.includes('Save full report (.txt)'));
+  assert.ok(ui.includes('exam-scan-header'));
+});

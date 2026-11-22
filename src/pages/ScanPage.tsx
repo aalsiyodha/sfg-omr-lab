@@ -163,6 +163,24 @@ export default function ScanPage({ appState }: Props) {
     setCopyFailed(!ok);
   };
 
+  const downloadDiagnostic = () => {
+    if (!scanResult) return;
+    const content=generateLLMDiagnosticPrompt({
+      scanResult,file:capturedFile,
+      activeTestId:practice.activeTest?.testId,
+      answerKey:practice.activeTest?.answerKey,
+    });
+    const blob=new Blob([content],{type:'text/plain;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;
+    const base=(capturedFile?.name ?? 'scan').replace(/\.[^.]+$/,'')
+      .replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,65);
+    link.download=base+'-full-diagnostic.txt';
+    document.body.appendChild(link);link.click();link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const downloadOverlay = () => {
     if (!intermediateImages.bubbleOverlay) return;
     const link = document.createElement('a');
@@ -227,8 +245,8 @@ export default function ScanPage({ appState }: Props) {
 
   return (
     <div>
-      <div className="product-scan-header">
-        <div><span className="product-kicker">PRECISION OMR SCANNING</span><h1>Scan your answer sheet</h1><p>Capture or upload a sheet, verify your marks, and review your results with confidence.</p></div>
+      <div className="product-scan-header exam-scan-header">
+        <div><span className="product-kicker">SFG OMR LAB · TESTING WORKSPACE</span><h1>OMR Scanner</h1><p>Upload a completed sheet, verify alignment, then review the 50 answers.</p></div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>
           <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
@@ -244,7 +262,7 @@ export default function ScanPage({ appState }: Props) {
         </div>
       )}
 
-      {!scanResult && <div className="product-scan-instructions">
+      {!scanResult && <div className="product-scan-instructions exam-scan-steps">
         <span><b>01</b> Add a photo</span><i className="bi bi-chevron-right" />
         <span><b>02</b> Verify geometry</span><i className="bi bi-chevron-right" />
         <span><b>03</b> Review answers</span>
@@ -320,7 +338,7 @@ export default function ScanPage({ appState }: Props) {
 
           {isScanning && (
             <div className="col-12 col-md-10 col-lg-8 mx-auto my-3">
-              <div className="scanner-animation-container">
+              <div className="scanner-animation-container exam-scan-progress">
                 <div className="scanner-viewport product-scanning-sheet" role="img" aria-label="Illustration of a sheet being scanned">
                   <div className="product-scan-paper-header"><span>SFG</span><span>OMR</span><span className="product-scan-qr" /></div>
                   <div className="viewport-grid">
@@ -410,7 +428,7 @@ export default function ScanPage({ appState }: Props) {
       {scanResult && (
         <div>
           <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-            <h4 className="mb-0">Scan Result ({APP_VERSION})</h4>
+            <h4 className="mb-0">Scan report</h4>
             <StatusBadge status={scanResult.overallStatus} />
             <span className="text-muted small">({scanResult.processingTimeMs} ms)</span>
 
@@ -420,6 +438,9 @@ export default function ScanPage({ appState }: Props) {
               </button>
               <button className="btn btn-sm btn-outline-secondary" onClick={handleCopyLLMReport}>
                 <i className="bi bi-clipboard me-1"/>Copy full diagnostic
+              </button>
+              <button className="btn btn-sm btn-outline-secondary" onClick={downloadDiagnostic}>
+                <i className="bi bi-file-earmark-text me-1"/>Save full report (.txt)
               </button>
             </div>
             <button className="btn btn-sm btn-outline-primary" onClick={downloadOverlay} disabled={!intermediateImages.bubbleOverlay}>
@@ -443,7 +464,7 @@ export default function ScanPage({ appState }: Props) {
             <div>
               <strong>{scanResult.overallStatus === 'failed' ? 'This photo could not be verified' : reviewCount ? `${reviewCount} question(s) need review` : 'Scan complete — please check the answers'}</strong>
               <p className="mb-0 small">{scanResult.overallStatus === 'failed'
-                ? 'Try another full-page photo; this result cannot be scored.'
+                ? 'Registration did not verify. Save the full diagnostic and retry with the same original photo or a new capture; no answers were scored.'
                 : 'Green = detected · Red = multiple · Yellow = unclear · Grey = blank. Confirm against the photograph.'}</p>
             </div>
             {scanResult.overallStatus !== 'failed' && <button className="btn btn-sm btn-outline-primary" onClick={() => setActiveTab('table')}>Review answers</button>}

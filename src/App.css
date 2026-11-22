@@ -1,1 +1,40 @@
 /* SFG OMR Lab styles moved to index.css */
+
+
+/* Scanner field-test workspace: restrained, exam-like, legible on phones. */
+.exam-scan-header{
+  border:1px solid var(--border,#e2e8f0);
+  background:var(--bs-body-bg,#fff);
+  border-radius:12px;
+  padding:20px 22px;
+  box-shadow:none;
+  margin-bottom:16px;
+}
+.exam-scan-header h1{font-size:clamp(1.55rem,3vw,2rem);letter-spacing:-.035em;line-height:1.2;margin:5px 0 7px}
+.exam-scan-header p{margin-bottom:0;max-width:560px;font-size:.94rem;line-height:1.6}
+.exam-scan-header .product-kicker{font-size:.7rem;letter-spacing:.095em}
+.exam-scan-steps{
+  background:transparent;
+  border:1px solid var(--border,#e2e8f0);
+  border-radius:10px;
+  box-shadow:none;
+  padding:12px 15px;
+  margin-bottom:20px;
+}
+.exam-scan-steps span{font-size:.87rem}
+.exam-scan-steps b{font-variant-numeric:tabular-nums}
+.exam-scan-progress{box-shadow:none;border-radius:12px;padding:24px 18px}
+.product-upload-actions .btn{min-height:42px;border-radius:8px;font-weight:600}
+.product-scan-header .product-scan-version{border-radius:6px}
+.beta-review-banner{box-shadow:none;border-radius:10px}
+@media(max-width:640px){
+ .exam-scan-header{padding:15px 16px}
+ .exam-scan-steps{display:flex;flex-wrap:wrap;gap:7px;padding:11px}
+ .exam-scan-steps .bi-chevron-right{opacity:.45}
+ .product-upload-actions{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));}
+ .product-upload-actions .btn{white-space:normal;padding:.65rem .5rem;font-size:.88rem}
+ .product-upload-actions .btn:last-of-type{grid-column:span 2}
+}
+@media(prefers-reduced-motion:reduce){
+ .exam-scan-progress .scanner-laser-line{animation:none}
+}
