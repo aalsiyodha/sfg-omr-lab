@@ -38,3 +38,21 @@
 @media(prefers-reduced-motion:reduce){
  .exam-scan-progress .scanner-laser-line{animation:none}
 }
+
+/* v2.3.2 field-test refinement: minimal exam-paper visual language. */
+.exam-scan-header{border-radius:6px;padding:22px 24px;border-color:var(--bs-border-color,#d9dee5)}
+.exam-scan-header h1{font-size:clamp(1.55rem,2.7vw,1.95rem);font-weight:700;letter-spacing:-.025em}
+.exam-scan-header .product-kicker{font-weight:700;letter-spacing:.11em;opacity:.8}
+.exam-scan-steps{border-radius:6px;background:var(--bs-body-bg,#fff);padding:11px 16px;gap:12px}
+.exam-scan-steps span{font-weight:500}
+.exam-scan-steps b{font-weight:800;margin-right:4px}
+.product-upload-actions .btn{border-radius:5px;min-height:44px;box-shadow:none!important}
+.exam-scan-progress{border-radius:6px}
+.product-scan-header .product-scan-version{border-radius:4px}
+.beta-review-banner{border-radius:6px}
+.product-scan-header,.exam-scan-steps,.exam-scan-progress{box-shadow:none!important}
+@media(max-width:640px){
+ .exam-scan-header{padding:17px}
+ .exam-scan-steps{gap:8px}
+ .product-upload-actions .btn{min-height:46px}
+}
