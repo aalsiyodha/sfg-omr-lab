@@ -125,6 +125,57 @@ function evaluateHypothesis(
             threshold:profile.threshold,
             note:'Exploratory shift score only; QR and timing must still reverify',
           });
+        // Only attempt a bounded global correction when *both* independent
+        // timing bands show a substantial improvement. Never use an
+        // exploratory timing score as acceptance evidence.
+        const shift=profile.bestShiftPx;
+        if (!check.passed && shift.matches >= 35 &&
+            shift.leftMatched >= 10 && shift.rightMatched >= 10 &&
+            shift.matches >= check.matched+8 &&
+            (shift.dx!==0 || shift.dy!==0)) {
+          let affine:any=null,translated:any=null,shiftGray:any=null;
+          try {
+            affine=cv.matFromArray(2,3,cv.CV_64F,
+              [1,0,-shift.dx,0,1,-shift.dy]);
+            translated=new cv.Mat();
+            cv.warpAffine(persp.corrected,translated,affine,
+              new cv.Size(persp.corrected.cols,persp.corrected.rows));
+            const shiftedCanvas=document.createElement('canvas');
+            shiftedCanvas.width=translated.cols;shiftedCanvas.height=translated.rows;
+            cv.imshow(shiftedCanvas,translated);
+            const shiftedQR=decodeQRFromRegion(shiftedCanvas,
+              OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+            if(shiftedQR.valid && shiftedQR.raw===qr.raw){
+              shiftGray=new cv.Mat();
+              cv.cvtColor(translated,shiftGray,cv.COLOR_RGBA2GRAY);
+              const shiftedCheck=verifyTimingMarks(shiftGray,dpi);
+              logger.info('alignmentDiagnostics',
+                `${hypothesis.name}: verified shared-shift fallback`,{
+                  dx:shift.dx,dy:shift.dy,
+                  before:check.matched,after:shiftedCheck.matched,
+                  left:shiftedCheck.leftMatched,right:shiftedCheck.rightMatched,
+                  sameQR:true});
+              if(shouldAdoptTimingRefinement(check,shiftedCheck)){
+                cleanupMats(gray,persp.corrected);
+                persp.corrected=translated;translated=null;
+                gray=shiftGray;shiftGray=null;
+                persp.correctedDataUrl=shiftedCanvas.toDataURL('image/png');
+                cv.imshow(canvas,persp.corrected);
+                check=shiftedCheck;
+              }
+            }else logger.info('alignmentDiagnostics',
+              `${hypothesis.name}: shared-shift fallback rejected by QR`,{
+                dx:shift.dx,dy:shift.dy,found:shiftedQR.found,
+                valid:shiftedQR.valid});
+          }catch(error){
+            logger.warning('alignmentDiagnostics',
+              `${hypothesis.name}: shared-shift fallback unavailable`,
+              {reason:String(error)});
+          }finally{
+            cleanupMats(affine,translated,shiftGray);
+          }
+        }
+
       } catch (error) {
         logger.warning('alignmentDiagnostics',
           `${hypothesis.name}: timing profile unavailable`,{reason:String(error)});
