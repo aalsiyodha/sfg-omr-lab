@@ -187,7 +187,7 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
     lines.push('Registration triage: evaluated candidates=' + (attempts-skipped) +
       ' | duplicate skips=' + skipped + ' | QR-region failures=' + missedQR);
     const candidates=logs.flatMap(l=>{
-      const m=l.message.match(/^(.*?): timing marks (\\d+)\\/50/);
+      const m=l.message.match(/^(.*?): timing marks (\d+)\/50/);
       return m ? [{name:m[1],total:Number(m[2]),
         left:Number(l.data?.left ?? 0),right:Number(l.data?.right ?? 0)}] : [];
     }).sort((a,b)=>b.total-a.total);
