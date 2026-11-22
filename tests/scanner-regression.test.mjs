@@ -1531,7 +1531,7 @@ test('registration fallback: ArUco corner estimates correspond to physical corne
 
 test('registration fallback: guided anchors still require QR and timing verification', () => {
   const src=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
-  assert.match(src,/name:'corner\\/aruco-guided'/);
-  assert.match(src,/evaluateHypothesis\\(loaded\\.canvas, hypothesis, dpi\\)/);
-  assert.match(src,/verifyTimingMarks\\(gray, dpi\\)/);
+  assert.ok(src.includes("name:'corner/aruco-guided'"));
+  assert.ok(src.includes('evaluateHypothesis(loaded.canvas, hypothesis, dpi)'));
+  assert.ok(src.includes('verifyTimingMarks(gray, dpi)'));
 });
