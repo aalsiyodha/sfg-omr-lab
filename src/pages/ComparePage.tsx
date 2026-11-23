@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {APP_BUILD_META} from '../config/version';
 import {ENGINES,runEngine,imageSha256} from '../comparison/engines';
-import type {EngineId,EngineResult} from '../comparison/engines';
+import type {EngineId,EngineResult,Point} from '../comparison/engines';
 import {buildCompareReport,downloadJson,downloadText} from '../comparison/reports';
 import type {ReportMode} from '../comparison/reports';
 
@@ -22,6 +22,9 @@ export default function ComparePage(){
  const [error,setError]=useState('');
  const [reportMode,setReportMode]=useState<ReportMode>('compact');
  const [showAllCorners,setShowAllCorners]=useState(true);
+ const [markReference,setMarkReference]=useState(false);
+ const [reference,setReference]=useState<Point[]>([]);
+ const [referenceConfirmed,setReferenceConfirmed]=useState(false);
  const [tab,setTab]=useState<'results'|'overlay'|'diagnostics'>('results');
  const stop=useRef(false);
  const active=useRef(0);
@@ -39,11 +42,13 @@ export default function ComparePage(){
  },[file]);
  const ordered=ENGINES.filter(e=>selected.includes(e.id));
  const report=useMemo(()=>buildCompareReport({fileName:file?.name||'unselected',
-   fileBytes:file?.size||0,hash:hash||'pending',selected:ordered,results,mode:reportMode}),
- [file,hash,ordered.map(e=>e.id).join(','),results,reportMode]);
+   fileBytes:file?.size||0,hash:hash||'pending',selected:ordered,results,mode:reportMode,
+   reference:referenceConfirmed&&reference.length===4?reference:undefined}),
+ [file,hash,ordered.map(e=>e.id).join(','),results,reportMode,reference,referenceConfirmed]);
  const resetFile=(f:File|null)=>{
    if(busy)return;
    setFile(f);setResults([]);setError('');setTab('results');
+   setReference([]);setReferenceConfirmed(false);setMarkReference(false);
  };
  const run=async()=>{
    if(!file||!ordered.length||busy)return;
@@ -171,11 +176,36 @@ export default function ComparePage(){
              onChange={e=>setShowAllCorners(e.target.checked)}/>
            Show AI and recovered scanner geometry
          </label>
-         {imageUrl&&dimensions&&<div style={{position:'relative',maxWidth:700,margin:'0 auto'}}>
+         <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
+           <button className={'btn btn-sm '+(markReference?'btn-warning':'btn-outline-secondary')}
+             onClick={()=>setMarkReference(x=>!x)}>{markReference?'Marking corners…':'Mark reference corners'}</button>
+           <button className="btn btn-sm btn-outline-secondary" onClick={()=>{
+             setReference([]);setReferenceConfirmed(false);}}>Clear reference</button>
+           {reference.length===4&&<label className="small d-flex gap-2 align-items-center">
+             <input type="checkbox" checked={referenceConfirmed}
+               onChange={e=>setReferenceConfirmed(e.target.checked)}/>
+             Confirm these are the actual four paper corners</label>}
+         </div>
+         {markReference&&<p className="small text-secondary">Click the actual PAPER corners in this order: top-left, top-right, bottom-right, bottom-left. Next: {['TL','TR','BR','BL'][reference.length]||'all set'}.</p>}
+         {imageUrl&&dimensions&&<div onClick={e=>{
+           if(!markReference||reference.length>=4)return;
+           const rect=e.currentTarget.getBoundingClientRect();
+           const x=Math.max(0,Math.min(dimensions.w,(e.clientX-rect.left)/rect.width*dimensions.w));
+           const y=Math.max(0,Math.min(dimensions.h,(e.clientY-rect.top)/rect.height*dimensions.h));
+           setReference(prev=>[...prev,{x,y}]);setReferenceConfirmed(false);
+         }} style={{position:'relative',maxWidth:700,margin:'0 auto',cursor:markReference?'crosshair':'default'}}>
            <img src={imageUrl} alt="Input with predicted corner geometry"
              style={{display:'block',width:'100%',height:'auto',borderRadius:8}}/>
            <svg viewBox={'0 0 '+dimensions.w+' '+dimensions.h}
              style={{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'}}>
+             {reference.map((p,i)=><g key={'truth'+i}>
+               <circle cx={p.x} cy={p.y} r={Math.max(5,dimensions.w/110)}
+                 stroke="black" strokeWidth="2" fill="#facc15"/>
+               <text x={p.x+12} y={p.y-10} fill="#facc15" stroke="black" strokeWidth="0.8"
+                 fontSize={Math.max(12,dimensions.w/50)}>{['TL','TR','BR','BL'][i]}</text>
+             </g>)}
+             {reference.length===4&&<polygon fill="none" stroke="#facc15" strokeWidth="4"
+               strokeDasharray="13,8" points={reference.map(p=>p.x+','+p.y).join(' ')}/>}
              {showAllCorners&&corners.map((r,i)=><g key={r.id}>
                <polygon fill="none" stroke={overlayColors[i%overlayColors.length]} strokeWidth={Math.max(3,dimensions.w/300)}
                  points={r.corners.map(p=>p.x+','+p.y).join(' ')}/>
@@ -191,7 +221,13 @@ export default function ComparePage(){
              <span style={{display:'inline-block',width:11,height:11,borderRadius:3,background:overlayColors[i%overlayColors.length]}}/> {r.name}
            </span>)}
          </div>:<p className="small text-secondary">No corner coordinates available from the selected engines.</p>}
-         <p className="small text-secondary mt-2">These are proposals, not manually confirmed ground-truth corners.</p>
+         {referenceConfirmed&&reference.length===4&&<div className="border rounded p-3 my-3">
+           <strong>Mean corner error against your verified reference</strong>
+           {corners.map(r=><div className="small mt-1" key={r.id}>{r.name}: {
+             (r.corners.reduce((sum,p,i)=>sum+Math.hypot(p.x-reference[i].x,p.y-reference[i].y),0)/4).toFixed(1)
+           } px</div>)}
+         </div>}
+         <p className="small text-secondary mt-2">AI proposals are not ground truth. Use the manual reference only after confirming real paper corners.</p>
        </>}
        {tab==='diagnostics'&&<>
          <h2 className="h5">Token-efficient comparison diagnostic</h2>
@@ -206,7 +242,8 @@ export default function ComparePage(){
            <button className="btn btn-outline-secondary btn-sm"
              onClick={()=>downloadJson('sfg-omr-v2.4-full.json',{
                hash,name:file?.name,bytes:file?.size,generated:new Date().toISOString(),
-               engines:ordered.map(e=>({id:e.id,version:e.version}))
+               engines:ordered.map(e=>({id:e.id,version:e.version})),
+               manuallyConfirmedCorners:referenceConfirmed&&reference.length===4?reference:null
              },results)}>Full JSON</button>
          </div>
          <p className="small text-secondary">{reportMode==='compact'?'Minimal cross-engine findings; ideal for sharing':
