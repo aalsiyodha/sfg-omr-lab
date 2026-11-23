@@ -7,6 +7,7 @@ on:
       - fix/v2.4.2-comparison-runtime
       - fix/v2.4.3-coordinate-evidence
       - feature/v2.4.4-overlay-export
+      - feature/v2.4.5-landmark-grid
   workflow_dispatch:
 permissions:
   contents: read

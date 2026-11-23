@@ -2,8 +2,9 @@ import type { ScanResult } from '../types';
 import { recoverPageWithScanic } from '../scanner/scanicPageRescue';
 import { recoverPageWithAI } from '../scanner/aiPageRescue';
 import { runBubbleAi } from './bubbleAi';
+import { runLandmarkGrid } from './landmarkGrid';
 
-export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn';
+export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn'|'landmark';
 export type Outcome='verified'|'partial'|'provisional'|'failed'|'detected'|'rejected'|'error';
 export interface Point {x:number;y:number}
 export interface ImageSpace {width:number;height:number}
@@ -14,21 +15,22 @@ export function cornersNormalized(r:Pick<EngineResult,'corners'|'imageSpace'>):P
   return r.corners.map(p=>({x:p.x/imageSpace.width,y:p.y/imageSpace.height}));
 }
 export interface EngineDefinition{
-  id:EngineId;name:string;kind:'scanner'|'detector'|'bubble';details:string;
+  id:EngineId;name:string;kind:'scanner'|'detector'|'bubble'|'landmark';details:string;
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
-  {id:'current',name:'Current v2.4.3',kind:'scanner',version:'2.4.3',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'current',name:'Current v2.4.5',kind:'scanner',version:'2.4.5',details:'Complete scanner with QR-less provisional policy',assetPath:''},
   {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
   {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
   {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
+  {id:'landmark',name:'Optical Local-Grid v1',kind:'landmark',version:'2.4.5-exp1',details:'Non-AI 4-anchor hybrid registration + independent left/right timing tracks and row-wise bubble sampling. Research-only, never grades.'},
   {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
   {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
   {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
   {id:'bubblecnn',name:'SmallOMRNet Bubble AI',kind:'bubble',version:'hermitkk / AGPL-3.0',details:'Experimental filled/empty checkbox classifier on aligned bubble crops. NOT scoring.',sizeNote:'~148 KB model'},
 ];
 export interface EngineResult {
-  id:EngineId;name:string;kind:'scanner'|'detector'|'bubble';version:string;
+  id:EngineId;name:string;kind:'scanner'|'detector'|'bubble'|'landmark';version:string;
   outcome:Outcome;elapsedMs:number;reason:string;
   corners:Point[];confidence:number|null;
   /** Native pixels of the canvas in which the returned corners were predicted. */
@@ -203,6 +205,7 @@ export async function runEngine(def:EngineDefinition,file:File,previous:EngineRe
   const t=performance.now();
   try{
     return def.kind==='scanner'?await runIframe(def,file):
+      def.kind==='landmark'?await runLandmarkGrid(def,file,previous):
       def.kind==='bubble'?await runBubbleAi(def,
         previous.find(x=>x.id==='current'&&Boolean(x.alignedImage))??
         previous.find(x=>x.id==='scanic'&&Boolean(x.alignedImage))):
