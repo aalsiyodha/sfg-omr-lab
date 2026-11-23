@@ -1,0 +1,24 @@
+name: Validate v2.4 Comparison Lab
+on:
+  push:
+    branches:
+      - feature/v2.4-universal-comparison
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:scanner
+      - run: npm run build
+        env:
+          GITHUB_PAGES: 'true'
