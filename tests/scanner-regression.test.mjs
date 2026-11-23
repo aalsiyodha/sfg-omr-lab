@@ -287,7 +287,7 @@ test('v1.8 clear C remains detected, A+B multiple remains multiple', () => {
   assert.equal(bubbles.detectQuestion(fakeImage([1,1,0,0]), 26, 150, 152).status,'multiple');
 });
 
-test('v1.8 beta report includes concise answer map and excludes student identity', () => {
+test('v2.3.44 beta report retains identifiers for local testing', () => {
   const report = loadTS('src/diagnostics/llmPromptGenerator.ts', {
     '../config/scannerSettings': { getSettings: () => settings },
     '../config/version': { APP_VERSION: 'v1.8.0', getBuildIdentity: () => 'Source: local-dev | Scanner: v1.8.0 | Commit: test' },
@@ -314,7 +314,7 @@ test('v1.8 beta report includes concise answer map and excludes student identity
   assert.match(prompt,/case01.jpg/);
   assert.match(prompt,/29:\?/);
   assert.match(prompt,/Q29 uncertain/);
-  assert.doesNotMatch(prompt,/SENSITIVE_STUDENT|SFGOMR1:SECRET/);
+  assert.match(prompt,/SENSITIVE_STUDENT|SFGOMR1:SECRET/);
   assert.ok(prompt.length < 2400, 'Beta report should be short enough for messaging');
 });
 
@@ -1462,7 +1462,7 @@ test('diagnostics keep filenames and remove repetitive full-report instructions'
   assert.equal(source.includes('## 8. Instructions for the LLM'),false);
   assert.equal(source.includes('Top | 2nd | Gap | Baseline'),false);
   const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
-  assert.ok(scan.includes('file:capturedFile,activeTestId'));
+  assert.ok(scan.includes('file:capturedFile,fileSha256,activeTestId'));
 });
 
 
