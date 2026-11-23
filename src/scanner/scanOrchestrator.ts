@@ -518,6 +518,42 @@ export async function runFullScan(
       }
     }
 
+    // v2.4.612: recover from an incorrectly detected single top square.
+    // Both thresholding methods share the independently decoded bottom ArUco
+    // IDs but propose different top positions. Test the two cross-combinations
+    // individually, without merging observations from different warps. This
+    // bounded hypothesis search is failure-only and cannot bypass QR or timing.
+    if(!selected && primary.topLeft && primary.topRight &&
+        cornerOtsuForHybrid.topLeft && cornerOtsuForHybrid.topRight){
+      const mixed=[
+        {name:'adaptive-TL/Otsu-TR',topLeft:primary.topLeft,
+          topRight:cornerOtsuForHybrid.topRight},
+        {name:'Otsu-TL/adaptive-TR',topLeft:cornerOtsuForHybrid.topLeft,
+          topRight:primary.topRight}
+      ];
+      for(const pair of mixed){
+        const markers:MarkerDetectionResult={...primary,found:true,count:4,
+          topLeft:pair.topLeft,topRight:pair.topRight,validGeometry:true};
+        const evidence=hybridAnchorEvidence(markers,arucoAdaptive);
+        logger.info('perspective','Cross-threshold corner-repair hypothesis',{
+          method:pair.name,usable:evidence.usable,reason:evidence.reason,
+          topLeft:pair.topLeft,topRight:pair.topRight,
+          bottomArucoIds:Object.keys(arucoAdaptive.points)});
+        if(!evidence.usable)continue;
+        warpAttempts++;
+        const hypothesis:Hypothesis={kind:'hybrid',
+          name:'hybrid/corner-repair-'+pair.name,
+          corners:markers,aruco:arucoAdaptive};
+        const accepted=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+        if(!accepted)continue;
+        selected=accepted;
+        logger.info('perspective','Cross-threshold corner repair strictly verified',{
+          method:hypothesis.name,qr:true,timing:accepted.check.matched,
+          left:accepted.check.leftMatched,right:accepted.check.rightMatched});
+        break;
+      }
+    }
+
     // Geometric QR finder search on the ORIGINAL photo is independent of
     // a failed perspective warp. It is diagnostic evidence, not scan approval.
     if(!selected){

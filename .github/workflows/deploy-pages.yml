@@ -67,6 +67,17 @@ jobs:
           test -s dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
           test -s dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
           ls -lh dist/ai-runtime dist/ai-model
+      # Optional tenth detector: the larger Apache-2.0 DocAligner FastViT-SA24.
+      # Pin to known model repository revision; fetch at build, never on a
+      # standard scanner's fast path. 83 MB may be impractical on mobile.
+      - name: Vendor FastViT-SA24 large independent corner detector
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 3 --max-time 240 \
+            'https://huggingface.co/7rplus/pagescan-weights/resolve/6ffde6b/fastvit_sa24_h_e_bifpn_256_fp32.onnx?download=true' \
+            -o dist/ai-model/fastvit_sa24_h_e_bifpn_256_fp32.onnx
+          test "$(stat -c%s dist/ai-model/fastvit_sa24_h_e_bifpn_256_fp32.onnx)" -gt 75000000
+          ls -lh dist/ai-model/fastvit_sa24_h_e_bifpn_256_fp32.onnx
       # v2.3.48: independently trained Scanic DocCornerNet (SimCC) fallback.
       # Commit-pinned, MIT licensed; self-host model+minimal WASM.
       - name: Check out pinned Scanic source

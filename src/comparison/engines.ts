@@ -4,7 +4,7 @@ import { recoverPageWithAI } from '../scanner/aiPageRescue';
 import { runBubbleAi } from './bubbleAi';
 import { runLandmarkGrid } from './landmarkGrid';
 
-export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn'|'landmark';
+export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn'|'landmark'|'sa24';
 export type Outcome='verified'|'partial'|'provisional'|'failed'|'detected'|'rejected'|'error';
 export interface Point {x:number;y:number}
 export interface ImageSpace {width:number;height:number}
@@ -19,14 +19,15 @@ export interface EngineDefinition{
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
-  {id:'current',name:'Current v2.4.611',kind:'scanner',version:'2.4.611',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'current',name:'Current v2.4.612',kind:'scanner',version:'2.4.612',details:'Complete scanner with QR-less provisional policy',assetPath:''},
   {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
   {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
   {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
-  {id:'landmark',name:'Optical Local-Grid v1',kind:'landmark',version:'2.4.611-exp3',details:'Non-AI 4-anchor hybrid registration + independent left/right timing tracks and row-wise bubble sampling. Research-only, never grades.'},
+  {id:'landmark',name:'Optical Local-Grid v1',kind:'landmark',version:'2.4.612-exp4',details:'Non-AI 4-anchor hybrid registration + independent left/right timing tracks and row-wise bubble sampling. Research-only, never grades.'},
   {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
   {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
   {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
+  {id:'sa24',name:'DocAligner FastViT-SA24 (large)',kind:'detector',version:'DocAligner / SA24',details:'Large 83 MB document-corner ONNX model (separate from T8); optional and not a scored OMR scanner.',sizeNote:'~83 MB model · may be slow on phones'},
   {id:'bubblecnn',name:'SmallOMRNet Bubble AI',kind:'bubble',version:'hermitkk / AGPL-3.0',details:'Experimental filled/empty checkbox classifier on aligned bubble crops. NOT scoring.',sizeNote:'~148 KB model'},
 ];
 export interface EngineResult {
@@ -177,7 +178,7 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
     const canvas=await canvasFor(file);
     const result=def.id==='scanic'?
       await recoverPageWithScanic(canvas,trace):
-      await recoverPageWithAI(canvas,trace,def.id==='fastvit'?'fastvit':'lcnet');
+      await recoverPageWithAI(canvas,trace,def.id==='fastvit'?'fastvit':def.id==='sa24'?'sa24':'lcnet');
     const rawCorn=traces.findLast(t=>t.message==='raw-model-corners')?.data;
     const raw=rawCorn&&typeof rawCorn==='object'?rawCorn as {
       corners?:Point[];confidence?:number

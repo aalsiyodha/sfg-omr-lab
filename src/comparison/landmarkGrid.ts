@@ -276,7 +276,10 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         });
         const ranks=values.map((b,i)=>({i,fill:b.fill,background:b.background}))
           .sort((a,b)=>b.fill-a.fill);
-        const decisive=ranks[0].fill>=.63&&ranks[0].fill-ranks[1].fill>=.34;
+        // Raise the exploratory gate after v2.4.611 produced a Q25=C
+        // false positive (0.711 fill) on a verified blank row. Still not
+        // permission to score: a strong dark core can be a stray mark.
+        const decisive=ranks[0].fill>=.80&&ranks[0].fill-ranks[1].fill>=.40;
         const answer=decisive?OPTIONS[ranks[0].i]:null;
         answers.push({q:question,answer,status:decisive?'experimental':'uncertain',
           confidence:Math.round((ranks[0].fill-ranks[1].fill)*100)});
@@ -288,14 +291,23 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
     }
     const reference=previous.find(r=>r.kind==='scanner'&&r.alignmentVerified&&r.qrValid&&r.answers.length===50);
     if(reference){
-      let matches=0,differences=0;
+      let matches=0,differences=0,falseMarks=0,missedMarks=0,
+        unresolvedBlank=0,multiple=0;
       for(const a of answers){
         const b=reference.answers.find(q=>q.q===a.q);
-        if(a.answer&&b?.answer){if(a.answer===b.answer)matches++;else differences++;}
+        if(!b)continue;
+        if(b.status==='multiple'){multiple++;if(a.answer)falseMarks++;continue;}
+        if(b.status==='blank'){if(a.answer)falseMarks++;else unresolvedBlank++;continue;}
+        if(b.status==='detected'){
+          if(!a.answer)missedMarks++;
+          else if(a.answer===b.answer)matches++;
+          else differences++;
+        }
       }
       traces.push({stage:'landmark',message:'optical-reference-agreement',
         data:{reference:reference.id,comparableMarkedRows:matches+differences,
-          matches,differences,notGroundTruth:true,neverForGrading:true}});
+          matches,differences,falseMarks,missedMarks,unresolvedBlank,multiple,
+          notGroundTruth:true,neverForGrading:true}});
     }
     traces.push({stage:'landmark',message:'experimental-bubble-summary',
       data:{measured:answers.length,decisive:answers.filter(a=>a.answer).length,
