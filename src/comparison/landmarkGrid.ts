@@ -415,7 +415,7 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         const decision=classifyFills(values);
         const answer=decision.answer;
         answers.push({q:question,...decision});
-        if(row===0||row===12||row===24)traces.push({stage:'landmark',
+        if(row===0||row===12||row===24||[20,38,49].includes(question))traces.push({stage:'landmark',
           message:'example-row-sample',data:{side,question,track:shift,
             fill:values.map(v=>Number(v.fill.toFixed(3))),
             morphology:values.map(v=>({center:Number(v.centerFill.toFixed(2)),
