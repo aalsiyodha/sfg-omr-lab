@@ -15,7 +15,9 @@ export interface BoundaryEvidence {
   quadrilateral?:PagePoint[];
   candidates?:number;
   rejectedBorder?:number;
+  rejectedImageCorner?:number;
   rejectedGeometry?:number;
+  candidateSummary?:Array<{method:string;score:number;areaRatio:number;minMarginRatio:number}>;
   thresholdsTried?:number;
   method?:string;
 }
@@ -51,6 +53,16 @@ export function hasClippedImageEdge(points:PagePoint[],width:number,height:numbe
   const right=ordered.filter(p=>near(p.x,width)).length;
   return top>=2||bottom>=2||left>=2||right>=2;
 }
+/** A contour pinned to an actual photograph corner is often the bright
+ * background, not the page. A real page may touch a single SIDE edge;
+ * reject only corners simultaneously touching two perpendicular edges.
+ */
+export function touchesImageCorner(points:PagePoint[],width:number,height:number):boolean{
+  const tol=Math.max(4,Math.min(width,height)*.012);
+  return points.some(p=>
+    (p.x<=tol || p.x>=width-tol) &&
+    (p.y<=tol || p.y>=height-tol));
+}
 export function plausiblePageBoundary(points:PagePoint[],width:number,height:number):boolean{
   const p=orderPageCorners(points);
   if(!p)return false;
@@ -75,7 +87,7 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
   let mask:any=null,kernel:any=null,contours:any=null,hierarchy:any=null;
   let points:any=null,dest:any=null,homography:any=null,output:any=null;
   const report=(e:BoundaryEvidence)=>onEvidence?.(e);
-  const diagnostics={candidates:0,rejectedBorder:0,rejectedGeometry:0,thresholdsTried:0};
+  const diagnostics={candidates:0,rejectedBorder:0,rejectedImageCorner:0,rejectedGeometry:0,thresholdsTried:0};
   try{
     src=cv.imread(source);
     gray=new cv.Mat();cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
@@ -132,6 +144,9 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
               if(hasClippedImageEdge(corners,source.width,source.height)){
                 diagnostics.rejectedBorder++;continue;
               }
+              if(touchesImageCorner(corners,source.width,source.height)){
+                diagnostics.rejectedImageCorner++;continue;
+              }
               // Prefer a large actual sheet with available margins. A large
               // contour which hugs the image boundary is NOT automatically
               // more trustworthy than a slightly smaller inner contour.
@@ -152,10 +167,20 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
       }finally{contours.delete();hierarchy.delete();contours=null;hierarchy=null;}
     }
     candidates.sort((a,b)=>b.score-a.score);
+    const candidateSummary=candidates.slice(0,4).map(c=>({
+      method:c.method,score:Number(c.score.toFixed(4)),
+      areaRatio:Number((c.area/(small.cols*small.rows)).toFixed(4)),
+      minMarginRatio:Number(Math.min(...c.corners.flatMap(p=>[
+        p.x/source.width,1-p.x/source.width,p.y/source.height,1-p.y/source.height
+      ])).toFixed(4))
+    }));
     if(!candidates.length){
-      report({reason:diagnostics.rejectedBorder>0
+      report({reason:diagnostics.rejectedImageCorner>0
+        ? 'false-paper-boundary-image-corner-rejected'
+        : diagnostics.rejectedBorder>0
         ? 'background-touching-image-border-rejected'
-        : 'no-plausible-outer-page-quadrilateral',...diagnostics});
+        : 'no-plausible-outer-page-quadrilateral',...diagnostics,
+        candidateSummary});
       return null;
     }
     const best=candidates[0];
@@ -173,12 +198,12 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
     const canvas=document.createElement('canvas');
     canvas.width=w;canvas.height=h;cv.imshow(canvas,output);
     report({reason:'outer-page-rough-warp-created-not-verified',
-      ...diagnostics,
+      ...diagnostics,candidateSummary,
       method:best.method,contourAreaRatio:best.area/(small.cols*small.rows),
       quadrilateral:corners});
     return {canvas,evidence:{
       reason:'outer-page-rough-warp-created-not-verified',
-      ...diagnostics,method:best.method,
+      ...diagnostics,method:best.method,candidateSummary,
       contourAreaRatio:best.area/(small.cols*small.rows),quadrilateral:corners}};
   }catch(error){
     report({reason:'boundary-recovery-opencv-error: '+String(error),...diagnostics});
