@@ -7,6 +7,7 @@ import type { ScanResult } from '../types';
 interface LLMReportOptions {
   scanResult: ScanResult;
   file?: File | null;
+  fileSha256?: string | null;
   activeTestId?: number | null;
   answerKey?: string[] | null;
 }
@@ -18,7 +19,7 @@ interface LLMReportOptions {
 /** Complete diagnostic: compact enough to share, but retains all 50 bubble
  * measurements and every problematic row's individual evidence. */
 export function generateLLMDiagnosticPrompt({
-  scanResult, file, activeTestId, answerKey,
+  scanResult, file, fileSha256, activeTestId, answerKey,
 }: LLMReportOptions): string {
   const lines: string[] = [
     '# SFG OMR LAB — v2.3.44 FAST LOCAL SCANNER diagnostic',
@@ -26,6 +27,7 @@ export function generateLLMDiagnosticPrompt({
     'Generated=' + new Date().toISOString(),
     'File=' + (file?.name ?? 'camera/unknown') +
       (file ? ' | ' + (file.size / 1024).toFixed(1) + 'KB | ' + file.type : ''),
+    'File SHA-256=' + (fileSha256 ?? 'pending/unavailable'),
     'Status=' + scanResult.overallStatus + ' | elapsed=' + scanResult.processingTimeMs + 'ms' +
       ' | testId=' + (scanResult.testId ?? 'missing') + ' | activeTest=' + (activeTestId ?? 'none') +
       ' | QR=' + (scanResult.qrValid ? 'valid' : 'invalid'),
@@ -147,7 +149,7 @@ export function generateLLMDiagnosticPrompt({
  * optional coloured overlay should be attached separately, never embedded.
  * Includes the answer map plus measurements only for suspicious rows.
  */
-export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: LLMReportOptions): string {
+export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file, fileSha256 }: LLMReportOptions): string {
   // Compact by design: always include identity, overall result, 50 answer
   // decisions and at most 12 detailed review samples. Never paste 50x4 verbose
   // measurements; identifiers are deliberately retained for testing.
@@ -157,6 +159,7 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
     'SFG OMR Lab — compact scan diagnostic',
     getBuildIdentity(),
     'File=' + (file?.name ?? 'camera/unknown') + (file ? ' | ' + (file.size/1024).toFixed(1) + 'KB' : ''),
+    'File SHA-256=' + (fileSha256 ?? 'pending/unavailable'),
     'Attach original OMR photo separately; photo pixels are not in this report.',
     'Status=' + scanResult.overallStatus +
       ' | testId=' + (scanResult.testId === null ? 'missing' : String(scanResult.testId).padStart(2,'0')) +
