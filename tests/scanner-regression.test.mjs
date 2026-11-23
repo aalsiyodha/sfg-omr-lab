@@ -1756,3 +1756,17 @@ test('v2.3.45: hybrid recovery remains fail-only with strict QR/timing acceptanc
   assert.ok(qr.includes("locateQRInPhoto"));
   assert.ok(diagnostics.includes("Hybrid cross-family recovery evidence"));
 });
+
+test('AI-to-OMR research pipeline retains independent QR, timing and sampled-bubble gates',()=>{
+  const dense=readFileSync(resolve(process.cwd(),'src/comparison/denseResearch.ts'),'utf8');
+  const grid=readFileSync(resolve(process.cwd(),'src/comparison/landmarkGrid.ts'),'utf8');
+  const engines=readFileSync(resolve(process.cwd(),'src/comparison/engines.ts'),'utf8');
+  assert.match(dense,/const w=isUv\?496:384,h=isUv\?720:384;/);
+  assert.match(dense,/evaluateResearchCanvas\(out\)/);
+  assert.match(dense,/evaluateResearchCanvas\(mask\.candidate\)/);
+  assert.match(grid,/function timingCoherence\(/);
+  assert.match(grid,/export function evaluateResearchCanvas\(/);
+  assert.match(grid,/decodeQRFromRegion\(resized/);
+  assert.match(engines,/AI-warp 50-row optical reference comparison/);
+  assert.match(engines,/alignmentVerified:false/);
+});
