@@ -22,7 +22,7 @@ export function generateLLMDiagnosticPrompt({
   scanResult, file, fileSha256, activeTestId, answerKey,
 }: LLMReportOptions): string {
   const lines: string[] = [
-    '# SFG OMR LAB — v2.3.45 FAST LOCAL SCANNER diagnostic',
+    '# SFG OMR LAB — '+APP_VERSION+' FAST LOCAL SCANNER diagnostic',
     getBuildIdentity(),
     'Generated=' + new Date().toISOString(),
     'File=' + (file?.name ?? 'camera/unknown') +
@@ -70,6 +70,14 @@ export function generateLLMDiagnosticPrompt({
       (log.data?' '+JSON.stringify(log.data):''));
     lines.push('Next capture check: ensure the entire sheet, all corners and QR are in-frame, evenly lit and sharp.');
   }
+  // AI is only invoked after traditional registration fails. Keep all stages
+  // available even if the AI runtime or model fails before inference.
+  const aiLogs=(scanResult.stageLogs??[]).filter(l=>
+    /AI trace:|AI document boundary recovery|AI-prewarped fiducial discovery|AI candidate verification result|AI-assisted registration independently verified|AI last-resort summary|Optional AI recovery unavailable/i.test(l.message));
+  lines.push('AI fallback evidence ('+aiLogs.length+'):');
+  if(!aiLogs.length)lines.push('AI not invoked (or no AI logs present).');
+  for(const l of aiLogs)lines.push('  ['+l.level+'/'+l.stage+'] '+l.message+
+    (l.data?' '+JSON.stringify(l.data):''));
   lines.push('Full bubble measurements (percent, no redundant rank/baseline columns):');
   lines.push('Q | A | B | C | D | result | status | confidence | edited | key');
   for (const q of scanResult.answers) {
@@ -125,7 +133,7 @@ export function generateLLMDiagnosticPrompt({
   const logs = scanResult.stageLogs ?? [];
   const significant = logs.filter(l =>
     scanResult.answers.length===0 || l.level==='ERROR' || l.level==='WARNING' ||
-    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|boundary|recovery|performance/i.test(l.message));
+    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|boundary|recovery|performance|AI trace|AI last-resort/i.test(l.message));
   // Keep one compact, machine-parsable performance and registration summary.
   const performance=logs.filter(l=>/Registration performance summary|Outer-page rescue timing|Scan stage timings|Scan complete in/i.test(l.message));
   const recovery=logs.filter(l=>/timing-track recovery evidence|timing-track holdout validation|Outer-page boundary recovery evidence|Outer-page fiducial redetection|Hybrid cross-family recovery evidence|grayscale landmark cross-check|Independent original-photo QR locator/i.test(l.message));
