@@ -73,9 +73,12 @@ export function buildCompareReport(params:{
    lines.push('Independent page-corner disagreement (percent of image diagonal; normalized coordinates):');
    for(let i=0;i<cornerPairs.length;i++)for(let j=i+1;j<cornerPairs.length;j++){
      const a=cornerPairs[i],b=cornerPairs[j];
+     // Compare in the actual input photo's pixel aspect ratio.
+     const w=referenceSpace?.width??1,h=referenceSpace?.height??1;
      const distance=a.n.reduce((sum,p,k)=>sum+Math.hypot(
-       p.x-b.n[k].x,p.y-b.n[k].y),0)/4;
-     lines.push('  '+a.r.id+' vs '+b.r.id+': '+round(distance/Math.SQRT2*100,2)+'% image diagonal');
+       (p.x-b.n[k].x)*w,(p.y-b.n[k].y)*h),0)/4;
+     lines.push('  '+a.r.id+' vs '+b.r.id+': '+round(
+       distance/Math.hypot(w,h)*100,2)+'% image diagonal');
    }
  }
  if(mode==='compact'){
