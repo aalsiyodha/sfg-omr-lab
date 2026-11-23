@@ -66,6 +66,8 @@ export interface ScanResult {
   markerCount: number;
   perspectiveCorrected: boolean;
   alignmentVerified?: boolean;
+  /** QR-less extraction: geometrically supported, never eligible for automatic scoring. */
+  provisional?: boolean;
   alignmentMatched?: number;
   registrationMethod?: string | null;
   orientationRotated?: boolean;
