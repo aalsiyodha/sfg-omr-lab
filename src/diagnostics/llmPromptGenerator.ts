@@ -38,6 +38,7 @@ export function generateLLMDiagnosticPrompt({
       ' | perspective=' + Boolean(scanResult.perspectiveCorrected) +
       ' | timing=' + (scanResult.alignmentMatched ?? '?') + '/50' +
       ' | verified=' + (scanResult.alignmentVerified === true) +
+      ' | provisional=' + Boolean(scanResult.provisional) +
       ' | rotated180=' + Boolean(scanResult.orientationRotated),
   ];
   if (scanResult.grayCalibration) {
