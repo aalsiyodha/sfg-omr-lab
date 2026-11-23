@@ -1,3 +1,8 @@
+
+## v2.4 — Universal Comparison Lab
+
+Open [the browser-only comparison lab](https://aalsiyodha.github.io/sfg-omr-lab/#/compare) to upload one image and run selectable scanner versions v2.4, v2.3.45, v2.2.6 Lite, v2.2.4 alongside Scanic DocCornerNet, DocAligner LCNet-100, and FastViT-T8 page-corner detectors. An optional AGPL-3.0 SmallOMRNet bubble model can compare 200 bubble crops when the current scanner produces a geometrically aligned sheet. No AI-based grading is enabled. Export compact/differences/full diagnostics and mark manually verified paper corners for pixel-error benchmarking. Models are loaded on demand; comparison processing runs in the browser. See [comparison documentation](docs/v2.4-comparison.md).
+
 # SFG OMR LAB — Browser-Based OMR Scanner & Evaluation Laboratory
 
 ## v2.2.6-lite.1 — Fast scanner comparison (test/lite-experiment only)

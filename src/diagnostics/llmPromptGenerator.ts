@@ -177,7 +177,8 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file, fil
     'Registration=' + (scanResult.registrationMethod || 'none') +
       ' | timing=' + (scanResult.alignmentMatched ?? '?') + '/50' +
       ' | verified=' + String(scanResult.alignmentVerified === true) +
-      ' | rotated180=' + String(Boolean(scanResult.orientationRotated)),
+      ' | rotated180=' + String(Boolean(scanResult.orientationRotated)) +
+      ' | provisional=' + String(Boolean(scanResult.provisional)),
     'Student ID=' + (scanResult.studentId ?? 'not decoded') +
       ' | QR payload=' + (scanResult.qrRaw ?? 'not decoded'),
     'Processing=' + scanResult.processingTimeMs + 'ms | ' + counts,
@@ -188,16 +189,26 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file, fil
       ' | contrast=' + (scanResult.grayCalibration.contrast ?? '?'));
   if (scanResult.errors.length) lines.push('Errors=' + scanResult.errors.slice(0, 3).join('; '));
   if(scanResult.answers.length===0){
-    const recovery=(scanResult.stageLogs??[]).filter(l=>
-      /Hybrid cross-family recovery evidence|Independent original-photo QR locator|grayscale landmark cross-check|Outer-page boundary recovery evidence/.test(l.message));
-    lines.push('Failure recovery landmarks ('+recovery.length+'):');
-    for(const l of recovery)lines.push(l.message+(l.data?' '+JSON.stringify(l.data):''));
+    const logs=scanResult.stageLogs??[];
+    const ai=logs.filter(l=>/AI trace: scanic-variant|AI trace: raw-model-corners|AI document boundary recovery|AI candidate verification result|QR-less provisional geometry evidence|AI last-resort summary|Optional AI recovery unavailable/.test(l.message));
+    const landmarks=logs.filter(l=>
+      /grayscale landmark cross-check|Outer-page boundary recovery evidence|Independent original-photo QR locator/.test(l.message));
+    lines.push('Critical registration evidence:');
+    for(const l of [...landmarks.slice(-3),...ai.slice(-9)]){
+      const data=l.data||{};
+      // Avoid repeating full coordinate arrays in a routine compact report.
+      const summary=Object.fromEntries(Object.entries(data)
+        .filter(([key])=>!['corners','allCandidates','modelTimings','modelStageTimings','imageAnchors','candidateSummary'].includes(key)));
+      lines.push('  '+l.message+' '+JSON.stringify(summary));
+    }
+    if(ai.length===0)lines.push('  No AI fallback evidence recorded.');
+    lines.push('No bubble measurements: do not interpret omitted questions as blank/uncertain marks.');
   }
   if (scanResult.answers.length===0) lines.push('No answers were processed: registration failed; this is not a blank sheet.');
   if (scanResult.warnings?.length) lines.push('Warnings=' + scanResult.warnings.slice(0, 2).join('; '));
 
-  lines.push('Answer map (— blank, X multiple, ? uncertain/error):');
-  for (let start = 1; start <= 50; start += 10) {
+  if(scanResult.answers.length===50)lines.push('Answer map (— blank, X multiple, ? uncertain/error):');
+  for (let start = 1; scanResult.answers.length===50 && start <= 50; start += 10) {
     lines.push(Array.from({ length: 10 }, (_, i) => {
       const n = start+i;
       const q = scanResult.answers.find(a => a.question === n);

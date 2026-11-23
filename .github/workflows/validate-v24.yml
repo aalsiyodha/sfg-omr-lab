@@ -1,0 +1,177 @@
+name: Validate v2.4 Comparison Lab
+on:
+  push:
+    branches:
+      - feature/v2.4-universal-comparison
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:scanner
+      - run: npm run build
+        env:
+          GITHUB_PAGES: 'true'
+
+      # Vendor pinned AI runtime and model into GitHub Pages.
+      # No runtime dependency on third-party CDNs, and no network request
+      # on normal successful scans: assets are loaded only on failure.
+      - name: Check out pinned Quadscan source
+        uses: actions/checkout@v4
+        with:
+          repository: storrealbac/quadscan
+          ref: 5bbd55b58cabc196323ce541e0528deb42c57ee5
+          path: quadscan-source
+      - name: Install pinned AI runtime dependencies
+        run: npm ci
+        working-directory: quadscan-source
+      - name: Build pinned AI runtime
+        run: npm run build
+        working-directory: quadscan-source
+      - name: Bundle AI runtime and weights into Pages
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ai-model dist/ai-runtime
+          cp quadscan-source/dist/quadscan.iife.js dist/ai-runtime/quadscan.iife.js
+          cp quadscan-source/models/lcnet100_h_e_bifpn_256_fp32.onnx dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
+          cp quadscan-source/models/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
+          cp quadscan-source/node_modules/onnxruntime-web/dist/*.wasm dist/ai-runtime/
+          cp quadscan-source/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs dist/ai-runtime/
+          test -s dist/ai-runtime/ort.wasm.min.mjs
+          test -s dist/ai-runtime/quadscan.iife.js
+          test -s dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
+          test -s dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
+          ls -lh dist/ai-runtime dist/ai-model
+      # v2.3.48: independently trained Scanic DocCornerNet (SimCC) fallback.
+      # Commit-pinned, MIT licensed; self-host model+minimal WASM.
+      - name: Check out pinned Scanic source
+        uses: actions/checkout@v4
+        with:
+          repository: marquaye/scanic
+          ref: 480193b724fd2f2ad523a1cc279a3c65ce37dc2c
+          path: scanic-source
+      - name: Fetch pinned published Scanic ESM build
+        run: |
+          set -euo pipefail
+          mkdir -p scanic-published
+          npm pack scanic@1.8.0 --pack-destination scanic-published
+          tar -xzf scanic-published/scanic-1.8.0.tgz -C scanic-published
+          test -s scanic-published/package/dist/scanic.js
+      - name: Bundle Scanic model and runtime in GitHub Pages
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ai-runtime dist/ai-model/scanic
+          cp scanic-published/package/dist/scanic*.js dist/ai-runtime/
+          cp scanic-source/scanic-ml/dist/doccornernet_lean.ort dist/ai-model/scanic/
+          cp scanic-source/scanic-ml/dist/ort-wasm-simd-threaded.* dist/ai-model/scanic/
+          test -s dist/ai-runtime/scanic.js
+          test -s dist/ai-model/scanic/doccornernet_lean.ort
+          test -s dist/ai-model/scanic/ort-wasm-simd-threaded.wasm
+          ls -lh dist/ai-runtime/scanic* dist/ai-model/scanic/*
+      # Preserve the original v2.3.45 scanner on a dedicated subpath.
+      # Its archived source and build remain independent of current main.
+      - name: Check out archived v2.3.45
+        uses: actions/checkout@v4
+        with:
+          ref: archive/v2.3.45-stable
+          path: archived-source
+      - name: Install archived dependencies
+        run: npm ci
+        working-directory: archived-source
+      - name: Test archived scanner
+        run: npm run test:scanner
+        working-directory: archived-source
+      - name: Set archived Pages base path
+        working-directory: archived-source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('vite.config.ts')
+          text=p.read_text()
+          needle="'/sfg-omr-lab/'"
+          assert needle in text
+          p.write_text(text.replace(needle,"'/sfg-omr-lab/v2.3.45/'",1))
+          PY
+      - name: Copy versioned comparison bridge into archived v2.3.45
+        run: |
+          cp src/comparisonBridge.ts archived-source/src/comparisonBridge.ts
+          printf "\nimport './comparisonBridge'\n" >> archived-source/src/main.tsx
+      - name: Build archived v2.3.45 website
+        run: npm run build
+        working-directory: archived-source
+        env:
+          GITHUB_PAGES: 'true'
+      - name: Package both versions
+        run: |
+          mkdir -p dist/v2.3.45
+          cp -R archived-source/dist/. dist/v2.3.45/
+      # Experimental checkbox classifier: AGPL-3.0, small 64x64 grayscale CNN.
+      # Never used for actual scoring; only an independent bubble comparison.
+      - name: Vendor experimental SmallOMRNet ONNX and license
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ai-model/bubble
+          curl -fL --retry 3 --max-time 90 \
+            'https://huggingface.co/hermitkk/omr-checkbox-classifier/resolve/046c24e/omr_model.onnx?download=true' \
+            -o dist/ai-model/bubble/omr_model.onnx
+          curl -fL --retry 3 --max-time 90 \
+            'https://raw.githubusercontent.com/spdx/license-list-data/main/text/AGPL-3.0-only.txt' \
+            -o dist/ai-model/bubble/LICENSE-AGPL-3.0.txt
+          printf 'SmallOMRNet / omr-checkbox-classifier\nAuthor: hermitkk (Chenfeng Xu), UBC / Plom Project\nModel: https://huggingface.co/hermitkk/omr-checkbox-classifier\nRevision: 046c24e\nLicense: AGPL-3.0\nExperimental only: trained on synthetic checkboxes, not verified on SFG circular bubbles.\n' > dist/ai-model/bubble/NOTICE.txt
+          test -s dist/ai-model/bubble/omr_model.onnx
+          test -s dist/ai-model/bubble/LICENSE-AGPL-3.0.txt
+      # Two further fully independent legacy engines (do NOT mix their OpenCV globals).
+      - name: Check out archived v2.2.6 Lite
+        uses: actions/checkout@v4
+        with:
+          ref: release/v2.2.6-lite-old-version-retest
+          path: historical-226
+      - name: Check out archived v2.2.4
+        uses: actions/checkout@v4
+        with:
+          ref: release/v2.2.4-qwen-hardening
+          path: historical-224
+      - name: Build original historical scanner engines with isolated bridge
+        run: |
+          set -euo pipefail
+          for pair in "historical-226:v2.2.6" "historical-224:v2.2.4"; do
+            folder="${pair%%:*}"
+            ver="${pair##*:}"
+            cp src/comparisonBridge.ts "$folder/src/comparisonBridge.ts"
+            printf "\nimport './comparisonBridge'\n" >> "$folder/src/main.tsx"
+            python3 - "$folder" "$ver" <<'PY'
+          from pathlib import Path
+          import sys
+          folder,ver=sys.argv[1:]
+          p=Path(folder)/'vite.config.ts'
+          src=p.read_text()
+          base=f"base: process.env.GITHUB_PAGES === 'true' ? '/sfg-omr-lab/versions/{ver}/' : '/',"
+          if 'return {\n    plugins:' in src:
+              src=src.replace('return {\n    plugins:', 'return {\n    '+base+'\n    plugins:',1)
+          elif 'export default defineConfig({\n  plugins:' in src:
+              src=src.replace('export default defineConfig({\n  plugins:', 'export default defineConfig({\n  '+base+'\n  plugins:',1)
+          else:
+              raise SystemExit('Unsupported historical Vite config: '+folder)
+          p.write_text(src)
+          PY
+            (cd "$folder" && npm ci && GITHUB_PAGES=true npm run build)
+            mkdir -p "dist/versions/$ver"
+            cp -R "$folder/dist/." "dist/versions/$ver/"
+            test -s "dist/versions/$ver/index.html"
+          done
+      - name: Validate comparison assets
+        run: |
+          set -euo pipefail
+          for file in             dist/index.html             dist/v2.3.45/index.html             dist/versions/v2.2.6/index.html             dist/versions/v2.2.4/index.html             dist/ai-runtime/scanic.js             dist/ai-model/scanic/doccornernet_lean.ort             dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx             dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/bubble/omr_model.onnx; do
+            test -s "$file"
+          done
