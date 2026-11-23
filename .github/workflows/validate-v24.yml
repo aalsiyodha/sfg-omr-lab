@@ -12,6 +12,7 @@ on:
       - fix/v2.4.6-landmark-baseline
       - feature/v2.4.611-optical-recovery
       - feature/v2.4.612-optical-sa24-bubbles
+      - feature/v2.4.613-uvdoc-deeplab-learning
   workflow_dispatch:
 permissions:
   contents: read
