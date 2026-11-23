@@ -279,6 +279,7 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
   const sideGood=(track:Track[])=>track.length>=18&&
     track[0].row<=3&&track.at(-1)!.row>=21&&timingCoherence(track).coherent;
   const answers:EngineResult['answers']=[];
+  const unrefined:EngineResult['answers']=[];
   for(const side of ['left','right'] as const){
     const track=side==='left'?left:right;
     if(!sideGood(track))continue;
@@ -292,12 +293,23 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
       });
       const decision=classifyFills(fills);
       answers.push({q,...decision});
+      // Counterfactual: identical AI warp without local timing-track correction.
+      // This isolates the effect of our optical row-drift refinement.
+      const rawFills=[0,1,2,3].map(option=>{
+        const p=getBubbleCentre(q,option as 0|1|2|3);
+        return bubbleFill(g,p.xMm*MM,p.yMm*MM);
+      });
+      unrefined.push({q,...classifyFills(rawFills)});
     }
   }
   return {left:left.length,right:right.length,
     leftCoherence:timingCoherence(left),rightCoherence:timingCoherence(right),qrValid:qr.valid,
     qrFound:qr.found,qrRaw:qr.raw,grayscale:calibrated,
-    leftGood:sideGood(left),rightGood:sideGood(right),answers,
+    leftGood:sideGood(left),rightGood:sideGood(right),answers,unrefined,
+    correctionChangedRows:answers.filter(a=>{
+      const raw=unrefined.find(b=>b.q===a.q);
+      return raw&&(raw.status!==a.status||raw.answer!==a.answer);
+    }).map(a=>a.q),
     warning:'Research-only geometric sampling; never automatically grade'};
 }
 
