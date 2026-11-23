@@ -56,6 +56,8 @@ jobs:
           cp quadscan-source/models/lcnet100_h_e_bifpn_256_fp32.onnx dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
           cp quadscan-source/models/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
           cp quadscan-source/node_modules/onnxruntime-web/dist/*.wasm dist/ai-runtime/
+          cp quadscan-source/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs dist/ai-runtime/
+          test -s dist/ai-runtime/ort.wasm.min.mjs
           test -s dist/ai-runtime/quadscan.iife.js
           test -s dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
           test -s dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
@@ -123,6 +125,21 @@ jobs:
         run: |
           mkdir -p dist/v2.3.45
           cp -R archived-source/dist/. dist/v2.3.45/
+      # Experimental checkbox classifier: AGPL-3.0, small 64x64 grayscale CNN.
+      # Never used for actual scoring; only an independent bubble comparison.
+      - name: Vendor experimental SmallOMRNet ONNX and license
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ai-model/bubble
+          curl -fL --retry 3 --max-time 90 \
+            'https://huggingface.co/hermitkk/omr-checkbox-classifier/resolve/046c24e/omr_model.onnx?download=true' \
+            -o dist/ai-model/bubble/omr_model.onnx
+          curl -fL --retry 3 --max-time 90 \
+            'https://raw.githubusercontent.com/spdx/license-list-data/main/text/AGPL-3.0-only.txt' \
+            -o dist/ai-model/bubble/LICENSE-AGPL-3.0.txt
+          printf 'SmallOMRNet / omr-checkbox-classifier\nAuthor: hermitkk (Chenfeng Xu), UBC / Plom Project\nModel: https://huggingface.co/hermitkk/omr-checkbox-classifier\nRevision: 046c24e\nLicense: AGPL-3.0\nExperimental only: trained on synthetic checkboxes, not verified on SFG circular bubbles.\n' > dist/ai-model/bubble/NOTICE.txt
+          test -s dist/ai-model/bubble/omr_model.onnx
+          test -s dist/ai-model/bubble/LICENSE-AGPL-3.0.txt
       # Two further fully independent legacy engines (do NOT mix their OpenCV globals).
       - name: Check out archived v2.2.6 Lite
         uses: actions/checkout@v4
@@ -165,7 +182,7 @@ jobs:
       - name: Validate comparison assets
         run: |
           set -euo pipefail
-          for file in             dist/index.html             dist/v2.3.45/index.html             dist/versions/v2.2.6/index.html             dist/versions/v2.2.4/index.html             dist/ai-runtime/scanic.js             dist/ai-model/scanic/doccornernet_lean.ort             dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx             dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx; do
+          for file in             dist/index.html             dist/v2.3.45/index.html             dist/versions/v2.2.6/index.html             dist/versions/v2.2.4/index.html             dist/ai-runtime/scanic.js             dist/ai-model/scanic/doccornernet_lean.ort             dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx             dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/bubble/omr_model.onnx; do
             test -s "$file"
           done
       - name: Configure GitHub Pages
