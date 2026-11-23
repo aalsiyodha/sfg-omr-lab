@@ -1,4 +1,5 @@
-import type {EngineResult,EngineDefinition,Point} from './engines';
+import {cornersNormalized} from './engines';
+import type {EngineResult,EngineDefinition,Point,ImageSpace} from './engines';
 export type ReportMode='compact'|'differences'|'full';
 const important=(s:string)=>/QR-less provisional geometry evidence|AI candidate verification result|scanic-variant|raw-model-corners|AI last-resort summary|Selected .+ registration|Registration performance summary|timing marks \d+\/50|QR missing|calibration/i.test(s);
 function failures(r:EngineResult):string[]{
@@ -16,9 +17,9 @@ function quadDistance(a:Point[],b:Point[]):number|null{
 export function buildCompareReport(params:{
  fileName:string;hash:string;fileBytes:number;
  selected:EngineDefinition[];results:EngineResult[];mode:ReportMode;
- reference?:Point[];
+ reference?:Point[];referenceSpace?:ImageSpace;
 }):string{
- const {results,selected,mode,reference}=params;
+ const {results,selected,mode,reference,referenceSpace}=params;
  const lines=[
    'SFG OMR LAB v2.4 — UNIVERSAL COMPARISON',
    'Image SHA-256='+params.hash,
@@ -34,7 +35,8 @@ export function buildCompareReport(params:{
    lines.push([e.id,e.kind,r.outcome,r.elapsedMs,
      r.qrValid===null?'n/a':r.qrValid?'valid':'invalid',
      r.timing===null?'n/a':r.timing+'/50',
-     r.kind==='detector'?'n/a':r.answers.length+'/50',
+     r.kind==='detector'?'n/a':r.kind==='bubble'?
+       r.answers.length+' experimental rows / 0 verified':r.answers.length+'/50',
      round(r.confidence,4)].join(' | '));
  }
  const fail=results.filter(r=>r.outcome!=='verified');
@@ -49,22 +51,31 @@ export function buildCompareReport(params:{
      if(new Set(options).size>1)differences.push(q);
    }
  }
- lines.push('Complete-answer scanner disagreements='+differences.length+
+ lines.push(scanners.length<2?'Complete-answer scanner disagreements=NOT COMPARABLE (fewer than two scanners analyzed 50 rows)':
+   'Complete-answer scanner disagreements='+differences.length+
    (differences.length?' | rows='+differences.join(','):''));
- const cornered=results.filter(r=>r.corners.length===4);
- if(reference?.length===4){
-   lines.push('MANUALLY CONFIRMED true paper corners='+JSON.stringify(reference));
-   lines.push('Page-corner mean error vs manual reference:');
-   for(const r of cornered){
-     const d=quadDistance(r.corners,reference);
+ // Only compare independent corner detections in a common normalized space.
+ // Bubble AI inherits Scanic corners; repeating it would fabricate an extra vote.
+ const cornered=results.filter(r=>r.kind!=='bubble'&&cornersNormalized(r)!==null);
+ const cornerPairs=cornered.map(r=>({r,n:cornersNormalized(r)!}));
+ if(reference?.length===4&&referenceSpace?.width&&referenceSpace.height){
+   const target=reference.map(p=>({x:p.x/referenceSpace.width,y:p.y/referenceSpace.height}));
+   lines.push('MANUALLY CONFIRMED paper corners='+JSON.stringify(reference)+
+     ' | coordinateSpace='+referenceSpace.width+'x'+referenceSpace.height);
+   lines.push('Page-corner error vs manual reference (pixels in uploaded-image space):');
+   for(const {r,n} of cornerPairs){
+     const d=n.reduce((total,p,i)=>total+Math.hypot(
+       (p.x-target[i].x)*referenceSpace.width,(p.y-target[i].y)*referenceSpace.height),0)/4;
      lines.push('  '+r.id+': '+round(d,2)+' px');
    }
  }
- if(cornered.length>=2){
-   lines.push('AI/corner coordinate disagreement (average px, same source image):');
-   for(let i=0;i<cornered.length;i++)for(let j=i+1;j<cornered.length;j++){
-     const a=cornered[i],b=cornered[j];const d=quadDistance(a.corners,b.corners);
-     lines.push('  '+a.id+' vs '+b.id+': '+round(d)+' px');
+ if(cornerPairs.length>=2){
+   lines.push('Independent page-corner disagreement (percent of image diagonal; normalized coordinates):');
+   for(let i=0;i<cornerPairs.length;i++)for(let j=i+1;j<cornerPairs.length;j++){
+     const a=cornerPairs[i],b=cornerPairs[j];
+     const distance=a.n.reduce((sum,p,k)=>sum+Math.hypot(
+       p.x-b.n[k].x,p.y-b.n[k].y),0)/4;
+     lines.push('  '+a.r.id+' vs '+b.r.id+': '+round(distance/Math.SQRT2*100,2)+'% image diagonal');
    }
  }
  if(mode==='compact'){
@@ -76,11 +87,13 @@ export function buildCompareReport(params:{
  for(const r of results){
    lines.push('--- '+r.id+' / '+r.version+' ---');
    lines.push('Status: '+r.outcome+' | Reason: '+r.reason);
-   lines.push('Corners: '+JSON.stringify(r.corners.map(p=>({x:+p.x.toFixed(2),y:+p.y.toFixed(2)}))));
+   lines.push('Corners: '+JSON.stringify(r.corners.map(p=>({x:+p.x.toFixed(2),y:+p.y.toFixed(2)})))+
+     ' | nativeSpace='+JSON.stringify(r.imageSpace));
    lines.push('Timing: '+(r.timing??'n/a')+' | left='+(r.timingLeft??'n/a')+
      ' right='+(r.timingRight??'n/a')+' | QR='+(r.qrValid??'n/a'));
    if(mode==='full'){
-     lines.push('Answers: '+JSON.stringify(r.answers));
+     lines.push(r.kind==='bubble'?'Experimental AI estimates (not optical answers): '+JSON.stringify(r.answers):
+       'Answers: '+JSON.stringify(r.answers));
      lines.push('Full stage logs ('+r.traces.length+'):');
      for(const log of r.traces)lines.push('  '+log.stage+' '+log.message+
        (log.data?' '+JSON.stringify(log.data):''));
