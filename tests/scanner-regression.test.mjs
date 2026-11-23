@@ -1691,3 +1691,27 @@ test('v2.3.41: reports why page-boundary recovery failed, not only QR missing',(
   assert.ok(scanner.includes('method:evidence.method'));
   assert.ok(scanner.includes('if(!selected){'));
 });
+
+test('v2.3.43: photograph-corner background is rejected without banning a single side contact',()=>{
+  const m=loadTS('src/scanner/pageBoundaryRecovery.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}},mmToPx:x=>x},
+    '../config/scannerSettings':{getSettings:()=>({scanDpi:150})}
+  });
+  const falsePage=[{x:0,y:0},{x:968,y:188},{x:1062,y:1362},{x:244,y:708}];
+  assert.equal(m.hasClippedImageEdge(falsePage,1200,1400),false);
+  assert.equal(m.touchesImageCorner(falsePage,1200,1400),true);
+  const realPage=[{x:130,y:160},{x:1010,y:220},{x:1080,y:1300},{x:160,y:1320}];
+  assert.equal(m.touchesImageCorner(realPage,1200,1400),false);
+  const sideContact=[{x:0,y:170},{x:920,y:230},{x:1000,y:1270},{x:140,y:1330}];
+  assert.equal(m.touchesImageCorner(sideContact,1200,1400),false);
+});
+test('v2.3.43: failed scans keep stage evidence despite zero answers',()=>{
+  const report=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  const boundary=readFileSync('src/scanner/pageBoundaryRecovery.ts','utf8');
+  const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.ok(report.includes('NO BUBBLE READINGS:'));
+  assert.ok(report.includes('scanResult.answers.length===0 ||'));
+  assert.ok(report.includes('Scan stage timings'));
+  assert.ok(boundary.includes('false-paper-boundary-image-corner-rejected'));
+  assert.ok(scanner.includes('Recovery conclusion: no QR-and-timing-verified registration'));
+});
