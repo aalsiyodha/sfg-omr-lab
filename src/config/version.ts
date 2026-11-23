@@ -1,7 +1,9 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
 declare const __APP_BUILD_META__: { version:string; source:'vercel'|'local-dev'|'local-build'; environment:string; sha:string; buildId:string; builtAt:string; dirty:boolean };
-export const APP_VERSION = version === '2.4.613'
+export const APP_VERSION = version === '2.4.615'
+  ? 'v2.4.615 · AI-to-OMR Research Pipeline'
+  : version === '2.4.613'
   ? 'v2.4.613 · UVDoc and DeepLab Research'
   : version === '2.4.612'
   ? 'v2.4.612 · Optical Cross-Check + SA24'
