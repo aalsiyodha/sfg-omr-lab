@@ -176,10 +176,14 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
     let source:ImageData;
     try{
       const canvas=document.createElement('canvas');
-      canvas.width=bitmap.width;canvas.height=bitmap.height;
+      // Avoid a 48 MB full-resolution canvas on Android: the model only
+      // needs ~4px/mm after warping. Scale source and fiducials together.
+      const downscale=Math.min(1,1800/Math.max(bitmap.width,bitmap.height));
+      canvas.width=Math.max(1,Math.round(bitmap.width*downscale));
+      canvas.height=Math.max(1,Math.round(bitmap.height*downscale));
       const ctx=canvas.getContext('2d',{willReadFrequently:true});
       if(!ctx)throw Error('Image canvas unavailable');
-      ctx.drawImage(bitmap,0,0);
+      ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
       source=ctx.getImageData(0,0,canvas.width,canvas.height);
     }finally{bitmap.close();}
     let best:{g:Uint8Array;left:Track[];right:Track[];
@@ -235,6 +239,17 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
             fill:values.map(v=>Number(v.fill.toFixed(3))),answer,
             noGroundTruth:true}});
       }
+    }
+    const reference=previous.find(r=>r.kind==='scanner'&&r.alignmentVerified&&r.qrValid&&r.answers.length===50);
+    if(reference){
+      let matches=0,differences=0;
+      for(const a of answers){
+        const b=reference.answers.find(q=>q.q===a.q);
+        if(a.answer&&b?.answer){if(a.answer===b.answer)matches++;else differences++;}
+      }
+      traces.push({stage:'landmark',message:'optical-reference-agreement',
+        data:{reference:reference.id,comparableMarkedRows:matches+differences,
+          matches,differences,notGroundTruth:true,neverForGrading:true}});
     }
     traces.push({stage:'landmark',message:'experimental-bubble-summary',
       data:{measured:answers.length,decisive:answers.filter(a=>a.answer).length,
