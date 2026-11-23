@@ -88,6 +88,15 @@ async function runIframe(def:EngineDefinition,file:File):Promise<EngineResult>{
   return await new Promise<EngineResult>((resolve,reject)=>{
     let settled=false;
     let timer:number|undefined;
+    let scanRequested=false;
+    let lastStage='Waiting for isolated OpenCV initialization';
+    let lastPercent=0;
+    const milestones:Array<{stage:string;percent:number;elapsedMs:number}>=[];
+    const diagnostic=(message:string)=>({
+      ...empty(def,message,Math.round(performance.now()-started)),
+      traces:[{stage:'comparison',message:'last-stage',level:'WARNING',
+        data:{lastStage,lastPercent,milestones}}]
+    });
     const cleanup=()=>{
       if(timer!==undefined)window.clearTimeout(timer);
       window.removeEventListener('message',handle);
@@ -95,19 +104,26 @@ async function runIframe(def:EngineDefinition,file:File):Promise<EngineResult>{
     };
     const finish=(result?:EngineResult,error?:Error)=>{
       if(settled)return;settled=true;cleanup();
-      if(error)reject(error);else if(result)resolve(result);
+      if(error)resolve(diagnostic(String(error)));else if(result)resolve(result);
     };
     const handle=(event:MessageEvent)=>{
       if(event.origin!==location.origin||event.source!==iframe.contentWindow)return;
       const msg=event.data as {
         channel?:string;type?:string;protocol?:number;
         requestId?:string;result?:ScanResult;error?:string;reason?:string;
-        alignedImage?:string|null;
+        alignedImage?:string|null;stage?:string;percent?:number;
       };
       if(msg?.channel!==CHANNEL)return;
-      if(msg.type==='ready'&&msg.protocol===1){
+      if(msg.type==='ready'&&msg.protocol===1&&!scanRequested){
+        scanRequested=true;
+        lastStage='OpenCV initialized; scan request sent';
+        milestones.push({stage:lastStage,percent:0,elapsedMs:Math.round(performance.now()-started)});
         iframe.contentWindow?.postMessage({channel:CHANNEL,type:'scan',requestId,
           name:file.name,mime:file.type,bytes,wantAlignedImage:def.id==='current'},location.origin);
+      }else if(msg.type==='scan-progress'&&msg.requestId===requestId){
+        lastStage=msg.stage||lastStage;
+        lastPercent=typeof msg.percent==='number'?msg.percent:lastPercent;
+        milestones.push({stage:lastStage,percent:lastPercent,elapsedMs:Math.round(performance.now()-started)});
       }else if(msg.type==='startup-error'){
         finish(undefined,Error(msg.reason||'OpenCV startup failed'));
       }else if(msg.type==='result'&&msg.requestId===requestId){
@@ -120,7 +136,8 @@ async function runIframe(def:EngineDefinition,file:File):Promise<EngineResult>{
     };
     window.addEventListener('message',handle);
     iframe.onerror=()=>finish(undefined,Error('Legacy engine failed to load'));
-    timer=window.setTimeout(()=>finish(undefined,Error('Engine timed out after 120 seconds')),ENGINE_TIMEOUT_MS);
+    timer=window.setTimeout(()=>finish(diagnostic('Engine timed out after 120 seconds; last stage: '+
+      lastStage+' ('+lastPercent+'%)')),ENGINE_TIMEOUT_MS);
     iframe.src=base+(def.assetPath??'')+'?compareBridge=1#/scan';
     document.body.appendChild(iframe);
   });
