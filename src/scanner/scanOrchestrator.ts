@@ -5,7 +5,7 @@ import { detectMarkers } from './markerDetector';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
-import { canStopRegistrationSearch } from './litePolicy';
+import { canStopUnifiedRegistration } from './unifiedGeometryPolicy';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
@@ -356,14 +356,14 @@ export async function runFullScan(
       fastWarpAttempts++;
       const candidate=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
       if(candidate)selected=candidate;
-      if(candidate&&canStopRegistrationSearch(candidate.qr.valid,candidate.check.matched,
+      if(candidate&&canStopUnifiedRegistration(candidate.qr.valid,candidate.check.matched,
         candidate.check.leftMatched,candidate.check.rightMatched)){
         logger.info('perspective','Verified corner-first fast path: skipped ArUco/Otsu/midpoint discovery',{
           durationMs:Date.now()-t,timing:candidate.check.matched,
           left:candidate.check.leftMatched,right:candidate.check.rightMatched,qrValid:candidate.qr.valid});
       }else if(!candidate)hypotheses.push(hypothesis);
     }
-    if(!selected||!canStopRegistrationSearch(selected.qr.valid,selected.check.matched,
+    if(!selected||!canStopUnifiedRegistration(selected.qr.valid,selected.check.matched,
       selected.check.leftMatched,selected.check.rightMatched)){
     // Recovery-only independent marker families.
     arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
@@ -429,7 +429,7 @@ export async function runFullScan(
     let warpAttempts=fastWarpAttempts;
     let boundaryAttempted=false;
     for (const hypothesis of hypotheses) {
-      if(selected&&canStopRegistrationSearch(selected.qr.valid,selected.check.matched,
+      if(selected&&canStopUnifiedRegistration(selected.qr.valid,selected.check.matched,
         selected.check.leftMatched,selected.check.rightMatched))break;
       logger.info('markerDetection', `${hypothesis.name}: candidate coordinates`,
         hypothesis.kind === 'corner'
@@ -473,7 +473,7 @@ export async function runFullScan(
       }
       // A QR-verified 48+/50 with at least 23 on both sides is an early
       // completion signal. Lesser passing registrations keep alternatives.
-      if (selected && canStopRegistrationSearch(
+      if (selected && canStopUnifiedRegistration(
         selected.qr.valid, selected.check.matched,
         selected.check.leftMatched, selected.check.rightMatched
       )) {
@@ -678,7 +678,7 @@ export async function runFullScan(
               images.markerOverlay=generateArucoOverlay(rough.canvas,rescueAruco,
                 hypothesis.name,candidate.check.matched);
             }else disposeAlignment(candidate);
-            if(selected&&canStopRegistrationSearch(selected.qr.valid,
+            if(selected&&canStopUnifiedRegistration(selected.qr.valid,
               selected.check.matched,selected.check.leftMatched,
               selected.check.rightMatched))break;
           }
