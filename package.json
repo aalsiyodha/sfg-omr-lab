@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:scanner": "node --test tests/scanner-regression.test.mjs"
+    "test:scanner": "node --test tests/scanner-regression.test.mjs",
+    "typecheck": "tsc -b --pretty false",
+    "check": "npm run typecheck && npm run lint && npm run test:scanner && npm run build"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",

@@ -1,20 +1,28 @@
-name: Scanner reliability checks
+name: Code quality gate
+
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [test-build, hybrid-experiment, omr-v2-experiment, omr-v2-aruco-gray-experiment]
-  pull_request:
-    branches: [test-build, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-regression:
+  validate:
+    name: TypeScript, lint, regression tests, production build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: npm run lint
-      - run: npm run test:scanner
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run full validation gate
+        run: npm run check
