@@ -114,6 +114,23 @@ function rowDrift(track:Track[],row:number):{dx:number;dy:number;source:'measure
   return {dx:before.dx+(after.dx-before.dx)*t,
     dy:before.dy+(after.dy-before.dy)*t,source:'interpolated'};
 }
+/** Hold out every other observed timing bar and interpolate from its
+ * neighbors. Low residual is evidence against chasing unrelated print.
+ * A detection count by itself is not proof of a coherent timing lattice.
+ */
+function timingCoherence(track:Track[]){
+  const errors:number[]=[];
+  for(let i=1;i<track.length-1;i++){
+    const target=track[i],lo=track[i-1],hi=track[i+1];
+    if(target.row%2!==1||target.row-lo.row>3||hi.row-target.row>3)continue;
+    const t=(target.row-lo.row)/(hi.row-lo.row);
+    const dx=lo.dx+(hi.dx-lo.dx)*t,dy=lo.dy+(hi.dy-lo.dy)*t;
+    errors.push(Math.hypot(target.dx-dx,target.dy-dy));
+  }
+  const mean=errors.length?errors.reduce((a,b)=>a+b,0)/errors.length:null;
+  return {heldOut:errors.length,meanResidualPx:mean===null?null:+mean.toFixed(2),
+    coherent:errors.length>=5&&mean!==null&&mean<=4.5};
+}
 function bubbleFill(g:Uint8Array,x:number,y:number):{fill:number;background:number}{
   // 1mm interior, exclude printed 1.7mm outline. Background reference in
   // near annulus but away from printed A/B/C/D text where possible.
@@ -224,7 +241,7 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
   const qr=decodeQRFromRegion(resized,OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,
     OMR_LAYOUT.qr.sizeMm,4*25.4);
   const sideGood=(track:Track[])=>track.length>=18&&
-    track[0].row<=3&&track.at(-1)!.row>=21;
+    track[0].row<=3&&track.at(-1)!.row>=21&&timingCoherence(track).coherent;
   const answers:EngineResult['answers']=[];
   for(const side of ['left','right'] as const){
     const track=side==='left'?left:right;
@@ -244,7 +261,8 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
         confidence:Math.round((ranked[0].fill-ranked[1].fill)*100)});
     }
   }
-  return {left:left.length,right:right.length,qrValid:qr.valid,
+  return {left:left.length,right:right.length,
+    leftCoherence:timingCoherence(left),rightCoherence:timingCoherence(right),qrValid:qr.valid,
     qrFound:qr.found,qrRaw:qr.raw,grayscale:calibrated,
     leftGood:sideGood(left),rightGood:sideGood(right),answers,
     warning:'Research-only geometric sampling; never automatically grade'};
@@ -300,10 +318,11 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         best={g,left,right,strip:gray,anchorSource:from,variant:e.source,quality};
     }
     if(!best)return finish('rejected','All optical-hybrid warp candidates invalid.');
-    const leftGood=best.left.length>=18&&best.left[0].row<=3&&best.left.at(-1)!.row>=21;
-    const rightGood=best.right.length>=18&&best.right[0].row<=3&&best.right.at(-1)!.row>=21;
+    const leftGood=best.left.length>=18&&best.left[0].row<=3&&best.left.at(-1)!.row>=21&&timingCoherence(best.left).coherent;
+    const rightGood=best.right.length>=18&&best.right[0].row<=3&&best.right.at(-1)!.row>=21&&timingCoherence(best.right).coherent;
     traces.push({stage:'landmark',message:'independent-side-validation',
       data:{left:best.left.length,right:best.right.length,leftGood,rightGood,
+        leftCoherence:timingCoherence(best.left),rightCoherence:timingCoherence(best.right),
         selected:best.variant,from:best.anchorSource,
         curveRecovery:'per-row independently interpolated timing-bar displacements',
         noQR:true,grayscale:best.strip,
