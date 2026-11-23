@@ -3,6 +3,7 @@
  * Only metadata and results cross the postMessage bridge; photographs never leave the browser.
  */
 import { runFullScan } from './scanner/scanOrchestrator';
+import { checkOpenCV } from './scanner/imagePreprocessor';
 const CHANNEL='sfg-omr-lab-compare-v1';
 function enabled():boolean{
   return new URLSearchParams(location.search).get('compareBridge')==='1' &&
@@ -10,16 +11,45 @@ function enabled():boolean{
 }
 if(enabled()){
   const origin=location.origin;
-  const ready=()=>{
-    window.parent.postMessage({channel:CHANNEL,type:'ready',protocol:1},origin);
+  // The script "onload" event fires before some OpenCV.js WebAssembly
+  // initialization paths finish. Never advertise ready until cv.Mat exists.
+  // The previous optimistic window.opencvReady flag caused an 841ms failure.
+  let announced=false;
+  let stopped=false;
+  let ticker:number|undefined;
+  let watchdog:number|undefined;
+  const stopChecking=()=>{
+    stopped=true;
+    if(ticker!==undefined)window.clearInterval(ticker);
+    if(watchdog!==undefined)window.clearTimeout(watchdog);
+    window.removeEventListener('opencv-ready',probe);
+    window.removeEventListener('opencv-error',onError);
   };
-  if((window as Window & {opencvReady?:boolean}).opencvReady)ready();
-  else {
-    window.addEventListener('opencv-ready',ready,{once:true});
-    window.addEventListener('opencv-error',()=>{
-      window.parent.postMessage({channel:CHANNEL,type:'startup-error',reason:'OpenCV failed to load'},origin);
-    },{once:true});
-  }
+  const probe=()=>{
+    if(announced||stopped)return;
+    if(checkOpenCV()){
+      announced=true;
+      stopChecking();
+      window.parent.postMessage({channel:CHANNEL,type:'ready',protocol:1,
+        cvInitialized:true},origin);
+    }
+  };
+  const onError=()=>{
+    if(announced||stopped)return;
+    stopChecking();
+    window.parent.postMessage({channel:CHANNEL,type:'startup-error',
+      reason:'OpenCV script failed to load'},origin);
+  };
+  window.addEventListener('opencv-ready',probe);
+  window.addEventListener('opencv-error',onError);
+  ticker=window.setInterval(probe,100);
+  watchdog=window.setTimeout(()=>{
+    if(announced||stopped)return;
+    stopChecking();
+    window.parent.postMessage({channel:CHANNEL,type:'startup-error',
+      reason:'OpenCV WebAssembly initialization exceeded 45 seconds'},origin);
+  },45000);
+  probe();
   let running=false;
   window.addEventListener('message',async event=>{
     if(event.origin!==origin || event.source!==window.parent)return;
