@@ -27,7 +27,17 @@ if(enabled()){
   };
   const probe=()=>{
     if(announced||stopped)return;
-    if(checkOpenCV()){
+    const runtime=(window as typeof window & {cv?:{
+      Mat?:new(rows?:number,cols?:number,type?:number)=>{delete:()=>void};
+      CV_8UC1?:number
+    }}).cv;
+    if(checkOpenCV()&&typeof runtime?.Mat==='function'){
+      // Some OpenCV.js builds expose Mat before WASM constructors are callable.
+      // A real allocate/free round-trip must succeed before accepting requests.
+      try{
+        const probeMat=new runtime.Mat(1,1,runtime.CV_8UC1);
+        probeMat.delete();
+      }catch{return;}
       announced=true;
       stopChecking();
       window.parent.postMessage({channel:CHANNEL,type:'ready',protocol:1,
