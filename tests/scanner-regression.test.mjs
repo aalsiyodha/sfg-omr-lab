@@ -1506,6 +1506,18 @@ test('v2.3.4: QR-verified near-perfect dual-band geometry exits early', () => {
   assert.equal(canStopRegistrationSearch(true,50,24,26),false);
 });
 
+test('v2.5: unified registration only stops early with QR-verified 50/50 timing', () => {
+  const { canStopUnifiedRegistration, assessGeometry } = loadTS('src/scanner/unifiedGeometryPolicy.ts');
+  assert.equal(canStopUnifiedRegistration(true,50,25,25),true);
+  assert.equal(canStopUnifiedRegistration(true,49,25,24),false);
+  assert.equal(canStopUnifiedRegistration(true,48,24,24),false);
+  assert.equal(canStopUnifiedRegistration(false,50,25,25),false);
+  assert.equal(canStopUnifiedRegistration(true,50,26,24),false);
+  const partial=assessGeometry({qrValid:true,timingMatched:49,leftMatched:25,rightMatched:24});
+  assert.equal(partial.valid,true);
+  assert.equal(partial.continueRecovery,true);
+});
+
 test('LITE: hatch evidence is reused after the initial per-bubble measurement', () => {
   const source = readFileSync('src/scanner/bubbleDetector.ts','utf8');
   assert.match(source, /hatchGapRows: hatchEvidence\.gapRows/);
@@ -1840,6 +1852,6 @@ test('v2.4.618 fresh-sheet diagnostics preserve strict grading and expose row ge
   assert.match(gray,/investigateGrayStrip/);
   assert.match(scan,/Grayscale strip geometry diagnostic \(no scoring effect\)/);
   assert.match(scan,/Verified corner-first fast path: skipped ArUco\/Otsu\/midpoint discovery/);
-  assert.match(scan,/if\(!selected\|\|!canStopRegistrationSearch/);
+  assert.match(scan,/if\(!selected\|\|!canStopUnifiedRegistration/);
   assert.match(page,/useState<ReportMode>\('full'\)/);
 });
