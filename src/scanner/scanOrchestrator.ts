@@ -18,7 +18,7 @@ import type { ArucoRegistration } from './arucoDetector';
 import { applySevenToneCorrection } from './grayToneCorrection';
 import { reconcileToneAnswers } from './toneConsensus';
 import type { PerspectiveResult } from './perspectiveCorrection';
-import { decodeQRFromRegion } from './qrDecoder';
+import { decodeQRFromRegion, locateQRInPhoto } from './qrDecoder';
 import { detectAllAnswers, detectTestId, computeAdaptiveDarkThreshold } from './bubbleDetector';
 import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
@@ -103,6 +103,23 @@ function evaluateHypothesis(
       }
     }
     if (!qr.valid) {
+      // The grayscale strip is independent location evidence for a hybrid warp,
+      // never a replacement for the required QR identity.
+      if(hypothesis.kind==='hybrid'){
+        let probe:any=null;
+        try{
+          probe=new cv.Mat();
+          cv.cvtColor(persp.corrected,probe,cv.COLOR_RGBA2GRAY);
+          const calibration=measureGrayCalibration(probe,dpi);
+          logger.info('perspective',hypothesis.name+': grayscale landmark cross-check',{
+            status:calibration.status,patches:calibration.patchMedians,
+            contrast:calibration.contrast,ordered:calibration.ordered,
+            note:calibration.note
+          });
+        }catch(error){logger.warning('perspective','Hybrid grayscale landmark check failed',{
+          reason:String(error)});}
+        finally{cleanupMats(probe);}
+      }
       logger.warning('qrDecoding', `${hypothesis.name}: QR missing from both expected corners`);
       return null;
     }
@@ -456,6 +473,18 @@ export async function runFullScan(
           left:evaluated.check.leftMatched,right:evaluated.check.rightMatched});
         break;
       }
+    }
+
+    // Geometric QR finder search on the ORIGINAL photo is independent of
+    // a failed perspective warp. It is diagnostic evidence, not scan approval.
+    if(!selected){
+      const qrLocatorStart=Date.now();
+      const located=locateQRInPhoto(loaded.canvas);
+      logger.info('qrDecoding','Independent original-photo QR locator',{
+        found:located.found,valid:located.valid,center:located.center,
+        corners:located.corners,raw:located.raw,attempts:located.attempts,
+        error:located.error,durationMs:Date.now()-qrLocatorStart
+      });
     }
 
     // Last-chance local rescue for strong tilt or missing distorted fiducials.
