@@ -1767,6 +1767,20 @@ test('AI-to-OMR research pipeline retains independent QR, timing and sampled-bub
   assert.match(grid,/function timingCoherence\(/);
   assert.match(grid,/export function evaluateResearchCanvas\(/);
   assert.match(grid,/decodeQRFromRegion\(resized/);
-  assert.match(engines,/AI-warp 50-row optical reference comparison/);
+  assert.match(engines,/50-question independent engine comparison/);
+  assert.match(engines,/compareAnswers\(reference,result\)/);
   assert.match(engines,/alignmentVerified:false/);
+});
+
+test('question comparison includes blank, multiple and missing rows without inventing answers',()=>{
+  const source=readFileSync(resolve(process.cwd(),'src/comparison/answerComparison.ts'),'utf8');
+  const report=readFileSync(resolve(process.cwd(),'src/comparison/reports.ts'),'utf8');
+  const grid=readFileSync(resolve(process.cwd(),'src/comparison/landmarkGrid.ts'),'utf8');
+  assert.match(source,/for\(let q=1;q<=50;q\+\+\)/);
+  assert.match(source,/status-mismatch/);
+  assert.match(source,/unresolved/);
+  assert.match(source,/wrong-option/);
+  assert.match(report,/REAL 50-QUESTION INTER-ENGINE COMPARISON/);
+  assert.match(grid,/function classifyFills/);
+  assert.match(grid,/observedQR\.valid/);
 });
