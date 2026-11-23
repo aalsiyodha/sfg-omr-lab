@@ -7,7 +7,7 @@ import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import { canStopRegistrationSearch } from './litePolicy';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
-import { recoverPageWithAI } from './aiPageRescue';
+import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { correctPerspectiveFromQrAruco } from './qrArucoRegistration';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
@@ -604,15 +604,15 @@ export async function runFullScan(
       let aiRejections:{method:string;reason:string}[]=[];
       try{
         onProgress?.({stage:'Last resort: detecting page corners with local AI…',percent:52});
-        const ai=await recoverPageWithAI(loaded.canvas,(event,data)=>{
+        const ai=await recoverPageWithScanic(loaded.canvas,(event,data)=>{
           logger.info('perspective','AI trace: '+event,data);
         });
         aiStatus=ai?'page-detected':'page-not-detected';
         logger.info('perspective','AI document boundary recovery',{
-          model:'DocAligner LCNet-100',invoked:true,
+          model:'Scanic DocCornerNet SimCC',invoked:true,
           found:Boolean(ai),confidence:ai?.confidence??null,
-          corners:ai?.corners??[],cornerConfidence:ai?.cornerConfidence??{},
-          modelStageTimings:ai?.timings??[],durationMs:Date.now()-aiStart
+          corners:ai?.corners??[],variant:ai?.variant??null,allCandidates:ai?.allCandidates??[],
+          durationMs:Date.now()-aiStart
         });
         if(ai){
           const processed=preprocessImage(ai.canvas);
@@ -672,7 +672,7 @@ export async function runFullScan(
         });
       }finally{
         logger.info('perspective','AI last-resort summary',{
-          invoked:true,model:'DocAligner LCNet-100',modelLibrary:'quadscan@1.0.0',
+          invoked:true,model:'Scanic DocCornerNet SimCC',modelLibrary:'scanic@1.8.0',
           status:aiStatus,attempts:aiAttempted,verified:Boolean(selected),
           rejections:aiRejections,durationMs:Date.now()-aiStart
         });
