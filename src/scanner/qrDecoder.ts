@@ -128,31 +128,44 @@ export function locateQRInPhoto(source:HTMLCanvasElement):{
     found:false,valid:false,raw:null,center:null,corners:[],attempts,error
   });
   try{
-    const scale=Math.min(1,900/Math.max(source.width,source.height));
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(source.width*scale));
-    canvas.height=Math.max(1,Math.round(source.height*scale));
-    const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    if(!ctx)return absent('no-context');
-    ctx.drawImage(source,0,0,canvas.width,canvas.height);
-    const data=ctx.getImageData(0,0,canvas.width,canvas.height);
     const decoder=getJsQR();
-    let code:ReturnType<typeof jsQR>=null;
     let attempts=0;
-    for(const mode of ['dontInvert','onlyInvert'] as const){
-      attempts++;
-      try{code=decoder(data.data,data.width,data.height,{inversionAttempts:mode});}
-      catch{code=null;}
-      if(code)break;
+    // A QR can occupy <1% of a photograph. Downsampling the entire image
+    // destroys its modules; keep native pixels when searching likely areas.
+    // These are discovery-only crops, NEVER a substitute for page verification.
+    const W=source.width,H=source.height;
+    const regions=[
+      {x:0,y:0,w:W,h:H,max:900,label:'full-downsampled'},
+      {x:Math.floor(W*.42),y:0,w:Math.ceil(W*.58),h:Math.ceil(H*.47),max:1400,label:'upper-right-native'},
+      {x:0,y:0,w:W,h:Math.ceil(H*.45),max:1600,label:'upper-strip-native'},
+      {x:0,y:0,w:W,h:H,max:1600,label:'full-native'},
+    ];
+    for(const area of regions){
+      const scale=Math.min(1,area.max/Math.max(area.w,area.h));
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(area.w*scale));
+      canvas.height=Math.max(1,Math.round(area.h*scale));
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});
+      if(!ctx)continue;
+      ctx.drawImage(source,area.x,area.y,area.w,area.h,0,0,canvas.width,canvas.height);
+      const data=ctx.getImageData(0,0,canvas.width,canvas.height);
+      for(const mode of ['dontInvert','onlyInvert'] as const){
+        attempts++;
+        let code:ReturnType<typeof jsQR>=null;
+        try{code=decoder(data.data,data.width,data.height,{inversionAttempts:mode});}
+        catch{code=null;}
+        if(!code)continue;
+        const coords=[code.location.topLeftCorner,code.location.topRightCorner,
+          code.location.bottomRightCorner,code.location.bottomLeftCorner]
+          .map(p=>({x:Number((area.x+p.x/scale).toFixed(1)),
+            y:Number((area.y+p.y/scale).toFixed(1))}));
+        const parsed=parseQRData(code.data);
+        return {found:true,valid:parsed.valid,raw:parsed.raw,
+          center:{x:Number((coords.reduce((sum,p)=>sum+p.x,0)/4).toFixed(1)),
+            y:Number((coords.reduce((sum,p)=>sum+p.y,0)/4).toFixed(1))},
+          corners:coords,attempts};
+      }
     }
-    if(!code)return absent('not-decoded-in-full-photo',attempts);
-    const coords=[code.location.topLeftCorner,code.location.topRightCorner,
-      code.location.bottomRightCorner,code.location.bottomLeftCorner]
-      .map(p=>({x:Number((p.x/scale).toFixed(1)),y:Number((p.y/scale).toFixed(1))}));
-    const parsed=parseQRData(code.data);
-    return {found:true,valid:parsed.valid,raw:parsed.raw,
-      center:{x:Number((coords.reduce((sum,p)=>sum+p.x,0)/4).toFixed(1)),
-        y:Number((coords.reduce((sum,p)=>sum+p.y,0)/4).toFixed(1))},
-      corners:coords,attempts};
+    return absent('not-decoded-in-full-or-targeted-photo-regions',attempts);
   }catch(error){return absent('locator-error: '+String(error));}
 }
