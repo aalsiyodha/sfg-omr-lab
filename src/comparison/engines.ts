@@ -6,6 +6,13 @@ import { runBubbleAi } from './bubbleAi';
 export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn';
 export type Outcome='verified'|'partial'|'provisional'|'failed'|'detected'|'rejected'|'error';
 export interface Point {x:number;y:number}
+export interface ImageSpace {width:number;height:number}
+/** Convert source-native corner coordinates to normalized fractions; do not compare raw pixels from differently resized scans. */
+export function cornersNormalized(r:Pick<EngineResult,'corners'|'imageSpace'>):Point[]|null{
+  const {imageSpace}=r;
+  if(!imageSpace||imageSpace.width<=0||imageSpace.height<=0||r.corners.length!==4)return null;
+  return r.corners.map(p=>({x:p.x/imageSpace.width,y:p.y/imageSpace.height}));
+}
 export interface EngineDefinition{
   id:EngineId;name:string;kind:'scanner'|'detector'|'bubble';details:string;
   version:string;assetPath?:string;sizeNote?:string;
@@ -24,6 +31,8 @@ export interface EngineResult {
   id:EngineId;name:string;kind:'scanner'|'detector'|'bubble';version:string;
   outcome:Outcome;elapsedMs:number;reason:string;
   corners:Point[];confidence:number|null;
+  /** Native pixels of the canvas in which the returned corners were predicted. */
+  imageSpace:ImageSpace|null;
   qrValid:boolean|null;alignmentVerified:boolean|null;
   timing:number|null;timingLeft:number|null;timingRight:number|null;
   markerCount:number|null;calibration:string|null;testId:number|null;
@@ -46,13 +55,16 @@ function convertScan(def:EngineDefinition,scan:ScanResult,elapsedMs:number):Engi
   const corners=Array.isArray(foundAi?.data?.corners)?
     (foundAi.data.corners as Point[]):[];
   const confid=foundAi?.data?.confidence;
+  const imageLoaded=(scan.stageLogs??[]).find(l=>l.message.startsWith('Image loaded:'));
+  const dimensions=imageLoaded?.message.match(/Image loaded:\s*(\d+)\s*[×x]\s*(\d+)/);
+  const imageSpace=dimensions?{width:Number(dimensions[1]),height:Number(dimensions[2])}:null;
   const evidence=(scan.stageLogs??[]).filter(l=>/timing marks \d+\/50/.test(l.message))
     .map(l=>l.data).at(-1);
   return {
     id:def.id,name:def.name,kind:'scanner',version:def.version,outcome,elapsedMs,
     reason:scan.errors?.[0]||scan.warnings?.[0]||
       (verified?'QR and timing verification passed':'Registration not verified'),
-    corners,confidence:typeof confid==='number'?confid:null,
+    corners,confidence:typeof confid==='number'?confid:null,imageSpace,
     qrValid:scan.qrValid,alignmentVerified:scan.alignmentVerified??false,
     timing:scan.alignmentMatched??0,
     timingLeft:typeof evidence?.left==='number'?evidence.left:null,
@@ -69,7 +81,7 @@ function convertScan(def:EngineDefinition,scan:ScanResult,elapsedMs:number):Engi
 }
 function empty(def:EngineDefinition,reason:string,elapsedMs:number):EngineResult{
   return {id:def.id,name:def.name,kind:def.kind,version:def.version,
-    outcome:'error',elapsedMs,reason,corners:[],confidence:null,
+    outcome:'error',elapsedMs,reason,corners:[],confidence:null,imageSpace:null,
     qrValid:null,alignmentVerified:null,timing:null,timingLeft:null,timingRight:null,
     markerCount:null,calibration:null,testId:null,answers:[],traces:[]};
 }
@@ -175,7 +187,7 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
     const alignedImage=def.id==='scanic' && result ? result.canvas.toDataURL('image/png') : undefined;
     return {...empty(def,result?'Page-corner candidate predicted':'No acceptable page-corner candidate',
       Math.round(performance.now()-started)),outcome:result?'detected':'rejected',
-      confidence,corners,traces,alignedImage,
+      confidence,corners,traces,alignedImage,imageSpace:{width:canvas.width,height:canvas.height},
       reason:result?'Page-corner hypothesis only; no bubble scanning or timing verification':
         'Model returned no accepted geometry (inspect per-view diagnostics)'};
   }catch(error){
