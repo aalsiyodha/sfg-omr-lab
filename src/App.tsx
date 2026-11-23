@@ -72,8 +72,6 @@ export default function App() {
         </main>
 
       </div>
-        </footer>
-      </div>
     </HashRouter>
   );
 }
