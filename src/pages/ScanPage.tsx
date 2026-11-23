@@ -229,9 +229,9 @@ export default function ScanPage({ appState }: Props) {
     <div>
       <div className="product-scan-header">
         <div>
-          <span className="product-kicker" style={{ color:'#0d9488',fontWeight:900 }}>2.2.6 · OLD VERSION RETEST</span>
-          <h1 style={{ letterSpacing:'-.035em' }}>SFG OMR Lab <span style={{ color:'#0d9488' }}>2.2.6 Retest</span></h1>
-          <p>Original Lite scanner with one limited gentle-curvature fallback. Upload a sheet, scan, and share diagnostics.</p>
+          <span className="product-kicker" style={{ color:'#0d9488',fontWeight:900 }}>2.3.31 · LOCAL OPENCV</span>
+          <h1 style={{ letterSpacing:'-.035em' }}>SFG OMR Lab <span style={{ color:'#0d9488' }}>OpenCV Recovery</span></h1>
+          <p>Fast local scanner · one guarded timing-track recovery on failure · full diagnostics available.</p>
         </div>
         <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
           <span className="product-scan-version">{APP_VERSION}</span>

@@ -1549,3 +1549,67 @@ test('Lite 2.2.6 retest: withheld timing validation samples only even-numbered r
   const result=mesh.countHeldOutTimingMarks({cols:w,rows:h,data},150);
   assert.deepEqual(result,{left:12,right:12});
 });
+
+
+test('v2.3.31: timing-track assignment follows gradual two-axis drift without row swaps',()=>{
+  const mod=loadTS('src/scanner/mildCurveCorrection.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{answers:{
+      rowStartY:83,rowSpacingY:7.4,questionsPerCol:25
+    }},mmToPx:mm=>mm*150/25.4},
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>145}
+  });
+  for(const side of ['left','right']){
+    const x0=(side==='left'?13.3:196.7)*150/25.4;
+    const y0=83*150/25.4,step=7.4*150/25.4;
+    const real=Array.from({length:25},(_,row)=>{
+      const dx=side==='left'?-20+row*.95:12-row*.6;
+      const dy=side==='left'?10-row*.50:17-row*1.35;
+      return {x:x0+dx,y:y0+row*step+dy,area:110,w:13,h:10};
+    });
+    // Large-looking nearby objects must not displace the monotonic track.
+    const noise=Array.from({length:8},(_,row)=>({
+      x:x0+70,y:y0+row*3*step,area:110,w:13,h:10
+    }));
+    const found=mod.assignTimingRows([...real,...noise],side,150);
+    assert.equal(found.length,25,side+' all timing rows tracked');
+    for(const row of [0,5,12,20,24]){
+      assert.equal(found[row].row,row);
+      assert.ok(Math.abs(found[row].dy-
+        (side==='left'?10-row*.5:17-row*1.35))<.01);
+    }
+  }
+});
+
+test('v2.3.31: independent odd/even track partition and strict QR gates remain in place',()=>{
+  const mesh=readFileSync('src/scanner/mildCurveCorrection.ts','utf8');
+  const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.ok(mesh.includes("rows.left.filter(p=>p.row%2===0)"));
+  assert.ok(mesh.includes("rows.right.filter(p=>p.row%2===0)"));
+  assert.ok(mesh.includes('rows.left.length<20||rows.right.length<20'));
+  assert.ok(mesh.includes("report('insufficient-timing-track'"));
+  assert.ok(mesh.includes("report('implausible-or-abrupt-drift'"));
+  assert.ok(scanner.includes('const curveBudget={remaining:1}'));
+  assert.ok(scanner.includes('meshQR.valid && meshQR.raw===qr.raw'));
+  assert.ok(scanner.includes('after.passed && after.matched>check.matched'));
+  assert.ok(scanner.includes('holdout.left>=8 && holdout.right>=8'));
+  assert.ok(scanner.includes('OpenCV timing-track recovery evidence'));
+  assert.ok(scanner.includes("if (!check.passed)"));
+});
+
+test('v2.3.31: abrupt or excessive deformations are rejected rather than fitted',()=>{
+  const mod=loadTS('src/scanner/mildCurveCorrection.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{answers:{
+      rowStartY:83,rowSpacingY:7.4,questionsPerCol:25
+    }},mmToPx:mm=>mm*150/25.4},
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>145}
+  });
+  const good=Array.from({length:13},(_,i)=>({
+    row:i*2,dx:-9+i*.7,dy:10-i*1.1
+  }));
+  assert.equal(mod.isPlausibleDrift(good,53,26),true);
+  const abrupt=good.map(x=>({...x}));
+  abrupt[5].dx+=50;
+  assert.equal(mod.isPlausibleDrift(abrupt,53,26),false);
+  const huge=good.map(x=>({...x,dy:x.dy+50}));
+  assert.equal(mod.isPlausibleDrift(huge,53,26),false);
+});

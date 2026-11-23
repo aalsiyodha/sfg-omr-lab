@@ -52,7 +52,7 @@ export default function App() {
           <div className="container-fluid" style={{ maxWidth: 1160 }}>
             <NavLink to="/" className="product-brand text-decoration-none d-flex align-items-center gap-2">
               <span className="product-brand-icon"><i className="bi bi-upc-scan" /></span>
-              <span className="product-brand-name">SFG <span>OMR Lab <span style={{ color: '#0d9488', fontWeight: 700 }}>2.2.6 Retest</span></span></span>
+              <span className="product-brand-name">SFG <span>OMR Lab <span style={{ color: '#0d9488', fontWeight: 700 }}>OpenCV Recovery</span></span></span>
               <span className="product-version-tag">{APP_VERSION}</span>
             </NavLink>
             <div className="product-header-controls">
@@ -95,7 +95,7 @@ export default function App() {
 
         <footer className="mt-auto product-footer">
           <div className="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2" style={{ maxWidth: 1160 }}>
-            <span className="product-footer-brand">SFG OMR LAB · 2.2.6 OLD VERSION RETEST <span>· {APP_RELEASE_LABEL}</span></span>
+            <span className="product-footer-brand">SFG OMR LAB · LOCAL OPENCV RECOVERY <span>· {APP_RELEASE_LABEL}</span></span>
             <span>Built for thoughtful practice. Processed on your device.</span>
             <span className="product-deployment-label" title={`Commit: ${APP_BUILD_META.sha} · Built: ${APP_BUILD_META.builtAt}`}>{APP_DEPLOY_LABEL} · commit {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}</span>
             <span>Beta · Verify before scoring</span>

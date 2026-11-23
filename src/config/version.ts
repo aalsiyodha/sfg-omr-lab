@@ -1,7 +1,9 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
 declare const __APP_BUILD_META__: { version:string; source:'vercel'|'local-dev'|'local-build'; environment:string; sha:string; buildId:string; builtAt:string; dirty:boolean };
-export const APP_VERSION = version === '2.2.6-lite.2'
+export const APP_VERSION = version === '2.3.31'
+  ? 'v2.3.31 · Lite OpenCV Recovery'
+  : version === '2.2.6-lite.2'
   ? 'v2.2.6 · Old Version Retest (Lite + Gentle Curve)'
   : version === '2.2.6-lite.1'
   ? 'v2.2.6 LITE • Fast Registration Experiment'
