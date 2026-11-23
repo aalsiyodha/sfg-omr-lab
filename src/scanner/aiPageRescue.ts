@@ -71,7 +71,9 @@ export async function recoverPageWithAI(source:HTMLCanvasElement,trace?:AiTrace)
   try{
     const inferenceStart=clock();
     trace?.('inference-start',{modelUrl:MODEL});
-    result=await detector.scan(source,{mode:'detect',minDetectionConfidence:.35});
+    // A zero threshold exposes the model's RAW corner heatmap peaks for diagnostics.
+    // We still enforce .35 before accepting the geometry for any verification.
+    result=await detector.scan(source,{mode:'detect',minDetectionConfidence:0});
     trace?.('inference-result',{elapsedMs:Math.round(clock()-inferenceStart),
       success:result.success,message:result.message,
       confidence:result.confidence,
@@ -80,8 +82,9 @@ export async function recoverPageWithAI(source:HTMLCanvasElement,trace?:AiTrace)
     // The model is only needed in failure cases, never keep its memory resident.
     (detector as unknown as {dispose?:()=>void}).dispose?.();
   }
-  if(!result.success||!result.corners||result.confidence===null ||
-    result.confidence<.35){trace?.('detection-rejected',{reason:result.message,confidence:result.confidence});return null;}
+  if(!result.success||!result.corners||result.confidence===null){
+    trace?.('detection-rejected',{reason:result.message,confidence:result.confidence});return null;
+  }
   const pts=[
     result.corners.topLeft,result.corners.topRight,
     result.corners.bottomRight,result.corners.bottomLeft,
@@ -90,10 +93,16 @@ export async function recoverPageWithAI(source:HTMLCanvasElement,trace?:AiTrace)
     Object.entries(result.corners).map(([key,value])=>[key,value.confidence??null])
   ) as Record<string,number|null>;
   const geometryOk=plausiblePageBoundary(pts,source.width,source.height);
+  const meetsConfidence=result.confidence>=.35;
+  trace?.('raw-model-corners',{corners:pts,confidence:result.confidence,
+    cornerConfidence,requiredConfidence:.35,meetsConfidence});
   const ordered=orderPageCorners(pts);
   trace?.('corner-geometry',{points:pts,cornerConfidence,
     plausible:geometryOk,ordered:ordered??[],sourceSize:[source.width,source.height]});
-  if(!geometryOk||!ordered){trace?.('detection-rejected',{reason:'page-geometry-rejected'});return null;}
+  if(!geometryOk||!ordered||!meetsConfidence){
+    trace?.('detection-rejected',{reason:!meetsConfidence?'below-confidence-floor':'page-geometry-rejected',
+      confidence:result.confidence,requiredConfidence:.35,geometryOk});return null;
+  }
   const dpi=getSettings().scanDpi;
   const width=Math.round(mmToPx(OMR_LAYOUT.page.widthMm,dpi));
   const height=Math.round(mmToPx(OMR_LAYOUT.page.heightMm,dpi));
