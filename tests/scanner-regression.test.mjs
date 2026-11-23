@@ -1814,3 +1814,16 @@ test('real comparator separates exact answers, blanks, multiple, wrong choices a
   assert.equal(output.coverage,6);
   assert.equal(output.referenceIsGroundTruth,false);
 });
+
+test('focused AI benchmark preserves optical correction evidence and UPSC partial-mark uncertainty',()=>{
+  const grid=readFileSync(resolve(process.cwd(),'src/comparison/landmarkGrid.ts'),'utf8');
+  const engines=readFileSync(resolve(process.cwd(),'src/comparison/engines.ts'),'utf8');
+  const page=readFileSync(resolve(process.cwd(),'src/pages/ComparePage.tsx'),'utf8');
+  assert.match(grid,/centerFill>=\.68/);
+  assert.match(grid,/quadrantMinimum>=\.54/);
+  assert.match(grid,/status:'uncertain'/);
+  assert.match(grid,/correctionChangedRows/);
+  assert.match(grid,/assisted-local-grid-dependency-cost/);
+  assert.match(engines,/changedByOpticalCorrection/);
+  assert.match(page,/\['current','v226','landmark','scanic','lcnet','uvdoc'\]/);
+});
