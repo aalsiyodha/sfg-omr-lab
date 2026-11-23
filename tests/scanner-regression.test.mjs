@@ -1925,7 +1925,7 @@ test('v2.5.1: decision proof never promotes invalid marks or blanks',()=>{
 });
 test('v2.5.1: proof audit is feature-gated and uses one optical geometry',()=>{
   const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
-  assert.match(scan,/new URLSearchParams\(window\.location\.search\)\.get\('proofscan'\)==='1'/);
+  assert.match(scan,/experimentalParams\.get\('proofscan'\)==='1'/);
   assert.match(scan,/v2\.5\.1 selective DecisionScan audit/);
   assert.match(scan,/chooseGeometryAction/);
 });
@@ -1969,4 +1969,79 @@ test('v2.5.1: predicted Local-Grid row offsets stay bounded and shadow only',()=
  const missing={...grid,leftUpper:{dx:0,dy:0,applied:false,confidence:0},
    leftLower:{dx:0,dy:0,applied:false,confidence:0}};
  assert.equal(predictGridOffset(missing,3).valid,false);
+});
+
+test('v2.5.1 trained synthetic head has bounded closed-set scores, no scoring permission',()=>{
+  const head=loadTS('src/scanner/trainedDecisionHead.ts');
+  assert.equal(head.SYNTHETIC_MODEL_INFO.scoringPermission,false);
+  assert.equal(head.SYNTHETIC_MODEL_INFO.calibration,'none');
+  const measure=(fill,core,mid,outer,sectors,quads,extra={})=>({
+    question:1,option:'A',xMm:10,yMm:20,fillPercent:fill,
+    radialCore:core,radialMiddle:mid,radialOuter:outer,
+    filledSectors:sectors,filledQuadrants:quads,...extra
+  });
+  const solid=head.predictSyntheticDecision(measure(99,99,98,91,8,4));
+  assert.equal(solid.label,'solid');
+  assert.equal(solid.calibrated,false);
+  const blank=head.predictSyntheticDecision(measure(0,0,0,2,0,0));
+  assert.equal(blank.label,'empty');
+  const stroke=head.predictSyntheticDecision(measure(36,35,40,28,3,2,{strokeLike:true}));
+  assert.equal(stroke.label,'stroke');
+  assert.ok(Math.abs(Object.values(solid.scores).reduce((a,b)=>a+b,0)-1)<1e-10);
+});
+test('v2.5.1 masked latent predictor learns blank context and reports holdout error',()=>{
+  const {fitMaskedLatentPredictor,embedTemplate}=loadTS('src/scanner/latentPredictor.ts');
+  const rows=Array.from({length:50},(_,q)=>({
+    question:q+1,status:'blank',detectedAnswer:null,confidence:100,
+    isManuallyEdited:false,measurements:['A','B','C','D'].map((option,o)=>({
+      question:q+1,option,fillPercent:0,xMm:10+o*10,yMm:80+q,
+      localPaperBrightness:220+q/10,inkThreshold:154+q/30,
+      radialOuter:2
+    }))
+  }));
+  assert.equal(embedTemplate(rows[0].measurements[0]).length,4);
+  const fit=fitMaskedLatentPredictor(rows,12);
+  assert.equal(fit.trained,true,JSON.stringify(fit));
+  assert.ok(fit.heldOut>=4);
+  assert.ok(fit.heldOutMse!==null&&fit.heldOutMse<0.005);
+  assert.equal(fit.scoringPermission,false);
+  assert.equal(fitMaskedLatentPredictor(rows.slice(0,2)).trained,false);
+});
+test('v2.5.1 mesh refuses corrections without withheld improvement',()=>{
+  const {validateLocalMesh}=loadTS('src/scanner/validatedMesh.ts',{
+    '../config/omrLayout':{
+      getBubbleCentre:(question,option)=>({
+        xMm:question<=25?34.5+option*14.5:125.5+option*14.5,
+        yMm:83+((question-1)%25)*7.4
+      }),
+      mmToPx:(mm,dpi)=>mm*dpi/25.4
+    },
+    './gridAlignment':{
+      offsetForQuestion:(g,q)=>q<=12?g.leftUpper:q<=25?g.leftLower:
+        q<=37?g.rightUpper:g.rightLower,
+      scorePrintedRingAt:()=>25
+    },
+    './predictiveGrid':{
+      predictGridOffset:(g,q)=>({valid:true,uncertaintyPx:1,
+        dx:q<=25?2:0,dy:0,source:'interpolated'})
+    }
+  });
+  const base={dx:0,dy:0,confidence:20,applied:true};
+  const grid={leftUpper:base,leftLower:base,rightUpper:base,
+    rightLower:base,testId:base};
+  const gray={rows:1800,cols:1300,ucharPtr:()=>[220]};
+  const result=validateLocalMesh(gray,150,grid);
+  assert.ok(result.heldOutCount>=18);
+  assert.equal(result.accepted,false);
+  assert.equal(result.relativeGain,0);
+  assert.deepEqual(result.predicted,{});
+});
+test('v2.5.1 model, masked latent and held-out mesh are wired with safe flags',()=>{
+  const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.match(scan,/fitMaskedLatentPredictor\(answers\)/);
+  assert.match(scan,/predictSyntheticDecision\(m\)/);
+  assert.match(scan,/validateLocalMesh\(chosen\.gray,dpi,grid,excludedInkQuestions\)/);
+  assert.match(scan,/get\('proofmesh'\)==='1'/);
+  assert.match(scan,/get\('proofmodel'\)==='1'/);
+  assert.match(scan,/proofModelEnabled&&modelReview\.has/);
 });
