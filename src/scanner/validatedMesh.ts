@@ -38,11 +38,13 @@ export function validateLocalMesh(
     predicted[question]={dx:proposal.dx,dy:proposal.dy,
       applied:true,confidence:Math.max(0,base.confidence-proposal.uncertaintyPx)};
     maxDisplacementPx=Math.max(maxDisplacementPx,movement);
-    // Only score rows never used for offset fitting and never marked by
-    // the scanner. The grid fitter samples one option at every fourth row.
-    // Withheld options 1 and 2 are used here on non-fitter rows.
-    if(excludedQuestions.has(question)||question%4===1)continue;
+    // The fitting sample rotates its selected answer option per row.
+    // Choose only other options, and exclude every row with observed ink.
+    if(excludedQuestions.has(question))continue;
+    const regionStart=question<=12?1:question<=25?13:question<=37?26:38;
+    const fittedOption=(question-regionStart)%4;
     for(const opt of [1,2] as const){
+      if(opt===fittedOption)continue;
       const centre=getBubbleCentre(question,opt);
       const x=mmToPx(centre.xMm,dpi),y=mmToPx(centre.yMm,dpi);
       const baseline=score(gray,x,y,dpi,base.dx,base.dy);
