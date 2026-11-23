@@ -1,12 +1,13 @@
 import type { ScanResult } from '../types';
 import { recoverPageWithScanic } from '../scanner/scanicPageRescue';
 import { recoverPageWithAI } from '../scanner/aiPageRescue';
+import { runBubbleAi } from './bubbleAi';
 
-export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit';
+export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn';
 export type Outcome='verified'|'partial'|'provisional'|'failed'|'detected'|'rejected'|'error';
 export interface Point {x:number;y:number}
 export interface EngineDefinition{
-  id:EngineId;name:string;kind:'scanner'|'detector';details:string;
+  id:EngineId;name:string;kind:'scanner'|'detector'|'bubble';details:string;
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
@@ -17,9 +18,10 @@ export const ENGINES:EngineDefinition[]=[
   {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
   {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
   {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
+  {id:'bubblecnn',name:'SmallOMRNet Bubble AI',kind:'bubble',version:'hermitkk / AGPL-3.0',details:'Experimental filled/empty checkbox classifier on aligned bubble crops. NOT scoring.',sizeNote:'~148 KB model'},
 ];
 export interface EngineResult {
-  id:EngineId;name:string;kind:'scanner'|'detector';version:string;
+  id:EngineId;name:string;kind:'scanner'|'detector'|'bubble';version:string;
   outcome:Outcome;elapsedMs:number;reason:string;
   corners:Point[];confidence:number|null;
   qrValid:boolean|null;alignmentVerified:boolean|null;
@@ -28,6 +30,8 @@ export interface EngineResult {
   answers:Array<{q:number;answer:string|null;status:string;confidence:number}>;
   traces:Array<{stage:string;message:string;data?:unknown;level?:string}>;
   raw?:ScanResult;
+  /** Internal browser-only image for aligned bubble benchmarking; omitted from exports. */
+  alignedImage?:string;
 }
 const CHANNEL='sfg-omr-lab-compare-v1';
 const MAX_FILE=25*1024*1024;
@@ -98,17 +102,19 @@ async function runIframe(def:EngineDefinition,file:File):Promise<EngineResult>{
       const msg=event.data as {
         channel?:string;type?:string;protocol?:number;
         requestId?:string;result?:ScanResult;error?:string;reason?:string;
+        alignedImage?:string|null;
       };
       if(msg?.channel!==CHANNEL)return;
       if(msg.type==='ready'&&msg.protocol===1){
         iframe.contentWindow?.postMessage({channel:CHANNEL,type:'scan',requestId,
-          name:file.name,mime:file.type,bytes},location.origin);
+          name:file.name,mime:file.type,bytes,wantAlignedImage:def.id==='current'},location.origin);
       }else if(msg.type==='startup-error'){
         finish(undefined,Error(msg.reason||'OpenCV startup failed'));
       }else if(msg.type==='result'&&msg.requestId===requestId){
         if(msg.error)finish(undefined,Error(msg.error));
         else if(msg.result&&Array.isArray(msg.result.answers))
-          finish(convertScan(def,msg.result,Math.round(performance.now()-started)));
+          finish({...convertScan(def,msg.result,Math.round(performance.now()-started)),
+            alignedImage:def.id==='current'?msg.alignedImage??undefined:undefined});
         else finish(undefined,Error('Invalid scanner bridge response'));
       }
     };
@@ -156,10 +162,12 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
     return {...empty(def,String(error),Math.round(performance.now()-started)),traces};
   }
 }
-export async function runEngine(def:EngineDefinition,file:File):Promise<EngineResult>{
+export async function runEngine(def:EngineDefinition,file:File,previous:EngineResult[]=[]):Promise<EngineResult>{
   const t=performance.now();
   try{
-    return def.kind==='scanner'?await runIframe(def,file):await runDetector(def,file);
+    return def.kind==='scanner'?await runIframe(def,file):
+      def.kind==='bubble'?await runBubbleAi(def,previous.find(x=>x.id==='current')):
+      await runDetector(def,file);
   }catch(error){return empty(def,String(error),Math.round(performance.now()-t));}
 }
 export async function imageSha256(file:File):Promise<string>{
