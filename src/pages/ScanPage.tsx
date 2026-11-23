@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AppState } from '../App';
 import type { AnswerOption } from '../types';
@@ -21,6 +21,21 @@ export default function ScanPage({ appState }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [mode, setMode] = useState<InputMode>('none');
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
+  const [fileSha256, setFileSha256] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setFileSha256(null);
+    if (capturedFile && globalThis.crypto?.subtle) {
+      void capturedFile.arrayBuffer()
+        .then(bytes => crypto.subtle.digest('SHA-256', bytes))
+        .then(hash => {
+          if (!cancelled) setFileSha256(Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0')).join(''));
+        })
+        .catch(() => { if (!cancelled) setFileSha256('unavailable'); });
+    }
+    return () => { cancelled = true; };
+  }, [capturedFile]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [torchSupported, setTorchSupported] = useState(false);
@@ -145,7 +160,7 @@ export default function ScanPage({ appState }: Props) {
   const handleCopyLLMReport = async () => {
     if (!scanResult) return;
     const ok = await copyText(generateLLMDiagnosticPrompt({
-      scanResult, file: capturedFile,
+      scanResult, file: capturedFile, fileSha256,
       activeTestId: practice.activeTest?.testId,
       answerKey: practice.activeTest?.answerKey,
     }));
@@ -156,7 +171,7 @@ export default function ScanPage({ appState }: Props) {
   const handleCopyBetaReport = async () => {
     if (!scanResult) return;
     const ok = await copyText(generateBetaFeedbackPrompt({
-      scanResult, file: capturedFile, activeTestId: practice.activeTest?.testId,
+      scanResult, file: capturedFile, fileSha256, activeTestId: practice.activeTest?.testId,
     }));
     setLlmCopied(ok);
     setCopyFailed(!ok);
@@ -202,11 +217,11 @@ export default function ScanPage({ appState }: Props) {
   const invalidBlankCount = countRejectedBlankMarks(scanResult?.answers ?? []);
   const visibleAnswers = filterReviewAnswers(scanResult?.answers ?? [], reviewFilter);
   const reportFull = scanResult ? generateLLMDiagnosticPrompt({
-    scanResult,file:capturedFile,activeTestId:practice.activeTest?.testId,
+    scanResult,file:capturedFile,fileSha256,activeTestId:practice.activeTest?.testId,
     answerKey:practice.activeTest?.answerKey
   }) : '';
   const reportCompact = scanResult ? generateBetaFeedbackPrompt({
-    scanResult,file:capturedFile,activeTestId:practice.activeTest?.testId
+    scanResult,file:capturedFile,fileSha256,activeTestId:practice.activeTest?.testId
   }) : '';
   const diagnostic = showTechnicalReport ? reportFull : reportCompact;
   const saveReport = () => {
