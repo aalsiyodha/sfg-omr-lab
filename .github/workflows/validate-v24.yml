@@ -10,6 +10,7 @@ on:
       - feature/v2.4.5
       - feature/v2.4.5-landmark-grid
       - fix/v2.4.6-landmark-baseline
+      - feature/v2.4.611-optical-recovery
   workflow_dispatch:
 permissions:
   contents: read

@@ -137,21 +137,31 @@ function evaluateHypothesis(
     if (!qr.valid) {
       // The grayscale strip is independent location evidence for a hybrid warp,
       // never a replacement for the required QR identity.
-      if(hypothesis.kind==='hybrid'){
-        let probe:any=null;
-        try{
-          probe=new cv.Mat();
-          cv.cvtColor(persp.corrected,probe,cv.COLOR_RGBA2GRAY);
+      // Record the independent timing-track evidence even when QR identity
+      // cannot be decoded. Previous builds discarded this useful geometry
+      // information and reported only a misleading 0/50 registration.
+      // These measurements NEVER relax the QR identity gate.
+      let probe:any=null;
+      try{
+        probe=new cv.Mat();
+        cv.cvtColor(persp.corrected,probe,cv.COLOR_RGBA2GRAY);
+        const timing=verifyTimingMarks(probe,dpi);
+        logger.info('perspective',hypothesis.name+': QR-failed timing evidence',{
+          matched:timing.matched,left:timing.leftMatched,
+          right:timing.rightMatched,passed:timing.passed,
+          qrVerified:false,scoringAllowed:false
+        });
+        if(hypothesis.kind==='hybrid'){
           const calibration=measureGrayCalibration(probe,dpi);
           logger.info('perspective',hypothesis.name+': grayscale landmark cross-check',{
             status:calibration.status,patches:calibration.patchMedians,
             contrast:calibration.contrast,ordered:calibration.ordered,
             note:calibration.note
           });
-        }catch(error){logger.warning('perspective','Hybrid grayscale landmark check failed',{
-          reason:String(error)});}
-        finally{cleanupMats(probe);}
-      }
+        }
+      }catch(error){logger.warning('perspective','QR-failed geometry probe unavailable',{
+        method:hypothesis.name,reason:String(error)});}
+      finally{cleanupMats(probe);}
       logger.warning('qrDecoding', `${hypothesis.name}: QR missing from both expected corners`);
       return null;
     }
@@ -643,6 +653,57 @@ export async function runFullScan(
           durationMs:Date.now()-aiStart
         });
         if(ai){
+          // Scanic returns an already rectified A4 canvas. Before attempting a
+          // second fiducial homography, directly test its native printed QR
+          // and two timing tracks. This prevents a good first warp being
+          // degraded by falsely detected corner squares on the warped image.
+          let directGray:any=null;
+          let directColor:any=null;
+          let directAccepted=false;
+          try{
+            directColor=cv.imread(ai.canvas);
+            directGray=new cv.Mat();
+            cv.cvtColor(directColor,directGray,cv.COLOR_RGBA2GRAY);
+            const directTiming=verifyTimingMarks(directGray,dpi);
+            const directQR=decodeQRFromRegion(ai.canvas,
+              OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+            const directStrip=measureGrayCalibration(directGray,dpi);
+            logger.info('perspective','AI first-warp independent landmark verification',{
+              method:'ai-boundary/direct-no-second-warp',
+              timing:directTiming.matched,left:directTiming.leftMatched,
+              right:directTiming.rightMatched,timingPassed:directTiming.passed,
+              qrFound:directQR.found,qrValid:directQR.valid,
+              stripStatus:directStrip.status,stripContrast:directStrip.contrast,
+              stripOrdered:directStrip.ordered,
+              note:'No second homography; QR and both timing tracks remain mandatory'
+            });
+            if(directQR.valid&&directTiming.passed){
+              // The paper-edge hypothesis itself is not proof; only the QR
+              // identity and the independently detected timing lattice are.
+              const directCanvas=document.createElement('canvas');
+              directCanvas.width=ai.canvas.width;directCanvas.height=ai.canvas.height;
+              directCanvas.getContext('2d')?.drawImage(ai.canvas,0,0);
+              selected={
+                hypothesis:{kind:'corner',name:'ai-boundary/direct-verified',
+                  markers:primary},
+                perspective:{corrected:directColor,correctedDataUrl:'',
+                  transform:null,success:true},
+                gray:directGray,canvas:directCanvas,qr:directQR,
+                check:directTiming,rotated:false
+              };
+              directAccepted=true;
+              aiStatus='verified-direct-first-warp';
+              logger.info('perspective','AI first-warp accepted via strict QR/timing',{
+                timing:directTiming.matched,left:directTiming.leftMatched,
+                right:directTiming.rightMatched});
+            }
+          }catch(error){
+            logger.warning('perspective','AI first-warp verification unavailable',{
+              reason:String(error)});
+          }finally{
+            if(!directAccepted)cleanupMats(directGray,directColor);
+          }
+          if(!selected){
           const processed=preprocessImage(ai.canvas);
           let aiOtsu:any=null;
           try{
@@ -696,6 +757,7 @@ export async function runFullScan(
               if(selected)break;
             }
           }finally{cleanupMats(aiOtsu,processed.gray,processed.blurred,processed.thresholded);}
+          }
         }
       }catch(error){
         aiStatus='runtime-or-inference-error';
