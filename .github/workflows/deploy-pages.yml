@@ -58,6 +58,31 @@ jobs:
           test -s dist/ai-runtime/quadscan.iife.js
           test -s dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
           ls -lh dist/ai-runtime dist/ai-model
+      # v2.3.48: independently trained Scanic DocCornerNet (SimCC) fallback.
+      # Commit-pinned, MIT licensed; self-host model+minimal WASM.
+      - name: Check out pinned Scanic source
+        uses: actions/checkout@v4
+        with:
+          repository: marquaye/scanic
+          ref: 480193b724fd2f2ad523a1cc279a3c65ce37dc2c
+          path: scanic-source
+      - name: Install Scanic dependencies
+        run: npm ci
+        working-directory: scanic-source
+      - name: Build Scanic lazy ESM runtime
+        run: npm run build
+        working-directory: scanic-source
+      - name: Bundle Scanic model and runtime in GitHub Pages
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ai-runtime dist/ai-model/scanic
+          cp scanic-source/dist/scanic*.js dist/ai-runtime/
+          cp scanic-source/scanic-ml/dist/doccornernet_lean.ort dist/ai-model/scanic/
+          cp scanic-source/scanic-ml/dist/ort-wasm-simd-threaded.* dist/ai-model/scanic/
+          test -s dist/ai-runtime/scanic.js
+          test -s dist/ai-model/scanic/doccornernet_lean.ort
+          test -s dist/ai-model/scanic/ort-wasm-simd-threaded.wasm
+          ls -lh dist/ai-runtime/scanic* dist/ai-model/scanic/*
       # Preserve the original v2.3.45 scanner on a dedicated subpath.
       # Its archived source and build remain independent of current main.
       - name: Check out archived v2.3.45
