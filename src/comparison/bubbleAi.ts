@@ -126,22 +126,34 @@ export async function runBubbleAi(def:EngineDefinition,
      }
    }
    const answers:EngineResult['answers']=[];
-   let agreements=0,disagreements=0,unresolved=0;
+   let agreements=0,disagreements=0,unresolved=0,falseCandidates=0,missedMarks=0;
    for(let q=1;q<=50;q++){
      const row=scores[q-1];
      const sorted=row.map((p,i)=>({p,i})).sort((a,b)=>b.p-a.p);
-     const decisive=sorted[0].p>=.75&&sorted[0].p-sorted[1].p>=.20;
-     const choice=decisive?'ABCD'[sorted[0].i]:null;
+     // Raw logit dominance is more informative than sigmoid probability
+     // differences here: the checkbox model gives nearly all empty circular
+     // SFG bubbles a high 0.8+ sigmoid score (a domain shift). Use a
+     // conservative uncalibrated research threshold and compare ALL rows,
+     // including optical blank/multiple rows, not only positive matches.
+     const orderedRaw=rawValues[q-1].map((v,i)=>({v,i}))
+       .sort((a,b)=>b.v-a.v);
+     const decisive=orderedRaw[0].v>=4.0 &&
+       orderedRaw[0].v-orderedRaw[1].v>=1.5;
+     const choice=decisive?'ABCD'[orderedRaw[0].i]:null;
      const optical=source.answers.find(a=>a.q===q);
-     if(!decisive)unresolved++;
-     else if(!sourceVerified || !optical)unresolved++;
-     else if(optical.answer===choice)agreements++;
-     else disagreements++;
+     if(!sourceVerified||!optical){unresolved++;}
+     else if(choice && optical.status==='detected' && optical.answer===choice)agreements++;
+     else if(choice && (optical.status==='blank'||optical.status==='multiple'))falseCandidates++;
+     else if(choice && optical.status==='detected')disagreements++;
+     else if(!choice && optical.status==='detected')missedMarks++;
+     else unresolved++;
      answers.push({q,answer:choice,status:decisive?'experimental':'uncertain',
        confidence:sorted[0].p});
    }
    traces.push({stage:'bubbleAI',message:'bubble-classifier-summary',
      data:{agreement:agreements,disagreement:disagreements,unresolved,
+       falseCandidates,missedMarks,
+       researchGate:{minimumRawLogit:4.0,minimumRawLogitMargin:1.5},
        noGroundTruth:true,confidenceCalibrated:false,
        source:source.id,provenance,sourceVerified,
        scores:scores.map((row,i)=>({q:i+1,
@@ -154,7 +166,9 @@ export async function runBubbleAi(def:EngineDefinition,
      corners:source.corners,imageSpace:source.imageSpace,testId:source.testId,
      answers,confidence:null,traces,
      reason:'UNVERIFIED experimental bubble predictions from '+provenance+
-       '; '+(sourceVerified?agreements+' optical matches, '+disagreements+' disagreements, ':'optical comparison unavailable; ')+
-       unresolved+' unverified/uncertain rows; NEVER for grading'};
+       '; '+(sourceVerified?agreements+' optical matches, '+disagreements+
+         ' different choices, '+falseCandidates+' false candidates on blank/multiple rows, '+
+         missedMarks+' missed optical marks, ':'optical comparison unavailable; ')+
+       unresolved+' unresolved rows; NEVER for grading'};
  }catch(error){return {...failed(String(error)),traces};}
 }
