@@ -136,24 +136,70 @@ function strip(g:Uint8Array){
     ordered,usable:ordered&&values[6]-values[0]>=80&&values[0]<135};
 }
 function extractEvidence(results:EngineResult[]):Array<{e:Evidence;from:string;native:{width:number;height:number}}>{
+  // Unlike v1, also accept complete optical square/ArUco hypotheses from
+  // successful registrations. The QR-gated failure-only hybrid is absent
+  // precisely on those easy sheets, and must not be a prerequisite here.
   const out:Array<{e:Evidence;from:string;native:{width:number;height:number}}>=[];
+
+  const centres={
+    topLeft:{x:9.5,y:9.5},topRight:{x:200.5,y:9.5},
+    bottomRight:{x:200.5,y:287.5},bottomLeft:{x:9.5,y:287.5}
+  };
+  const arucoMm=[
+    {x:83.5,y:10},{x:151.5,y:10},
+    {x:117.5,y:287},{x:51.5,y:287}
+  ];
+  const point=(v:unknown):v is Point=>{
+    if(!v||typeof v!=='object')return false;
+    const p=v as Partial<Point>;
+    return typeof p.x==='number'&&Number.isFinite(p.x)&&
+      typeof p.y==='number'&&Number.isFinite(p.y);
+  };
+  const push=(r:EngineResult,source:string,pixels:unknown[],template:Point[])=>{
+    if(!r.imageSpace||pixels.length!==4||!pixels.every(point))return;
+    const pts=pixels as Point[];
+    const cross=(a:Point,b:Point,c:Point)=>
+      (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+    // Geometric plausibility only. Verification still requires actual timing.
+    if(!pts.every((p,i)=>cross(p,pts[(i+1)%4],pts[(i+2)%4])>0))return;
+    const poly=pts.reduce((sum,p,i)=>{
+      const q=pts[(i+1)%4];return sum+p.x*q.y-p.y*q.x;
+    },0)/2;
+    if(poly<1000)return;
+    out.push({e:{source,imageAnchors:pts,templateAnchorsMm:template},
+      from:r.id,native:r.imageSpace});
+  };
   for(const r of results){
     if(r.kind!=='scanner'||!r.imageSpace)continue;
     for(const log of r.traces){
-      if(log.message!=='Hybrid cross-family recovery evidence')continue;
-      const d=log.data as Partial<Evidence>|undefined;
-      if(!d||!Array.isArray(d.imageAnchors)||!Array.isArray(d.templateAnchorsMm)||
-        d.imageAnchors.length!==4||d.templateAnchorsMm.length!==4)continue;
-      if(d.imageAnchors.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))continue;
-      out.push({e:d as Evidence,from:r.id,native:r.imageSpace});
+      const d=log.data as Record<string,unknown>|undefined;
+      if(!d)continue;
+      if(log.message==='Hybrid cross-family recovery evidence'){
+        const h=d as Partial<Evidence>;
+        if(Array.isArray(h.imageAnchors)&&Array.isArray(h.templateAnchorsMm))
+          push(r,'hybrid/'+String(h.source||'unknown'),h.imageAnchors,
+            h.templateAnchorsMm as Point[]);
+      }
+      if(/^corner\/(adaptive|Otsu): candidate coordinates$/.test(log.message)){
+        push(r,log.message.replace(': candidate coordinates',''),
+          [d.topLeft,d.topRight,d.bottomRight,d.bottomLeft],
+          [centres.topLeft,centres.topRight,centres.bottomRight,centres.bottomLeft]);
+      }
+      if(/^aruco\/(adaptive|Otsu): candidate coordinates$/.test(log.message)){
+        const pts=d.points as Record<string,unknown>|undefined;
+        if(pts)push(r,log.message.replace(': candidate coordinates',''),
+          [pts['0'],pts['1'],pts['3'],pts['2']],arucoMm);
+      }
     }
   }
-  // Avoid trying duplicates from every archived generation.
-  const keys=new Set<string>();
+  // Keep at least one candidate per landmark family. Do not allow
+  // duplicates across archived scanner versions to exhaust the budget.
+  const seen=new Set<string>();
   return out.filter(v=>{
-    const key=JSON.stringify(v.e.imageAnchors.map(p=>[Math.round(p.x/3),Math.round(p.y/3)]));
-    if(keys.has(key))return false;keys.add(key);return true;
-  }).slice(0,4);
+    const key=v.e.source+'-'+JSON.stringify(v.e.imageAnchors.map(p=>[
+      Math.round(p.x/v.native.width*150),Math.round(p.y/v.native.height*150)]));
+    if(seen.has(key))return false;seen.add(key);return true;
+  }).slice(0,8);
 }
 export async function runLandmarkGrid(def:EngineDefinition,file:File,
   previous:EngineResult[]):Promise<EngineResult>{
@@ -170,7 +216,7 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
   });
   const candidates=extractEvidence(previous);
   if(!candidates.length)return finish('rejected',
-    'No independent 4-anchor optical hybrid evidence available. Run current or v2.3.45 optical scanner first.');
+    'No usable four-point optical landmark evidence. Run at least one full scanner first.');
   try{
     const bitmap=await createImageBitmap(file);
     let source:ImageData;
@@ -257,7 +303,7 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         leftTrack:best.left.length,rightTrack:best.right.length,
         grayscale:best.strip,source:best.anchorSource,variant:best.variant,
         noTrustedResults:true}});
-    const reason='Optical four-anchor hybrid + separate row-wise timing tracks: left '+
+    const reason='Optical four-anchor '+best.variant+' + separate row-wise timing tracks: left '+
       best.left.length+'/25, right '+best.right.length+'/25; '+answers.length+
       ' unverified row samples, '+answers.filter(a=>a.answer).length+
       ' candidate marks. No QR identity or independent ground truth; NEVER grade.';
