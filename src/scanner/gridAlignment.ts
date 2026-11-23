@@ -64,6 +64,14 @@ function ringScore(gray:Gray,x:number,y:number,dpi:number,radiusMm:number):numbe
     coreSum/samples.core.length-ringSum/samples.ring.length));
 }
 
+/** Read-only landmark validation: use this only on withheld printed rings,
+ * never on ink-picked or training anchors. */
+export function scorePrintedRingAt(
+  gray:Gray,x:number,y:number,dpi:number,radiusMm=1.7
+):number {
+  return ringScore(gray,x,y,dpi,radiusMm);
+}
+
 /** Deterministic spatially distributed registration probes, not chosen by ink. */
 export function sampleGridAnchors<T>(anchors:T[]):T[]{
   return anchors.length>=32 && anchors.length%4===0

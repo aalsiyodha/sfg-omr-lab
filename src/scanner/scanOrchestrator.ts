@@ -10,6 +10,9 @@ import { chooseGeometryAction } from './geometryRouter';
 import { auditBubbleDecision, applyDecisionReview } from './decisionProof';
 import { inspectLocalBubble } from './localVisualProof';
 import { summarizePredictedGrid } from './predictiveGrid';
+import { validateLocalMesh } from './validatedMesh';
+import { fitMaskedLatentPredictor } from './latentPredictor';
+import { predictSyntheticDecision, SYNTHETIC_MODEL_INFO } from './trainedDecisionHead';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
@@ -941,8 +944,33 @@ export async function runFullScan(
       // geometry from tone-mapping changes and protects against Q18-like
       // disappearing filled marks without promoting Q42-like faint debris.
       const rawInkThreshold=computeAdaptiveDarkThreshold(chosen.gray);
-      const rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
-        q=>offsetForQuestion(grid,q),rawInkThreshold);
+      const experimentalParams=typeof window!=='undefined'
+        ?new URLSearchParams(window.location.search):new URLSearchParams();
+      const proofMeshEnabled=experimentalParams.get('proofmesh')==='1';
+      const proofModelEnabled=experimentalParams.get('proofmodel')==='1';
+      let activeGridOffset=(q:number)=>offsetForQuestion(grid,q);
+      let rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
+        activeGridOffset,rawInkThreshold);
+      const excludedInkQuestions=new Set(rawAnswers.filter(row=>
+        row.measurements.some(m=>m.fillPercent>=15)).map(row=>row.question));
+      const verifiedMesh=validateLocalMesh(chosen.gray,dpi,grid,excludedInkQuestions);
+      const adoptedMesh=proofMeshEnabled&&verifiedMesh.accepted;
+      if(adoptedMesh){
+        activeGridOffset=(q:number)=>verifiedMesh.predicted[q]??offsetForQuestion(grid,q);
+        rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
+          activeGridOffset,rawInkThreshold);
+      }
+      logger.info('perspective','v2.5.2 withheld-print-validated local mesh',{
+        requested:proofMeshEnabled,accepted:verifiedMesh.accepted,
+        adopted:adoptedMesh,
+        heldOutCount:verifiedMesh.heldOutCount,
+        referenceScore:verifiedMesh.referenceScore,
+        candidateScore:verifiedMesh.candidateScore,
+        relativeGain:verifiedMesh.relativeGain,
+        maxDisplacementPx:verifiedMesh.maxDisplacementPx,
+        reason:verifiedMesh.reason,
+        note:'Candidate based only on printed rings; cannot override QR identity'
+      });
       finishStage('rawBubbleDetection');
       const tone=applySevenToneCorrection(chosen.gray,grayCalibration);
       logger.info('bubbleDetection','Seven-tone image correction',{
@@ -963,7 +991,7 @@ export async function runFullScan(
               ? null:Number(correctedInkCeiling.toFixed(2)),
           });
           const toneAnswers=detectAllAnswers(tone.corrected,dpi,correctedInkCeiling,
-            q=>offsetForQuestion(grid,q),correctedInkThreshold);
+            activeGridOffset,correctedInkThreshold);
           const consensus=reconcileToneAnswers(rawAnswers,toneAnswers);
           answers=consensus.answers;
           logger.info('bubbleDetection','Original-vs-seven-tone answer comparison',{
@@ -979,10 +1007,30 @@ export async function runFullScan(
       // Decision-model-inspired SELECTIVE proof audit. The baseline scanner
       // remains unchanged unless ?proofscan=1 is explicitly enabled.
       // No external model/API, no duplicate full-page warp or crop inference.
-      const proofEnabled = typeof window !== 'undefined' &&
-        new URLSearchParams(window.location.search).get('proofscan')==='1';
+      const proofEnabled = experimentalParams.get('proofscan')==='1';
       const proofs=answers.map(row=>auditBubbleDecision(row,
-        offsetForQuestion(grid,row.question),rawAnswers.find(raw=>raw.question===row.question)));
+        activeGridOffset(row.question),rawAnswers.find(raw=>raw.question===row.question)));
+      const latent=fitMaskedLatentPredictor(answers);
+      logger.info('bubbleDetection','v2.5.2 masked latent template predictor',{
+        ...latent,note:'Self-supervised predictor trained on current-sheet blank features; not full JEPA, never auto-grades'
+      });
+      const learnedProposals=answers.flatMap(row=>{
+        const m=[...row.measurements].sort((a,b)=>b.fillPercent-a.fillPercent)[0];
+        if(!m||m.fillPercent<18||row.status==='multiple')return [];
+        const prediction=predictSyntheticDecision(m);
+        return [{question:row.question,option:m.option,
+          opticalStatus:row.status,modelLabel:prediction.label,
+          margin:Number(prediction.margin.toFixed(3)),
+          scoreSolid:Number(prediction.scores.solid.toFixed(3))}];
+      });
+      const modelReview=new Set(learnedProposals.filter(p=>
+        p.opticalStatus==='detected'&&p.modelLabel!=='solid'&&
+        p.margin>=0.20&&p.scoreSolid<0.30).map(p=>p.question));
+      logger.info('bubbleDetection','v2.5.2 synthetic-trained closed-set head',{
+        enabled:proofModelEnabled,model:SYNTHETIC_MODEL_INFO,
+        proposals:learnedProposals,acceptedReviewCandidates:[...modelReview],
+        note:'Uncalibrated synthetic-only model; no automatic promotion of rejected ink'
+      });
       const reviewProofs=proofs.filter(p=>p.action==='review');
       // Only ambiguous or previously accepted ink gets the 15 tiny
       // local counterfactuals; blank 0%-ink rows do no extra work.
@@ -1001,17 +1049,20 @@ export async function runFullScan(
       const unstableAccepted=new Set(localVisualProofs.filter(p=>
         p.status==='detected'&&!p.stable&&p.spread>=35&&p.minFill<45)
         .map(p=>p.question));
-      if(proofEnabled){
+      if(proofEnabled||proofModelEnabled){
         const lookup=new Map(proofs.map(p=>[p.question,p]));
         answers=answers.map(row=>{
-          const reviewed=applyDecisionReview(row,lookup.get(row.question)!,true);
-          return reviewed.status==='detected'&&unstableAccepted.has(row.question)
+          const reviewed=applyDecisionReview(row,lookup.get(row.question)!,proofEnabled);
+          return reviewed.status==='detected'&&(
+            unstableAccepted.has(row.question)||
+            (proofModelEnabled&&modelReview.has(row.question)))
             ? {...reviewed,status:'uncertain' as const,detectedAnswer:null,confidence:0}
             : reviewed;
         });
       }
       logger.info('bubbleDetection','v2.5.1 selective DecisionScan audit',{
-        enabled:proofEnabled,mode:proofEnabled?'conservative review':'shadow only',
+        enabled:proofEnabled||proofModelEnabled,
+        mode:proofEnabled?'conservative review':'shadow or trained-head selective review',
         evaluated:proofs.length,reviewCount:reviewProofs.length,
         localCounterfactualCount:localVisualProofs.length,
         unstableAccepted:[...unstableAccepted],
