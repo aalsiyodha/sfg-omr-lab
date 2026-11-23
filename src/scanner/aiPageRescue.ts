@@ -14,29 +14,34 @@ type QuadscanResult={
   corners:{topLeft:Point;topRight:Point;bottomRight:Point;bottomLeft:Point}|null;
   message:string;
 };
-type QuadscanAPI={scan:(src:HTMLCanvasElement,options:{mode:'detect';minDetectionConfidence:number})=>Promise<QuadscanResult>};
+type QuadscanInstance={scan:(src:HTMLCanvasElement,options:{mode:'detect';minDetectionConfidence:number})=>Promise<QuadscanResult>};
+type QuadscanCtor=new (options:{
+  model:'lcnet';modelUrl:string;wasmPaths:string;executionProviders:['wasm']
+})=>QuadscanInstance;
 declare global {
-  interface Window { Quadscan?: QuadscanAPI | {Quadscan:QuadscanAPI} }
+  interface Window { Quadscan?: {Quadscan?:QuadscanCtor} | QuadscanCtor }
 }
-let loader:Promise<QuadscanAPI>|null=null;
-const SCRIPT='https://cdn.jsdelivr.net/npm/quadscan@1.0.0/dist/quadscan.iife.js';
-function exportedDetector():QuadscanAPI|null {
+let loader:Promise<QuadscanCtor>|null=null;
+const ASSET_BASE=import.meta.env.BASE_URL;
+const SCRIPT=ASSET_BASE+'ai-runtime/quadscan.iife.js';
+const MODEL=ASSET_BASE+'ai-model/lcnet100_h_e_bifpn_256_fp32.onnx';
+const WASM=ASSET_BASE+'ai-runtime/';
+function exportedDetector():QuadscanCtor|null {
   const exported=window.Quadscan;
   if(!exported)return null;
-  if('scan' in exported && typeof exported.scan==='function')return exported;
-  if('Quadscan' in exported && typeof exported.Quadscan?.scan==='function')return exported.Quadscan;
-  return null;
+  if(typeof exported==='function')return exported as QuadscanCtor;
+  return exported.Quadscan??null;
 }
-function loadDetector():Promise<QuadscanAPI>{
+function loadDetector():Promise<QuadscanCtor>{
   const existing=exportedDetector();
   if(existing)return Promise.resolve(existing);
   if(loader)return loader;
-  loader=new Promise<QuadscanAPI>((resolve,reject)=>{
+  loader=new Promise<QuadscanCtor>((resolve,reject)=>{
     const el=document.createElement('script');
     el.src=SCRIPT;el.async=true;
     el.onload=()=>exportedDetector()?resolve(exportedDetector()!):
-      reject(new Error('Quadscan library loaded without exported API'));
-    el.onerror=()=>reject(new Error('Could not download optional vision runtime'));
+      reject(new Error('Local AI runtime loaded without constructor export: '+SCRIPT));
+    el.onerror=()=>reject(new Error('Local AI runtime asset unavailable: '+SCRIPT));
     document.head.appendChild(el);
   }).catch(err=>{loader=null;throw err;});
   return loader;
@@ -47,7 +52,8 @@ export interface AiPageRescue {
   corners:Point[];
 }
 export async function recoverPageWithAI(source:HTMLCanvasElement):Promise<AiPageRescue|null>{
-  const detector=await loadDetector();
+  const Detector=await loadDetector();
+  const detector=new Detector({model:'lcnet',modelUrl:MODEL,wasmPaths:WASM,executionProviders:['wasm']});
   const result=await detector.scan(source,{mode:'detect',minDetectionConfidence:.35});
   if(!result.success||!result.corners||!result.confidence ||
     result.confidence<.35)return null;
