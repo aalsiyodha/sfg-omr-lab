@@ -119,7 +119,9 @@ export async function runDenseResearch(def:EngineDefinition,file:File):Promise<E
     }
     const session=await ort.InferenceSession.create(model,opts);
     const canvas=await source(file,1600);
-    const w=isUv?496:512,h=isUv?720:512;
+    // The pinned document-mask ONNX declares a fixed [1,3,384,384] input.
+    // Using 512px caused OrtRun invalid-dimensions on real photographs.
+    const w=isUv?496:384,h=isUv?720:384;
     const input=chw(canvas,w,h,isUv?'uvdoc':'imagenet');
     const result=await session.run({[session.inputNames[0]]:
       new ort.Tensor('float32',input,[1,3,h,w])});
