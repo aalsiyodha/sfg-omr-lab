@@ -1,0 +1,169 @@
+import type { ScanResult } from '../types';
+import { recoverPageWithScanic } from '../scanner/scanicPageRescue';
+import { recoverPageWithAI } from '../scanner/aiPageRescue';
+
+export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit';
+export type Outcome='verified'|'partial'|'provisional'|'failed'|'detected'|'rejected'|'error';
+export interface Point {x:number;y:number}
+export interface EngineDefinition{
+  id:EngineId;name:string;kind:'scanner'|'detector';details:string;
+  version:string;assetPath?:string;sizeNote?:string;
+}
+export const ENGINES:EngineDefinition[]=[
+  {id:'current',name:'Current v2.4',kind:'scanner',version:'2.4.0',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
+  {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
+  {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
+  {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
+  {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
+  {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
+];
+export interface EngineResult {
+  id:EngineId;name:string;kind:'scanner'|'detector';version:string;
+  outcome:Outcome;elapsedMs:number;reason:string;
+  corners:Point[];confidence:number|null;
+  qrValid:boolean|null;alignmentVerified:boolean|null;
+  timing:number|null;timingLeft:number|null;timingRight:number|null;
+  markerCount:number|null;calibration:string|null;testId:number|null;
+  answers:Array<{q:number;answer:string|null;status:string;confidence:number}>;
+  traces:Array<{stage:string;message:string;data?:unknown;level?:string}>;
+  raw?:ScanResult;
+}
+const CHANNEL='sfg-omr-lab-compare-v1';
+const MAX_FILE=25*1024*1024;
+const ENGINE_TIMEOUT_MS=120000;
+const base=import.meta.env.BASE_URL;
+function convertScan(def:EngineDefinition,scan:ScanResult,elapsedMs:number):EngineResult {
+  const verified=scan.alignmentVerified===true&&scan.qrValid===true;
+  const outcome:Outcome=verified?(scan.overallStatus==='success'?'verified':'partial'):
+    scan.provisional?'provisional':'failed';
+  const foundAi=(scan.stageLogs??[]).find(l=>l.message==='AI document boundary recovery'&&
+    Array.isArray(l.data?.corners));
+  const corners=Array.isArray(foundAi?.data?.corners)?
+    (foundAi.data.corners as Point[]):[];
+  const confid=foundAi?.data?.confidence;
+  const evidence=(scan.stageLogs??[]).filter(l=>/timing marks \d+\/50/.test(l.message))
+    .map(l=>l.data).at(-1);
+  return {
+    id:def.id,name:def.name,kind:'scanner',version:def.version,outcome,elapsedMs,
+    reason:scan.errors?.[0]||scan.warnings?.[0]||
+      (verified?'QR and timing verification passed':'Registration not verified'),
+    corners,confidence:typeof confid==='number'?confid:null,
+    qrValid:scan.qrValid,alignmentVerified:scan.alignmentVerified??false,
+    timing:scan.alignmentMatched??0,
+    timingLeft:typeof evidence?.left==='number'?evidence.left:null,
+    timingRight:typeof evidence?.right==='number'?evidence.right:null,
+    markerCount:scan.markerCount??null,
+    calibration:scan.grayCalibration?.status??null,
+    testId:scan.testId,
+    answers:(scan.answers??[]).map(q=>({
+      q:q.question,answer:q.detectedAnswer||null,status:q.status,confidence:q.confidence
+    })),
+    traces:(scan.stageLogs??[]).map(l=>({stage:l.stage,message:l.message,
+      data:l.data,level:l.level})),raw:scan
+  };
+}
+function empty(def:EngineDefinition,reason:string,elapsedMs:number):EngineResult{
+  return {id:def.id,name:def.name,kind:def.kind,version:def.version,
+    outcome:'error',elapsedMs,reason,corners:[],confidence:null,
+    qrValid:null,alignmentVerified:null,timing:null,timingLeft:null,timingRight:null,
+    markerCount:null,calibration:null,testId:null,answers:[],traces:[]};
+}
+/** A fresh, hidden same-origin iframe isolates the legacy OpenCV globals and scanner code.
+ * Each iframe handles exactly one photo and is torn down after its result.
+ */
+async function runIframe(def:EngineDefinition,file:File):Promise<EngineResult>{
+  if(file.size>MAX_FILE)throw Error('Maximum supported file size: 25 MB');
+  const bytes=await file.arrayBuffer();
+  const iframe=document.createElement('iframe');
+  iframe.setAttribute('aria-hidden','true');
+  iframe.tabIndex=-1;
+  iframe.style.cssText='position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;border:0';
+  const requestId=def.id+'-'+Date.now().toString(36);
+  const started=performance.now();
+  return await new Promise<EngineResult>((resolve,reject)=>{
+    let settled=false;
+    let timer:number|undefined;
+    const cleanup=()=>{
+      if(timer!==undefined)window.clearTimeout(timer);
+      window.removeEventListener('message',handle);
+      iframe.remove();
+    };
+    const finish=(result?:EngineResult,error?:Error)=>{
+      if(settled)return;settled=true;cleanup();
+      if(error)reject(error);else if(result)resolve(result);
+    };
+    const handle=(event:MessageEvent)=>{
+      if(event.origin!==location.origin||event.source!==iframe.contentWindow)return;
+      const msg=event.data as {
+        channel?:string;type?:string;protocol?:number;
+        requestId?:string;result?:ScanResult;error?:string;reason?:string;
+      };
+      if(msg?.channel!==CHANNEL)return;
+      if(msg.type==='ready'&&msg.protocol===1){
+        iframe.contentWindow?.postMessage({channel:CHANNEL,type:'scan',requestId,
+          name:file.name,mime:file.type,bytes},location.origin);
+      }else if(msg.type==='startup-error'){
+        finish(undefined,Error(msg.reason||'OpenCV startup failed'));
+      }else if(msg.type==='result'&&msg.requestId===requestId){
+        if(msg.error)finish(undefined,Error(msg.error));
+        else if(msg.result&&Array.isArray(msg.result.answers))
+          finish(convertScan(def,msg.result,Math.round(performance.now()-started)));
+        else finish(undefined,Error('Invalid scanner bridge response'));
+      }
+    };
+    window.addEventListener('message',handle);
+    iframe.onerror=()=>finish(undefined,Error('Legacy engine failed to load'));
+    timer=window.setTimeout(()=>finish(undefined,Error('Engine timed out after 120 seconds')),ENGINE_TIMEOUT_MS);
+    iframe.src=base+(def.assetPath??'')+'?compareBridge=1#/scan';
+    document.body.appendChild(iframe);
+  });
+}
+async function canvasFor(file:File):Promise<HTMLCanvasElement>{
+  const bitmap=await createImageBitmap(file);
+  try{
+    const canvas=document.createElement('canvas');
+    canvas.width=bitmap.width;canvas.height=bitmap.height;
+    const ctx=canvas.getContext('2d');
+    if(!ctx)throw Error('Canvas unavailable');
+    ctx.drawImage(bitmap,0,0);
+    return canvas;
+  }finally{bitmap.close();}
+}
+async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>{
+  const started=performance.now();
+  const traces:EngineResult['traces']=[];
+  const trace=(event:string,data:Record<string,unknown>)=>traces.push({
+    stage:'AI',message:event,data,level:'INFO'
+  });
+  try{
+    const canvas=await canvasFor(file);
+    const result=def.id==='scanic'?
+      await recoverPageWithScanic(canvas,trace):
+      await recoverPageWithAI(canvas,trace,def.id==='fastvit'?'fastvit':'lcnet');
+    const rawCorn=traces.findLast(t=>t.message==='raw-model-corners')?.data;
+    const raw=rawCorn&&typeof rawCorn==='object'?rawCorn as {
+      corners?:Point[];confidence?:number
+    }:null;
+    const confidence=result?.confidence??raw?.confidence??null;
+    const corners=result?.corners??raw?.corners??[];
+    return {...empty(def,result?'Page-corner candidate predicted':'No acceptable page-corner candidate',
+      Math.round(performance.now()-started)),outcome:result?'detected':'rejected',
+      confidence,corners,traces,
+      reason:result?'Page-corner hypothesis only; no bubble scanning or timing verification':
+        'Model returned no accepted geometry (inspect per-view diagnostics)'};
+  }catch(error){
+    return {...empty(def,String(error),Math.round(performance.now()-started)),traces};
+  }
+}
+export async function runEngine(def:EngineDefinition,file:File):Promise<EngineResult>{
+  const t=performance.now();
+  try{
+    return def.kind==='scanner'?await runIframe(def,file):await runDetector(def,file);
+  }catch(error){return empty(def,String(error),Math.round(performance.now()-t));}
+}
+export async function imageSha256(file:File):Promise<string>{
+  const bytes=await file.arrayBuffer();
+  const hash=await crypto.subtle.digest('SHA-256',bytes);
+  return Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('');
+}
