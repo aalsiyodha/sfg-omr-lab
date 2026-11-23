@@ -9,6 +9,7 @@ import { canStopUnifiedRegistration } from './unifiedGeometryPolicy';
 import { chooseGeometryAction } from './geometryRouter';
 import { auditBubbleDecision, applyDecisionReview } from './decisionProof';
 import { inspectLocalBubble } from './localVisualProof';
+import { summarizePredictedGrid } from './predictiveGrid';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
@@ -912,6 +913,8 @@ export async function runFullScan(
       finishStage('gridAlignment');
       logger.info('perspective','Independent printed-ring grid offsets',
         {grid, durationMs:Date.now()-gridStart});
+      logger.info('perspective','v2.5.1 predictive local grid shadow analysis',
+        summarizePredictedGrid(grid));
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
       let idOffset: {dx:number;dy:number} = grid.testId;
       let detectedId = detectTestId(chosen.gray, dpi, inkCeiling ?? undefined, idOffset);
