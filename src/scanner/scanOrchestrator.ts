@@ -358,7 +358,7 @@ export async function runFullScan(
         logger.info('perspective','Verified corner-first fast path: skipped ArUco/Otsu/midpoint discovery',{
           durationMs:Date.now()-t,timing:candidate.check.matched,
           left:candidate.check.leftMatched,right:candidate.check.rightMatched,qrValid:candidate.qr.valid});
-      }else hypotheses.push(hypothesis);
+      }else if(!candidate)hypotheses.push(hypothesis);
     }
     if(!selected||!canStopRegistrationSearch(selected.qr.valid,selected.check.matched,
       selected.check.leftMatched,selected.check.rightMatched)){
