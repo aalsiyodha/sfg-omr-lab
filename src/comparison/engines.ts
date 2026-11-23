@@ -20,11 +20,11 @@ export interface EngineDefinition{
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
-  {id:'current',name:'Current v2.4.612',kind:'scanner',version:'2.4.612',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'current',name:'Current v2.4.613',kind:'scanner',version:'2.4.613',details:'Complete scanner with QR-less provisional policy',assetPath:''},
   {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
   {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
   {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
-  {id:'landmark',name:'Optical Local-Grid v1',kind:'landmark',version:'2.4.612-exp4',details:'Non-AI 4-anchor hybrid registration + independent left/right timing tracks and row-wise bubble sampling. Research-only, never grades.'},
+  {id:'landmark',name:'Optical Local-Grid v1',kind:'landmark',version:'2.4.613-exp5',details:'Non-AI 4-anchor hybrid registration + independent left/right timing tracks and row-wise bubble sampling. Research-only, never grades.'},
   {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
   {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
   {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
