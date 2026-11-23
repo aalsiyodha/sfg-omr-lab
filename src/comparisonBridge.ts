@@ -27,7 +27,17 @@ if(enabled()){
   };
   const probe=()=>{
     if(announced||stopped)return;
-    if(checkOpenCV()){
+    const runtime=(window as typeof window & {cv?:{
+      Mat?:new(rows?:number,cols?:number,type?:number)=>{delete:()=>void};
+      CV_8UC1?:number
+    }}).cv;
+    if(checkOpenCV()&&typeof runtime?.Mat==='function'){
+      // Some OpenCV.js builds expose Mat before WASM constructors are callable.
+      // A real allocate/free round-trip must succeed before accepting requests.
+      try{
+        const probeMat=new runtime.Mat(1,1,runtime.CV_8UC1??0);
+        probeMat.delete();
+      }catch{return;}
       announced=true;
       stopChecking();
       window.parent.postMessage({channel:CHANNEL,type:'ready',protocol:1,
@@ -69,7 +79,12 @@ if(enabled()){
     try{
       const file=new File([data.bytes],data.name||'omr-photo.jpeg',
         {type:data.mime||'image/jpeg'});
-      const {result,images}=await runFullScan(file);
+      window.parent.postMessage({channel:CHANNEL,type:'scan-progress',requestId,
+        stage:'Scanner initialized; image processing starting',percent:0},origin);
+      const {result,images}=await runFullScan(file,(p)=>{
+        window.parent.postMessage({channel:CHANNEL,type:'scan-progress',requestId,
+          stage:p.stage,percent:p.percent},origin);
+      });
       window.parent.postMessage({channel:CHANNEL,type:'result',requestId,
         result,alignedImage:data.wantAlignedImage && result.perspectiveCorrected ? images.perspectiveCorrected??null : null},origin);
     }catch(e){
