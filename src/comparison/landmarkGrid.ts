@@ -423,6 +423,16 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
             noGroundTruth:true}});
       }
     }
+    // Honest performance accounting: this engine consumes hypotheses produced
+    // by other scanners. The sum is a conservative sequential dependency cost,
+    // not a claim of independent end-to-end timing.
+    const contributors=Array.from(new Set(candidates.map(c=>c.from)));
+    const upstreamMs=previous.filter(p=>contributors.includes(p.id))
+      .reduce((total,p)=>total+p.elapsedMs,0);
+    traces.push({stage:'performance',message:'assisted-local-grid-dependency-cost',
+      data:{contributors,upstreamMs,localMs:Math.round(performance.now()-start),
+        combinedSequentialMs:upstreamMs+Math.round(performance.now()-start),
+        independentEndToEnd:false}});
     const reference=previous.find(r=>r.kind==='scanner'&&r.alignmentVerified&&r.qrValid&&r.answers.length===50);
     if(reference){
       let matches=0,differences=0,falseMarks=0,missedMarks=0,
