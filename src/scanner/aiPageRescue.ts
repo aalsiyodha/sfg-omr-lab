@@ -28,7 +28,8 @@ let loader:Promise<QuadscanCtor>|null=null;
 const ASSET_BASE=import.meta.env.BASE_URL;
 const SCRIPT=ASSET_BASE+'ai-runtime/quadscan.iife.js';
 const MODELS={lcnet:ASSET_BASE+'ai-model/lcnet100_h_e_bifpn_256_fp32.onnx',
-  fastvit:ASSET_BASE+'ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx'} as const;
+  fastvit:ASSET_BASE+'ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx',
+  sa24:ASSET_BASE+'ai-model/fastvit_sa24_h_e_bifpn_256_fp32.onnx'} as const;
 const WASM=ASSET_BASE+'ai-runtime/';
 function exportedDetector():QuadscanCtor|null {
   const exported=window.Quadscan;
@@ -61,15 +62,15 @@ export interface AiPageRescue {
   timings:Array<{step:string;ms:number}>;
 }
 export async function recoverPageWithAI(source:HTMLCanvasElement,trace?:AiTrace,
-  variant:'lcnet'|'fastvit'='lcnet'):Promise<AiPageRescue|null>{
+  variant:'lcnet'|'fastvit'|'sa24'='lcnet'):Promise<AiPageRescue|null>{
   const MODEL=MODELS[variant];
   const started=clock();
-  trace?.('model-config',{library:'quadscan@1.0.0',model:variant==='lcnet'?'DocAligner LCNet-100':'DocAligner FastViT-T8',
+  trace?.('model-config',{library:'quadscan@1.0.0',model:variant==='lcnet'?'DocAligner LCNet-100':variant==='sa24'?'DocAligner FastViT-SA24':'DocAligner FastViT-T8',
     modelUrl:MODEL,wasmPath:WASM,executionProvider:'wasm',
     minConfidence:.35,inputWidth:source.width,inputHeight:source.height});
   const Detector=await loadDetector(trace);
   trace?.('runtime-ready',{elapsedMs:Math.round(clock()-started)});
-  const detector=new Detector({model:variant,modelUrl:MODEL,wasmPaths:WASM,executionProviders:['wasm']});
+  const detector=new Detector({model:variant==='sa24'?'fastvit':variant,modelUrl:MODEL,wasmPaths:WASM,executionProviders:['wasm']});
   let result:QuadscanResult;
   try{
     const inferenceStart=clock();
