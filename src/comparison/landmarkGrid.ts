@@ -114,6 +114,37 @@ function rowDrift(track:Track[],row:number):{dx:number;dy:number;source:'measure
   return {dx:before.dx+(after.dx-before.dx)*t,
     dy:before.dy+(after.dy-before.dy)*t,source:'interpolated'};
 }
+/**
+ * Reject isolated timing bars that jump to nearby text or an adjacent row.
+ * A count of 25/25 is not evidence that each timing anchor is correct.
+ * A local disagreement must become unobserved, never a shifted answer.
+ */
+function guardedRowDrift(track:Track[],row:number){
+  const direct=track.find(t=>t.row===row);
+  if(!direct)return rowDrift(track,row);
+  const before=track.find(t=>t.row===row-1);
+  const after=track.find(t=>t.row===row+1);
+  if(before&&after){
+    const expectedDx=(before.dx+after.dx)/2;
+    const expectedDy=(before.dy+after.dy)/2;
+    if(Math.hypot(direct.dx-expectedDx,direct.dy-expectedDy)>5.5)return null;
+  }
+  return rowDrift(track,row);
+}
+function timingLatticeDiagnostics(track:Track[]){
+  const out:Array<{row:number;dx:number;dy:number;contrast:number;
+    neighborResidualPx:number|null;outlier:boolean}>=[];
+  for(const t of track){
+    const before=track.find(v=>v.row===t.row-1);
+    const after=track.find(v=>v.row===t.row+1);
+    const residual=before&&after?Math.hypot(t.dx-(before.dx+after.dx)/2,
+      t.dy-(before.dy+after.dy)/2):null;
+    out.push({row:t.row+1,dx:t.dx,dy:t.dy,contrast:+t.contrast.toFixed(1),
+      neighborResidualPx:residual===null?null:+residual.toFixed(2),
+      outlier:residual!==null&&residual>5.5});
+  }
+  return out;
+}
 /** Hold out every other observed timing bar and interpolate from its
  * neighbors. Low residual is evidence against chasing unrelated print.
  * A detection count by itself is not proof of a coherent timing lattice.
@@ -274,6 +305,8 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
   }
   const left=scanTrack(g,'left'),right=scanTrack(g,'right');
   const calibrated=strip(g);
+  const lattice={left:timingLatticeDiagnostics(left),
+    right:timingLatticeDiagnostics(right)};
   const qr=decodeQRFromRegion(resized,OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,
     OMR_LAYOUT.qr.sizeMm,4*25.4);
   const sideGood=(track:Track[])=>track.length>=18&&
@@ -284,7 +317,7 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
     const track=side==='left'?left:right;
     if(!sideGood(track))continue;
     for(let row=0;row<25;row++){
-      const shift=rowDrift(track,row);
+      const shift=guardedRowDrift(track,row);
       if(!shift)continue;
       const q=row+1+(side==='right'?25:0);
       const fills=[0,1,2,3].map(option=>{
@@ -304,7 +337,7 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
   }
   return {left:left.length,right:right.length,
     leftCoherence:timingCoherence(left),rightCoherence:timingCoherence(right),qrValid:qr.valid,
-    qrFound:qr.found,qrRaw:qr.raw,grayscale:calibrated,
+    qrFound:qr.found,qrRaw:qr.raw,grayscale:calibrated,lattice,
     leftGood:sideGood(left),rightGood:sideGood(right),answers,unrefined,
     correctionChangedRows:answers.filter(a=>{
       const raw=unrefined.find(b=>b.q===a.q);
@@ -367,6 +400,8 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
     const rightGood=best.right.length>=18&&best.right[0].row<=3&&best.right.at(-1)!.row>=21&&timingCoherence(best.right).coherent;
     traces.push({stage:'landmark',message:'independent-side-validation',
       data:{left:best.left.length,right:best.right.length,leftGood,rightGood,
+        lattice:{left:timingLatticeDiagnostics(best.left),
+          right:timingLatticeDiagnostics(best.right)},
         leftCoherence:timingCoherence(best.left),rightCoherence:timingCoherence(best.right),
         selected:best.variant,from:best.anchorSource,
         curveRecovery:'per-row independently interpolated timing-bar displacements',
@@ -400,8 +435,14 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
       if(!good)continue;
       const track=side==='left'?best.left:best.right;
       for(let row=0;row<25;row++){
-        const shift=rowDrift(track,row);
-        if(!shift)continue;
+        const shift=guardedRowDrift(track,row);
+        if(!shift){
+          const question=row+1+(side==='right'?25:0);
+          answers.push({q:question,answer:null,status:'unobserved',confidence:0});
+          traces.push({stage:'landmark',message:'row-rejected-inconsistent-timing',
+            data:{side,question,reason:'Missing or locally inconsistent timing anchor'}});
+          continue;
+        }
         const question=row+1+(side==='right'?25:0);
         const values=[0,1,2,3].map(option=>{
           const pos=getBubbleCentre(question,option as 0|1|2|3);
@@ -415,9 +456,11 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         const decision=classifyFills(values);
         const answer=decision.answer;
         answers.push({q:question,...decision});
-        if(row===0||row===12||row===24||[20,38,49].includes(question))traces.push({stage:'landmark',
+        traces.push({stage:'landmark',
           message:'example-row-sample',data:{side,question,track:shift,
             fill:values.map(v=>Number(v.fill.toFixed(3))),
+            background:values.map(v=>Math.round(v.background)),
+            decisionStatus:decision.status,
             morphology:values.map(v=>({center:Number(v.centerFill.toFixed(2)),
               minQuadrant:Number(v.quadrantMinimum.toFixed(2)),solid:v.solid})),answer,
             noGroundTruth:true}});

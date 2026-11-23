@@ -8,8 +8,9 @@ import type {ReportMode} from '../comparison/reports';
 import {exportCornerOverlay} from '../comparison/exportOverlay';
 import {compareAnswers} from '../comparison/answerComparison';
 
-// Six complementary default engines. Historical, heavy and mismatched models remain opt-in.
-const initial:EngineId[]=['current','v226','landmark','scanic','lcnet','uvdoc'];
+// Four complementary default engines: authoritative optical, legacy optical,
+// morphology research and compact AI geometry. Others remain opt-in.
+const initial:EngineId[]=['current','v226','landmark','scanic'];
 const overlayColors=['#10b981','#f97316','#6366f1','#ec4899','#06b6d4','#a855f7','#eab308'];
 function word(outcome:string){return outcome==='verified'?'Verified':outcome==='partial'?'Review':
   outcome==='provisional'?'Provisional':outcome==='detected'?'Page candidate':
@@ -24,7 +25,7 @@ export default function ComparePage(){
  const [busy,setBusy]=useState(false);
  const [current,setCurrent]=useState('');
  const [error,setError]=useState('');
- const [reportMode,setReportMode]=useState<ReportMode>('compact');
+ const [reportMode,setReportMode]=useState<ReportMode>('full');
  const [showAllCorners,setShowAllCorners]=useState(true);
  const [markReference,setMarkReference]=useState(false);
  const [exportingOverlay,setExportingOverlay]=useState(false);
@@ -185,7 +186,7 @@ export default function ComparePage(){
                <td>{r?.confidence!=null?r.confidence.toFixed(4):'—'}</td>
              </tr>})}</tbody>
          </table></div>
-         <p className="small text-secondary">Default selection prioritizes complementary evidence: current scanner, lightweight historical scanner, Local-Grid, Scanic, LCNet and UVDoc. FastViT, SA24, DeepLab, BubbleCNN and other archived scanners remain selectable for diagnosis. Local-Grid uses prior scanner geometry and its own time is <strong>not standalone end-to-end latency</strong>.</p>
+         <p className="small text-secondary">Default selection prioritizes four complementary engines: current scanner, lightweight historical scanner, Local-Grid and Scanic. LCNet, FastViT, UVDoc and other research engines remain optional. FastViT, SA24, DeepLab, BubbleCNN and other archived scanners remain selectable for diagnosis. Local-Grid uses prior scanner geometry and its own time is <strong>not standalone end-to-end latency</strong>.</p>
        <p className="small text-secondary">Every engine is compared against the same QR-verified optical reference when available. Exact answers, blanks, multiple selections and missing rows are treated separately. Comparisons are not official grades or manually established ground truth.</p>
          {answerReference&&<div className="border rounded p-3 mb-3">
            <h3 className="h6">Real 50-question engine comparison</h3>

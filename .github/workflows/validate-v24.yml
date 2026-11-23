@@ -16,6 +16,7 @@ on:
       - feature/v2.4.615-end-to-end-research
       - feature/v2.4.616-real-comparison
       - feature/v2.4.617-focused-optical-ai
+      - feature/v2.4.618-final-diagnostics
   workflow_dispatch:
 permissions:
   contents: read

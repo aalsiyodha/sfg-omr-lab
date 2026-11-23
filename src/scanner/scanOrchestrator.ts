@@ -22,7 +22,7 @@ import { reconcileToneAnswers } from './toneConsensus';
 import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion, locateQRInPhoto } from './qrDecoder';
 import { detectAllAnswers, detectTestId, computeAdaptiveDarkThreshold } from './bubbleDetector';
-import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
+import { measureGrayCalibration, grayStripInkCeiling, investigateGrayStrip } from './grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import { rescueTestIdOffset } from './testIdAlignment';
 import { validateScanResult } from './scanValidator';
@@ -335,16 +335,43 @@ export async function runFullScan(
     images.thresholded = preprocessed.thresholdedDataUrl;
     onProgress?.({ stage: 'Finding reference markers (corner and edge midpoint)…', percent: 30 });
 
+    const registrationStarted=Date.now();
     const hypotheses: Hypothesis[] = [];
-    // Independent marker families: corners, side midpoints and uniquely
-    // identified ArUco codes. Each alignment is verified after warping.
-    const arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
+    let fastWarpAttempts=0;
+    const primary=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
+    const dpi=getSettings().scanDpi;
+    const curveBudget={remaining:1};
+    let arucoAdaptive:ArucoRegistration={found:false,count:0,points:{}};
+    let arucoOtsu:ArucoRegistration=arucoAdaptive;
+    let cornerOtsuForHybrid:MarkerDetectionResult=primary;
+    // A genuinely cheap fast path: full QR identity and dual-side timing
+    // verification BEFORE expensive ArUco, Otsu and midpoint discovery.
+    if(primary.found){
+      const hypothesis:Hypothesis={kind:'corner',name:'corner/adaptive',markers:primary};
+      const t=Date.now();
+      logger.info('markerDetection','corner/adaptive: candidate coordinates',{
+        topLeft:primary.topLeft,topRight:primary.topRight,
+        bottomLeft:primary.bottomLeft,bottomRight:primary.bottomRight,
+        validGeometry:primary.validGeometry});
+      fastWarpAttempts++;
+      const candidate=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+      if(candidate)selected=candidate;
+      if(candidate&&canStopRegistrationSearch(candidate.qr.valid,candidate.check.matched,
+        candidate.check.leftMatched,candidate.check.rightMatched)){
+        logger.info('perspective','Verified corner-first fast path: skipped ArUco/Otsu/midpoint discovery',{
+          durationMs:Date.now()-t,timing:candidate.check.matched,
+          left:candidate.check.leftMatched,right:candidate.check.rightMatched,qrValid:candidate.qr.valid});
+      }else if(!candidate)hypotheses.push(hypothesis);
+    }
+    if(!selected||!canStopRegistrationSearch(selected.qr.valid,selected.check.matched,
+      selected.check.leftMatched,selected.check.rightMatched)){
+    // Recovery-only independent marker families.
+    arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
     const arucoMidpointPrediction=predictMidpointsFromArucos(arucoAdaptive);
     logger.info('markerDetection','ArUco 4x4 marker identification (adaptive)',{
       identified:arucoAdaptive.count,ids:Object.keys(arucoAdaptive.points),
       readyForRescue:arucoAdaptive.found});
-    const primary = detectMarkers(preprocessed.thresholded, loaded.width, loaded.height);
-    if (primary.found) hypotheses.push({ kind: 'corner', name: 'corner/adaptive', markers: primary });
+    // Initial corner already evaluated; do not warp it again.
 
     // Always evaluate an independent midpoint hypothesis: a false-positive
     // corner quadrilateral can be geometrically plausible (Test 4 v1.6).
@@ -361,8 +388,8 @@ export async function runFullScan(
     }
 
     const alternate = new cv.Mat();
-    let arucoOtsu: ArucoRegistration = arucoAdaptive;
-    let cornerOtsuForHybrid: MarkerDetectionResult = primary;
+    arucoOtsu=arucoAdaptive;
+    cornerOtsuForHybrid=primary;
     try {
       cv.threshold(preprocessed.gray, alternate, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
       const cornerOtsu = detectMarkers(alternate, loaded.width, loaded.height);
@@ -388,6 +415,7 @@ export async function runFullScan(
       cleanupMats(alternate);
     }
 
+    }
     finishStage('markerDiscovery');
     logger.info('markerDetection', `${hypotheses.length} reference hypotheses available`,
       { cornerCandidates: hypotheses.filter(h => h.kind === 'corner').length,
@@ -398,12 +426,11 @@ export async function runFullScan(
       ? generateArucoOverlay(loaded.canvas,arucoAdaptive)
       : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
-    const dpi = getSettings().scanDpi;
-    const curveBudget={remaining:1};
-    const registrationStarted=Date.now();
-    let warpAttempts=0;
+    let warpAttempts=fastWarpAttempts;
     let boundaryAttempted=false;
     for (const hypothesis of hypotheses) {
+      if(selected&&canStopRegistrationSearch(selected.qr.valid,selected.check.matched,
+        selected.check.leftMatched,selected.check.rightMatched))break;
       logger.info('markerDetection', `${hypothesis.name}: candidate coordinates`,
         hypothesis.kind === 'corner'
           ? { topLeft:hypothesis.markers.topLeft, topRight:hypothesis.markers.topRight, bottomLeft:hypothesis.markers.bottomLeft,
@@ -856,6 +883,13 @@ export async function runFullScan(
 
       grayCalibration = measureGrayCalibration(chosen.gray, dpi);
       finishStage('calibrationAndOverlay');
+      if(grayCalibration.status!=='ok'){
+        const investigation=investigateGrayStrip(chosen.gray,dpi);
+        logger.info('bubbleDetection','Grayscale strip geometry diagnostic (no scoring effect)',{
+          ...investigation,selectedRegistration:registrationMethod,
+          note:'Offset hypotheses are diagnostic only; never used to relax calibration or grading.'
+        });
+      }
       const inkCeiling = grayStripInkCeiling(grayCalibration);
       logger.info('bubbleDetection', 'Grayscale reference strip calibration', {
         status:grayCalibration.status,
