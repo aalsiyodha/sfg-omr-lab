@@ -137,21 +137,31 @@ function evaluateHypothesis(
     if (!qr.valid) {
       // The grayscale strip is independent location evidence for a hybrid warp,
       // never a replacement for the required QR identity.
-      if(hypothesis.kind==='hybrid'){
-        let probe:any=null;
-        try{
-          probe=new cv.Mat();
-          cv.cvtColor(persp.corrected,probe,cv.COLOR_RGBA2GRAY);
+      // Record the independent timing-track evidence even when QR identity
+      // cannot be decoded. Previous builds discarded this useful geometry
+      // information and reported only a misleading 0/50 registration.
+      // These measurements NEVER relax the QR identity gate.
+      let probe:any=null;
+      try{
+        probe=new cv.Mat();
+        cv.cvtColor(persp.corrected,probe,cv.COLOR_RGBA2GRAY);
+        const timing=verifyTimingMarks(probe,dpi);
+        logger.info('perspective',hypothesis.name+': QR-failed timing evidence',{
+          matched:timing.matched,left:timing.leftMatched,
+          right:timing.rightMatched,passed:timing.passed,
+          qrVerified:false,scoringAllowed:false
+        });
+        if(hypothesis.kind==='hybrid'){
           const calibration=measureGrayCalibration(probe,dpi);
           logger.info('perspective',hypothesis.name+': grayscale landmark cross-check',{
             status:calibration.status,patches:calibration.patchMedians,
             contrast:calibration.contrast,ordered:calibration.ordered,
             note:calibration.note
           });
-        }catch(error){logger.warning('perspective','Hybrid grayscale landmark check failed',{
-          reason:String(error)});}
-        finally{cleanupMats(probe);}
-      }
+        }
+      }catch(error){logger.warning('perspective','QR-failed geometry probe unavailable',{
+        method:hypothesis.name,reason:String(error)});}
+      finally{cleanupMats(probe);}
       logger.warning('qrDecoding', `${hypothesis.name}: QR missing from both expected corners`);
       return null;
     }
