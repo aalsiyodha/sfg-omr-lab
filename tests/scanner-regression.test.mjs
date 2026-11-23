@@ -1839,5 +1839,7 @@ test('v2.4.618 fresh-sheet diagnostics preserve strict grading and expose row ge
   assert.match(grid,/decisionStatus:decision.status/);
   assert.match(gray,/investigateGrayStrip/);
   assert.match(scan,/Grayscale strip geometry diagnostic \(no scoring effect\)/);
+  assert.match(scan,/Verified corner-first fast path: skipped ArUco\/Otsu\/midpoint discovery/);
+  assert.match(scan,/if\(!selected\|\|!canStopRegistrationSearch/);
   assert.match(page,/useState<ReportMode>\('full'\)/);
 });
