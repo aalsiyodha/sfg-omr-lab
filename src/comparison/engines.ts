@@ -2,7 +2,7 @@ import type { ScanResult } from '../types';
 import { recoverPageWithScanic } from '../scanner/scanicPageRescue';
 import { recoverPageWithAI } from '../scanner/aiPageRescue';
 import { runBubbleAi } from './bubbleAi';
-import { runLandmarkGrid } from './landmarkGrid';
+import { runLandmarkGrid,evaluateResearchCanvas } from './landmarkGrid';
 import { runDenseResearch } from './denseResearch';
 
 export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn'|'landmark'|'sa24'|'uvdoc'|'deeplab';
@@ -193,10 +193,23 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
     // AI boundary is NOT independently validated. Export a warped image only
     // to the research-only bubble model, never to official scanner grading.
     const alignedImage=def.id==='scanic' && result ? result.canvas.toDataURL('image/png') : undefined;
+    const readout=result?evaluateResearchCanvas(result.canvas):null;
+    if(readout)traces.push({stage:'research',message:'AI geometry to optical timing, QR and bubble trial',data:{
+      qrFound:readout.qrFound,qrValid:readout.qrValid,qrRaw:readout.qrRaw,
+      timingLeft:readout.left,timingRight:readout.right,
+      grayReference:readout.grayscale,experimentalRows:readout.answers.length,
+      candidateMarks:readout.answers.filter(a=>a.answer).length,
+      scoringAllowed:false,notGroundTruth:true}});
     return {...empty(def,result?'Page-corner candidate predicted':'No acceptable page-corner candidate',
       Math.round(performance.now()-started)),outcome:result?'detected':'rejected',
       confidence,corners,traces,alignedImage,imageSpace:{width:canvas.width,height:canvas.height},
-      reason:result?'Page-corner hypothesis only; no bubble scanning or timing verification':
+      researchImage:result?.canvas.toDataURL('image/png'),
+      qrValid:readout?.qrValid??null,alignmentVerified:false,
+      timing:readout?readout.left+readout.right:null,
+      timingLeft:readout?.left??null,timingRight:readout?.right??null,
+      calibration:readout?.grayscale.usable?'ok':'unverified',
+      answers:readout?.answers??[],
+      reason:result?'AI page candidate; independent experimental QR/timing/bubble readout (not verified, never grade)':
         'Model returned no accepted geometry (inspect per-view diagnostics)'};
   }catch(error){
     const message=String(error);
