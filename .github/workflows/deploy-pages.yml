@@ -33,6 +33,29 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: 'true'
+      # Build the experimental branch separately. The original dist/ root
+      # remains the v2.3.45 production website at its existing URL.
+      - name: Check out v2.3.46 experiment
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.3.46-qr-aruco-recovery
+          path: experiment-source
+      - name: Install experimental dependencies
+        run: npm ci
+        working-directory: experiment-source
+      - name: Test experimental scanner
+        run: npm run test:scanner
+        working-directory: experiment-source
+      - name: Build experimental website
+        run: npm run build
+        working-directory: experiment-source
+        env:
+          GITHUB_PAGES: 'true'
+          GITHUB_PAGES_BASE: '/sfg-omr-lab/v2.3.46/'
+      - name: Package both versions
+        run: |
+          mkdir -p dist/v2.3.46
+          cp -R experiment-source/dist/. dist/v2.3.46/
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload website
