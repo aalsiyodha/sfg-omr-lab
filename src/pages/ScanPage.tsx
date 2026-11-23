@@ -231,7 +231,7 @@ export default function ScanPage({ appState }: Props) {
     <div className="minimal-scan">
       <header className="minimal-scan-heading">
         <div>
-          <span className="minimal-kicker">SFG OMR LAB · v2.3.42</span>
+          <span className="minimal-kicker">SFG OMR LAB · v2.3.43</span>
           <h1>Scan a sheet</h1>
         </div>
         <span className="minimal-build" title={APP_DEPLOY_LABEL+' · '+APP_BUILD_META.sha}>{APP_VERSION}</span>

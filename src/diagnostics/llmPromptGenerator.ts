@@ -21,7 +21,7 @@ export function generateLLMDiagnosticPrompt({
   scanResult, file, activeTestId, answerKey,
 }: LLMReportOptions): string {
   const lines: string[] = [
-    '# SFG OMR LAB — v2.3.42 FAST LOCAL SCANNER diagnostic',
+    '# SFG OMR LAB — v2.3.43 FAST LOCAL SCANNER diagnostic',
     getBuildIdentity(),
     'Generated=' + new Date().toISOString(),
     'File=' + (file?.name ?? 'camera/unknown') +
@@ -49,6 +49,23 @@ export function generateLLMDiagnosticPrompt({
 
   const statuses = ['detected', 'blank', 'multiple', 'uncertain', 'error'] as const;
   lines.push('Counts=' + statuses.map(s=>s+':'+scanResult.answers.filter(q=>q.status===s).length).join(' '));
+  if(scanResult.answers.length===0){
+    lines.push('NO BUBBLE READINGS: Registration was not verified; 0 answers were examined. This is not 50 blank answers.');
+    lines.push('Failure investigation: scanner never reached grayscale-strip calibration, Test ID or bubble analysis.');
+    lines.push('Image dimensions and input evidence: see Image loaded and marker-detection stage logs below.');
+    const qrFailures=(scanResult.stageLogs??[]).filter(l=>l.stage==='qrDecoding' &&
+      (l.level==='WARNING'||l.level==='ERROR'));
+    lines.push('QR verification failures ('+qrFailures.length+'):');
+    if(qrFailures.length===0)lines.push('No explicit QR rejection logged; inspect registration attempts below.');
+    for(const log of qrFailures)lines.push('  '+log.message+
+      (log.data?' '+JSON.stringify(log.data):''));
+    const boundary=(scanResult.stageLogs??[]).filter(l=>
+      /Outer-page boundary recovery evidence|Outer-page fiducial redetection|Recovery conclusion/.test(l.message));
+    lines.push('Page-rescue evidence ('+boundary.length+'):');
+    for(const log of boundary)lines.push('  '+log.message+
+      (log.data?' '+JSON.stringify(log.data):''));
+    lines.push('Next capture check: ensure the entire sheet, all corners and QR are in-frame, evenly lit and sharp.');
+  }
   lines.push('Full bubble measurements (percent, no redundant rank/baseline columns):');
   lines.push('Q | A | B | C | D | result | status | confidence | edited | key');
   for (const q of scanResult.answers) {
@@ -103,10 +120,10 @@ export function generateLLMDiagnosticPrompt({
   // Never omit warnings/errors: those often explain a rejected registration.
   const logs = scanResult.stageLogs ?? [];
   const significant = logs.filter(l =>
-    l.level==='ERROR' || l.level==='WARNING' ||
+    scanResult.answers.length===0 || l.level==='ERROR' || l.level==='WARNING' ||
     /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|boundary|recovery|performance/i.test(l.message));
   // Keep one compact, machine-parsable performance and registration summary.
-  const performance=logs.filter(l=>/Registration performance summary|Outer-page rescue timing|Scan complete in/i.test(l.message));
+  const performance=logs.filter(l=>/Registration performance summary|Outer-page rescue timing|Scan stage timings|Scan complete in/i.test(l.message));
   const recovery=logs.filter(l=>/timing-track recovery evidence|timing-track holdout validation|Outer-page boundary recovery evidence|Outer-page fiducial redetection/i.test(l.message));
   lines.push('Registration & performance milestones ('+(performance.length+recovery.length)+'):');
   const summarize=(l:typeof logs[number])=>
@@ -157,6 +174,7 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
       ' | patches=' + scanResult.grayCalibration.patchMedians.join(',') +
       ' | contrast=' + (scanResult.grayCalibration.contrast ?? '?'));
   if (scanResult.errors.length) lines.push('Errors=' + scanResult.errors.slice(0, 3).join('; '));
+  if (scanResult.answers.length===0) lines.push('No answers were processed: registration failed; this is not a blank sheet.');
   if (scanResult.warnings?.length) lines.push('Warnings=' + scanResult.warnings.slice(0, 2).join('; '));
 
   lines.push('Answer map (— blank, X multiple, ? uncertain/error):');
