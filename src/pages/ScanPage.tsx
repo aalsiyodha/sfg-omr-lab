@@ -192,7 +192,7 @@ export default function ScanPage({ appState }: Props) {
       setSubmitError('No active practice test. Please generate a practice test first.');
       return;
     }
-    if (scanResult.overallStatus === 'failed' || scanResult.errors.length > 0 || !scanResult.qrValid || scanResult.testId === null) {
+    if (scanResult.overallStatus === 'failed' || scanResult.errors.length > 0 || scanResult.provisional || !scanResult.qrValid || scanResult.testId === null) {
       setSubmitError('This scan failed validation and cannot be scored. Check registration, orientation and Test ID, then rescan.');
       return;
     }
@@ -241,7 +241,8 @@ export default function ScanPage({ appState }: Props) {
   const counts=scanResult?.answers.reduce((a,q)=>{
     a[q.status]=(a[q.status]||0)+1;return a;
   },{} as Record<string,number>)??{};
-  const verified=Boolean(scanResult?.alignmentVerified && scanResult?.qrValid);
+  const verified=Boolean(scanResult?.alignmentVerified && scanResult?.qrValid && !scanResult.provisional);
+  const provisional=Boolean(scanResult?.provisional);
   return (
     <div className="minimal-scan">
       <header className="minimal-scan-heading">
@@ -318,9 +319,10 @@ export default function ScanPage({ appState }: Props) {
           <div className="minimal-result-top">
             <div>
               <span className={'minimal-status '+(verified?'is-good':'is-bad')}>
-                {verified?(scanResult.overallStatus==='success'?'Verified':'Verified · review needed'):'Unverified'}
+                {verified?(scanResult.overallStatus==='success'?'Verified':'Verified · review needed'):
+                  provisional?'Provisional · QR unverified':'Unverified'}
               </span>
-              <h2>{verified?'Scan result':'Registration failed'}</h2>
+              <h2>{verified?'Scan result':provisional?'Provisional bubble readings':'Registration failed'}</h2>
               <span className="text-secondary small">{capturedFile?.name||'Photo'}</span>
             </div>
             <button className="btn btn-outline-secondary btn-sm"
