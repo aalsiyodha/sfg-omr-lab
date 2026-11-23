@@ -434,7 +434,13 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
       const track=side==='left'?best.left:best.right;
       for(let row=0;row<25;row++){
         const shift=guardedRowDrift(track,row);
-        if(!shift)continue;
+        if(!shift){
+          const question=row+1+(side==='right'?25:0);
+          answers.push({q:question,answer:null,status:'unobserved',confidence:0});
+          traces.push({stage:'landmark',message:'row-rejected-inconsistent-timing',
+            data:{side,question,reason:'Missing or locally inconsistent timing anchor'}});
+          continue;
+        }
         const question=row+1+(side==='right'?25:0);
         const values=[0,1,2,3].map(option=>{
           const pos=getBubbleCentre(question,option as 0|1|2|3);
@@ -448,9 +454,11 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         const decision=classifyFills(values);
         const answer=decision.answer;
         answers.push({q:question,...decision});
-        if(row===0||row===12||row===24||[20,38,49].includes(question))traces.push({stage:'landmark',
+        traces.push({stage:'landmark',
           message:'example-row-sample',data:{side,question,track:shift,
             fill:values.map(v=>Number(v.fill.toFixed(3))),
+            background:values.map(v=>Math.round(v.background)),
+            decisionStatus:decision.status,
             morphology:values.map(v=>({center:Number(v.centerFill.toFixed(2)),
               minQuadrant:Number(v.quadrantMinimum.toFixed(2)),solid:v.solid})),answer,
             noGroundTruth:true}});
