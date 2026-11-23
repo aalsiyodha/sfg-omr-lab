@@ -351,7 +351,9 @@ export async function runFullScan(
               bottomRight:hypothesis.markers.bottomRight, validGeometry:hypothesis.markers.validGeometry }
           : hypothesis.kind === 'midpoint'
           ? { top:hypothesis.markers.top, right:hypothesis.markers.right, bottom:hypothesis.markers.bottom, left:hypothesis.markers.left }
-          : { ids:Object.keys(hypothesis.markers.points),points:hypothesis.markers.points });
+          : hypothesis.kind === 'aruco'
+          ? { ids:Object.keys(hypothesis.markers.points),points:hypothesis.markers.points }
+          : {hybrid:true,anchors:hypothesis.aruco.points});
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
@@ -365,7 +367,7 @@ export async function runFullScan(
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
       const rank = (a: AcceptedAlignment) => registrationScore({
-        kind: a.hypothesis.kind, timingMatched: a.check.matched,
+        kind: a.hypothesis.kind==='hybrid'?'corner':a.hypothesis.kind, timingMatched: a.check.matched,
         leftMatched: a.check.leftMatched, rightMatched: a.check.rightMatched,
         qrVerified: a.qr.valid,
       });
@@ -417,7 +419,7 @@ export async function runFullScan(
           rightMatched:attempt.check.rightMatched,
           qrVerified:attempt.qr.valid});
         const prior=selected?registrationScore({
-          kind:selected.hypothesis.kind,timingMatched:selected.check.matched,
+          kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
           leftMatched:selected.check.leftMatched,
           rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid,
         }): -Infinity;
@@ -508,11 +510,11 @@ export async function runFullScan(
             const candidate=evaluateHypothesis(rough.canvas,hypothesis,dpi,curveBudget);
             if(!candidate)continue;
             const score=registrationScore({
-              kind:candidate.hypothesis.kind,timingMatched:candidate.check.matched,
+              kind:candidate.hypothesis.kind==='hybrid'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
               leftMatched:candidate.check.leftMatched,rightMatched:candidate.check.rightMatched,
               qrVerified:candidate.qr.valid});
             const previous=selected?registrationScore({
-              kind:selected.hypothesis.kind,timingMatched:selected.check.matched,
+              kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
               leftMatched:selected.check.leftMatched,rightMatched:selected.check.rightMatched,
               qrVerified:selected.qr.valid}):-Infinity;
             if(score>previous){
