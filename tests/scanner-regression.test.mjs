@@ -1715,3 +1715,15 @@ test('v2.3.43: failed scans keep stage evidence despite zero answers',()=>{
   assert.ok(boundary.includes('false-paper-boundary-image-corner-rejected'));
   assert.ok(scanner.includes('Recovery conclusion: no QR-and-timing-verified registration'));
 });
+
+test('v2.3.44: full diagnostic retains QR identities and stage logs without redaction',()=>{
+  const source=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  const ui=readFileSync('src/pages/ScanPage.tsx','utf8');
+  assert.ok(source.includes("'Student ID=' + (scanResult.studentId ?? 'not decoded')"));
+  assert.ok(source.includes("' | QR payload=' + (scanResult.qrRaw ?? 'not decoded')"));
+  assert.ok(source.includes("'File SHA-256=' + (fileSha256 ?? 'pending/unavailable')"));
+  assert.ok(!source.includes('[REDACTED_QR]'));
+  assert.ok(!source.includes('student and QR identities are omitted'));
+  assert.ok(ui.includes("crypto.subtle.digest('SHA-256', bytes)"));
+  assert.ok(ui.includes('fileSha256,activeTestId:practice.activeTest?.testId'));
+});
