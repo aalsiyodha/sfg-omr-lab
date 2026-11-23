@@ -170,7 +170,10 @@ function evaluateHypothesis(
         timingBefore:check.matched, left:check.leftMatched, right:check.rightMatched,
         trialsRemaining:curveBudget.remaining});
       const mesh = correctMildPageWarp(persp.corrected, dpi, evidence=>{
-        logger.info('perspective',`${hypothesis.name}: OpenCV timing-track recovery evidence`,evidence);
+        logger.info('perspective',`${hypothesis.name}: OpenCV timing-track recovery evidence`,{
+          reason:evidence.reason,candidates:evidence.candidates,
+          assigned:evidence.assigned,controls:evidence.controls,
+          maxAbsShiftPx:evidence.maxAbsShiftPx,details:evidence.details});
       });
       if (!mesh) {
         logger.info('perspective',`${hypothesis.name}: OpenCV timing-track warp not generated`);
