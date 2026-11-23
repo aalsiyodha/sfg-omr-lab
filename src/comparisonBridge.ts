@@ -25,7 +25,7 @@ if(enabled()){
     if(event.origin!==origin || event.source!==window.parent)return;
     const data=event.data as {
       channel?:string;type?:string;requestId?:string;
-      bytes?:ArrayBuffer;name?:string;mime?:string
+      bytes?:ArrayBuffer;name?:string;mime?:string;wantAlignedImage?:boolean
     };
     if(data?.channel!==CHANNEL||data.type!=='scan'||typeof data.requestId!=='string')return;
     const requestId=data.requestId;
@@ -39,9 +39,9 @@ if(enabled()){
     try{
       const file=new File([data.bytes],data.name||'omr-photo.jpeg',
         {type:data.mime||'image/jpeg'});
-      const {result}=await runFullScan(file);
+      const {result,images}=await runFullScan(file);
       window.parent.postMessage({channel:CHANNEL,type:'result',requestId,
-        result},origin);
+        result,alignedImage:data.wantAlignedImage && result.perspectiveCorrected ? images.perspectiveCorrected??null : null},origin);
     }catch(e){
       window.parent.postMessage({channel:CHANNEL,type:'result',requestId,
         error:String(e)},origin);
