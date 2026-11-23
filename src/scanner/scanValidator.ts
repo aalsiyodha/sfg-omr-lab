@@ -10,13 +10,24 @@ export function validateScanResult(result: ScanResult): { warnings: string[]; er
     if (errors.length === 0) errors.push('Registration geometry could not be verified. Try another well-lit, full-page photo.');
     return { warnings, errors };
   }
-  if (!result.qrValid) {
-    if (!errors.some(e => e.includes('orientation'))) errors.push('Page orientation could not be verified from QR position.');
-    return { warnings, errors };
-  }
-  if (result.alignmentVerified !== true) {
-    if (errors.length === 0) errors.push('The timing marks do not align with the expected answer grid.');
-    return { warnings, errors };
+  if (result.provisional) {
+    // QR-less interpretation is deliberately separate from verified scoring.
+    // Only a bounded AI-assisted geometry check can set this flag.
+    if (result.qrValid || result.alignmentVerified === true ||
+        (result.alignmentMatched ?? 0) < 48) {
+      errors.push('Inconsistent provisional state or insufficient timing evidence.');
+      return { warnings, errors };
+    }
+    warnings.push('QR identity unverified. Provisional bubble measurements only; automatic scoring is disabled.');
+  } else {
+    if (!result.qrValid) {
+      if (!errors.some(e => e.includes('orientation'))) errors.push('Page orientation could not be verified from QR position.');
+      return { warnings, errors };
+    }
+    if (result.alignmentVerified !== true) {
+      if (errors.length === 0) errors.push('The timing marks do not align with the expected answer grid.');
+      return { warnings, errors };
+    }
   }
   if (result.testId === null || result.testId < 1 || result.testId > 40) {
     errors.push('Test ID missing or outside the valid range 01–40. Check its marked bubbles.');
