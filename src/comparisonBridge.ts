@@ -69,7 +69,12 @@ if(enabled()){
     try{
       const file=new File([data.bytes],data.name||'omr-photo.jpeg',
         {type:data.mime||'image/jpeg'});
-      const {result,images}=await runFullScan(file);
+      window.parent.postMessage({channel:CHANNEL,type:'scan-progress',requestId,
+        stage:'Scanner initialized; image processing starting',percent:0},origin);
+      const {result,images}=await runFullScan(file,(p)=>{
+        window.parent.postMessage({channel:CHANNEL,type:'scan-progress',requestId,
+          stage:p.stage,percent:p.percent},origin);
+      });
       window.parent.postMessage({channel:CHANNEL,type:'result',requestId,
         result,alignedImage:data.wantAlignedImage && result.perspectiveCorrected ? images.perspectiveCorrected??null : null},origin);
     }catch(e){
