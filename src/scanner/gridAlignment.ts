@@ -16,29 +16,52 @@ export interface GridAlignment {
   rightLower: GridOffset;
   testId: GridOffset;
 }
-type Gray = {rows:number;cols:number;ucharPtr(y:number,x:number):ArrayLike<number>};
+type Gray = {rows:number;cols:number;ucharPtr(y:number,x:number):ArrayLike<number>;data?: Uint8Array | Uint8ClampedArray};
 const ZERO: GridOffset = { dx:0,dy:0,confidence:0,applied:false };
 
-/** Difference in intensity between the dark printed ring and pale central paper. */
-function ringScore(gray: Gray, x: number, y: number, dpi: number, radiusMm:number): number {
-  const s=dpi/25.4;
-  const cx=Math.round(x),cy=Math.round(y);
-  const outer=Math.ceil((radiusMm+0.4)*s);
-  if(cx-outer<0||cy-outer<0||cx+outer>=gray.cols||cy+outer>=gray.rows)return 0;
-  const ring0=((radiusMm-0.18)*s)**2, ring1=((radiusMm+0.16)*s)**2;
-  const core=(radiusMm*0.53*s)**2;
-  let darkRing=0,nRing=0,coreSum=0,nCore=0;
-  for(let dy=-outer;dy<=outer;dy++){
-    for(let dx=-outer;dx<=outer;dx++){
-      const d2=dx*dx+dy*dy;
-      if(d2>ring1 && d2>core)continue;
-      const val=gray.ucharPtr(cy+dy,cx+dx)[0];
-      if(d2>=ring0&&d2<=ring1){darkRing+=val;nRing++;}
-      if(d2<=core){coreSum+=val;nCore++;}
-    }
+/**
+ * v2.5 Local-Grid learning: do not pay for JS-to-WASM ucharPtr() on
+ * every ring pixel. The warped OpenCV CV_8UC1 matrix is contiguous and exposes
+ * a byte view. Cached annulus offsets give the exact SAME ring/core samples
+ * as the original conservative search, without changing acceptance thresholds.
+ * The accessor fallback preserves synthetic tests and unusual Mat wrappers.
+ */
+const ringPixelCache = new Map<string, {outer:number;ring:[number,number][];core:[number,number][]}>();
+function ringPixels(dpi:number,radiusMm:number){
+  const key=dpi+':'+radiusMm;
+  const hit=ringPixelCache.get(key);if(hit)return hit;
+  const scale=dpi/25.4,outer=Math.ceil((radiusMm+0.4)*scale);
+  const ring0=((radiusMm-0.18)*scale)**2,ring1=((radiusMm+0.16)*scale)**2;
+  const coreR=(radiusMm*0.53*scale)**2;
+  const ring:[number,number][]=[],core:[number,number][]=[];
+  for(let dy=-outer;dy<=outer;dy++)for(let dx=-outer;dx<=outer;dx++){
+    const d2=dx*dx+dy*dy;
+    if(d2>=ring0&&d2<=ring1)ring.push([dx,dy]);
+    if(d2<=coreR)core.push([dx,dy]);
   }
-  if(nRing<8||nCore<5)return 0;
-  return Math.max(0,Math.min(90,coreSum/nCore-darkRing/nRing));
+  const result={outer,ring,core};
+  ringPixelCache.set(key,result);
+  return result;
+}
+/** Contrast of a printed ring against its untouched interior. */
+function ringScore(gray:Gray,x:number,y:number,dpi:number,radiusMm:number):number {
+  const cx=Math.round(x),cy=Math.round(y),samples=ringPixels(dpi,radiusMm);
+  if(cx-samples.outer<0||cy-samples.outer<0||
+    cx+samples.outer>=gray.cols||cy+samples.outer>=gray.rows)return 0;
+  if(samples.ring.length<8||samples.core.length<5)return 0;
+  const raw=gray.data;
+  const data=raw&&raw.length>=gray.cols*gray.rows?raw:null;
+  let ringSum=0,coreSum=0;
+  if(data){
+    const base=cy*gray.cols+cx,w=gray.cols;
+    for(const [dx,dy] of samples.ring)ringSum+=data[base+dy*w+dx];
+    for(const [dx,dy] of samples.core)coreSum+=data[base+dy*w+dx];
+  }else{
+    for(const [dx,dy] of samples.ring)ringSum+=gray.ucharPtr(cy+dy,cx+dx)[0];
+    for(const [dx,dy] of samples.core)coreSum+=gray.ucharPtr(cy+dy,cx+dx)[0];
+  }
+  return Math.max(0,Math.min(90,
+    coreSum/samples.core.length-ringSum/samples.ring.length));
 }
 
 /** Deterministic spatially distributed registration probes, not chosen by ink. */
