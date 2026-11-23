@@ -153,9 +153,12 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
     }:null;
     const confidence=result?.confidence??raw?.confidence??null;
     const corners=result?.corners??raw?.corners??[];
+    // AI boundary is NOT independently validated. Export a warped image only
+    // to the research-only bubble model, never to official scanner grading.
+    const alignedImage=def.id==='scanic' && result ? result.canvas.toDataURL('image/png') : undefined;
     return {...empty(def,result?'Page-corner candidate predicted':'No acceptable page-corner candidate',
       Math.round(performance.now()-started)),outcome:result?'detected':'rejected',
-      confidence,corners,traces,
+      confidence,corners,traces,alignedImage,
       reason:result?'Page-corner hypothesis only; no bubble scanning or timing verification':
         'Model returned no accepted geometry (inspect per-view diagnostics)'};
   }catch(error){
@@ -166,7 +169,9 @@ export async function runEngine(def:EngineDefinition,file:File,previous:EngineRe
   const t=performance.now();
   try{
     return def.kind==='scanner'?await runIframe(def,file):
-      def.kind==='bubble'?await runBubbleAi(def,previous.find(x=>x.id==='current')):
+      def.kind==='bubble'?await runBubbleAi(def,
+        previous.find(x=>x.id==='current'&&Boolean(x.alignedImage))??
+        previous.find(x=>x.id==='scanic'&&Boolean(x.alignedImage))):
       await runDetector(def,file);
   }catch(error){return empty(def,String(error),Math.round(performance.now()-t));}
 }
