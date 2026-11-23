@@ -52,7 +52,7 @@ export function predictSyntheticDecision(m:BubbleMeasurement):{
   const denominator=exp.reduce((a,b)=>a+b,0);
   const probs=exp.map(z=>z/denominator);
   const ordered=probs.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
-  const scores=Object.fromEntries(SYNTHETIC_CLASSES.map((name,i)=>[name,probs[i]]))
+  const scores=(Object.fromEntries(SYNTHETIC_CLASSES.map((name,i)=>[name,probs[i]])))
     as Record<SyntheticClass,number>;
   return {label:SYNTHETIC_CLASSES[ordered[0].i],scores,
     margin:ordered[0].v-ordered[1].v,calibrated:false};
