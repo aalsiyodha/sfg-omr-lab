@@ -1767,6 +1767,50 @@ test('AI-to-OMR research pipeline retains independent QR, timing and sampled-bub
   assert.match(grid,/function timingCoherence\(/);
   assert.match(grid,/export function evaluateResearchCanvas\(/);
   assert.match(grid,/decodeQRFromRegion\(resized/);
-  assert.match(engines,/AI-warp 50-row optical reference comparison/);
+  assert.match(engines,/50-question independent engine comparison/);
+  assert.match(engines,/compareAnswers\(reference,result\)/);
   assert.match(engines,/alignmentVerified:false/);
+});
+
+test('question comparison includes blank, multiple and missing rows without inventing answers',()=>{
+  const source=readFileSync(resolve(process.cwd(),'src/comparison/answerComparison.ts'),'utf8');
+  const report=readFileSync(resolve(process.cwd(),'src/comparison/reports.ts'),'utf8');
+  const grid=readFileSync(resolve(process.cwd(),'src/comparison/landmarkGrid.ts'),'utf8');
+  assert.match(source,/for\(let q=1;q<=50;q\+\+\)/);
+  assert.match(source,/status-mismatch/);
+  assert.match(source,/unresolved/);
+  assert.match(source,/wrong-option/);
+  assert.match(report,/REAL 50-QUESTION INTER-ENGINE COMPARISON/);
+  assert.match(grid,/function classifyFills/);
+  assert.match(grid,/observedQR\.valid/);
+});
+
+test('real comparator separates exact answers, blanks, multiple, wrong choices and missing rows',()=>{
+  const {compareAnswers}=loadTS('src/comparison/answerComparison.ts');
+  const ref={id:'current',answers:[
+    {q:1,status:'detected',answer:'B'},
+    {q:2,status:'blank',answer:null},
+    {q:3,status:'multiple',answer:null},
+    {q:4,status:'detected',answer:'D'},
+    {q:5,status:'detected',answer:'B'},
+    {q:6,status:'detected',answer:'A'}
+  ]};
+  const trial={id:'landmark',answers:[
+    {q:1,status:'detected',answer:'B'},
+    {q:2,status:'detected',answer:'C'},
+    {q:3,status:'blank',answer:null},
+    {q:4,status:'blank',answer:null},
+    {q:5,status:'detected',answer:'C'},
+    {q:6,status:'uncertain',answer:null}
+  ]};
+  const output=compareAnswers(ref,trial);
+  assert.equal(output.exactMatches,1);
+  assert.equal(output.extraMarks,1);
+  assert.equal(output.statusErrors,1);
+  assert.equal(output.missedMarks,1);
+  assert.equal(output.optionErrors,1);
+  assert.equal(output.unresolved,45);
+  assert.equal(output.comparable,5);
+  assert.equal(output.coverage,6);
+  assert.equal(output.referenceIsGroundTruth,false);
 });

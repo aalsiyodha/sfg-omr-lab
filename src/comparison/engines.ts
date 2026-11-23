@@ -3,6 +3,7 @@ import { recoverPageWithScanic } from '../scanner/scanicPageRescue';
 import { recoverPageWithAI } from '../scanner/aiPageRescue';
 import { runBubbleAi } from './bubbleAi';
 import { runLandmarkGrid,evaluateResearchCanvas } from './landmarkGrid';
+import {compareAnswers} from './answerComparison';
 import { runDenseResearch } from './denseResearch';
 
 export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn'|'landmark'|'sa24'|'uvdoc'|'deeplab';
@@ -20,11 +21,11 @@ export interface EngineDefinition{
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
-  {id:'current',name:'Current v2.4.615',kind:'scanner',version:'2.4.615',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'current',name:'Current v2.4.616',kind:'scanner',version:'2.4.616',details:'Official scanner, independent QR/timing verification',assetPath:''},
   {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
   {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
   {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
-  {id:'landmark',name:'Optical Local-Grid v2',kind:'landmark',version:'2.4.615-exp6',details:'Non-AI 4-anchor registration with left/right timing, held-out coherence validation, QR observation and bubble sampling. Research-only, never grades.'},
+  {id:'landmark',name:'Optical Local-Grid v3',kind:'landmark',version:'2.4.616-exp7',details:'Optical independent warp, QR and held-out timing verification, row-by-row blank/multiple/mark decisions, and 50-question comparison. Not a grading authority.'},
   {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
   {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
   {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
@@ -66,8 +67,13 @@ function convertScan(def:EngineDefinition,scan:ScanResult,elapsedMs:number):Engi
   const imageLoaded=(scan.stageLogs??[]).find(l=>l.message.startsWith('Image loaded:'));
   const dimensions=imageLoaded?.message.match(/Image loaded:\s*(\d+)\s*[×x]\s*(\d+)/);
   const imageSpace=dimensions?{width:Number(dimensions[1]),height:Number(dimensions[2])}:null;
-  const evidence=(scan.stageLogs??[]).filter(l=>/timing marks \d+\/50/.test(l.message))
-    .map(l=>l.data).at(-1);
+  // The preliminary 24/50 timing result can be followed by a validated
+  // refinement to 50/50. The previous report mixed those pre-refinement
+  // left/right counts with the final verified total.
+  const evidence=(scan.stageLogs??[]).filter(l=>
+    /alignment candidate verified|timing-assisted refinement|timing marks \d+\/50/.test(l.message) &&
+    typeof l.data?.left==='number'&&typeof l.data?.right==='number'
+  ).map(l=>l.data).at(-1);
   return {
     id:def.id,name:def.name,kind:'scanner',version:def.version,outcome,elapsedMs,
     reason:scan.errors?.[0]||scan.warnings?.[0]||
@@ -230,26 +236,17 @@ export async function runEngine(def:EngineDefinition,file:File,previous:EngineRe
         previous.find(x=>x.id==='current'&&Boolean(x.alignedImage))??
         previous.find(x=>x.id==='scanic'&&Boolean(x.alignedImage))):
       await runDetector(def,file);
-    // The same independently aligned optical scanner provides an exploratory
-    // reference for all AI geometry models. It is NOT human ground truth.
+    // One consistent question-by-question comparison across all models.
+    // Do not count uncertain samples as confirmed blanks.
     const reference=previous.find(x=>x.kind==='scanner'&&x.alignmentVerified===true
       &&x.qrValid===true&&x.answers.length===50);
-    if(reference&&result.kind==='detector'){
-      let matches=0,wrong=0,extra=0,missed=0,unknown=0;
-      for(let q=1;q<=50;q++){
-        const a=result.answers.find(x=>x.q===q);
-        const b=reference.answers.find(x=>x.q===q);
-        if(!a||!b){unknown++;continue;}
-        if(a.answer){
-          if(b.status==='detected'){
-            if(a.answer===b.answer)matches++;else wrong++;
-          }else extra++;
-        }else if(b.status==='detected')missed++;
-        else unknown++;
-      }
-      result.traces.push({stage:'research',message:'AI-warp 50-row optical reference comparison',
-        data:{reference:reference.id,matches,wrong,extra,missed,unknown,
-          notGroundTruth:true,scoringAllowed:false}});
+    if(reference&&result.id!==reference.id){
+      const c=compareAnswers(reference,result);
+      result.traces.push({stage:'research',message:'50-question independent engine comparison',
+        data:{reference:c.referenceId,observed:c.coverage,comparable:c.comparable,
+          exact:c.exactMatches,wrongOptions:c.optionErrors,extraMarks:c.extraMarks,
+          missedMarks:c.missedMarks,statusMismatches:c.statusErrors,
+          unresolved:c.unresolved,notGroundTruth:true,scoringAllowed:false}});
     }
     return result;
   }catch(error){return empty(def,String(error),Math.round(performance.now()-t));}

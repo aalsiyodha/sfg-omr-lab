@@ -6,6 +6,7 @@ import type {EngineId,EngineResult,Point} from '../comparison/engines';
 import {buildCompareReport,downloadJson,downloadText} from '../comparison/reports';
 import type {ReportMode} from '../comparison/reports';
 import {exportCornerOverlay} from '../comparison/exportOverlay';
+import {compareAnswers} from '../comparison/answerComparison';
 
 const initial:EngineId[]=['current','v2345','v226','landmark','scanic','lcnet','bubblecnn'];
 const overlayColors=['#10b981','#f97316','#6366f1','#ec4899','#06b6d4','#a855f7','#eab308'];
@@ -83,6 +84,10 @@ export default function ComparePage(){
    return normalized&&dimensions?normalized.map(p=>({x:p.x*dimensions.w,y:p.y*dimensions.h})):[];
  };
  const resultById=(id:EngineId)=>results.find(x=>x.id===id);
+ const answerReference=results.find(r=>r.kind==='scanner'&&r.alignmentVerified===true
+   &&r.qrValid===true&&r.answers.length===50);
+ const comparisons=answerReference?results.filter(r=>r.id!==answerReference.id)
+   .map(r=>compareAnswers(answerReference,r)):[];
  const saveOverlay=async()=>{
    if(!file||exportingOverlay)return;
    setExportingOverlay(true);setError('');
@@ -100,7 +105,7 @@ export default function ComparePage(){
        <h1 className="mb-1">Universal comparison lab</h1>
        <p className="text-secondary small mb-0">One photograph · multiple scanner generations and AI detectors · local browser processing</p>
      </div>
-     <span className="badge rounded-pill text-bg-light border">Experimental · no automatic grading</span>
+     <span className="badge rounded-pill text-bg-light border">Question-by-question comparison · grading gated</span>
    </div>
    <div className="card shadow-sm mb-3">
      <div className="card-body">
@@ -179,7 +184,27 @@ export default function ComparePage(){
                <td>{r?.confidence!=null?r.confidence.toFixed(4):'—'}</td>
              </tr>})}</tbody>
          </table></div>
-         <p className="small text-secondary">UVDoc and DeepLab outputs now receive research timing/QR/bubble evaluations when a candidate page is available, never verified scoring. DeepLab model weights are fetched externally when selected because upstream redistribution licensing is unconfirmed.</p>
+         <p className="small text-secondary">Every engine is compared against the same QR-verified optical reference when available. Exact answers, blanks, multiple selections and missing rows are treated separately. Comparisons are not official grades or manually established ground truth.</p>
+         {answerReference&&<div className="border rounded p-3 mb-3">
+           <h3 className="h6">Real 50-question engine comparison</h3>
+           <p className="small text-secondary">Reference: {answerReference.name}. Reference agreement measures consistency between engines, not objective correctness.</p>
+           <div className="table-responsive"><table className="table table-sm table-striped align-middle">
+             <thead><tr><th>Engine</th><th>Observed</th><th>Comparable</th><th>Exact</th><th>Wrong option</th><th>Extra</th><th>Missed</th><th>Status mismatch</th><th>Unresolved</th></tr></thead>
+             <tbody>{comparisons.map(c=><tr key={c.engineId}><td>{resultById(c.engineId as EngineId)?.name??c.engineId}</td>
+               <td>{c.coverage}/50</td><td>{c.comparable}/50</td><td>{c.exactMatches}</td>
+               <td>{c.optionErrors}</td><td>{c.extraMarks}</td><td>{c.missedMarks}</td>
+               <td>{c.statusErrors}</td><td>{c.unresolved}</td></tr>)}</tbody>
+           </table></div>
+           <details><summary className="fw-semibold">Inspect all disputed questions (blank / multiple / option)</summary>
+             <div className="table-responsive mt-2"><table className="table table-sm">
+               <thead><tr><th>Engine</th><th>Question</th><th>Reference</th><th>Candidate</th><th>Difference</th></tr></thead>
+               <tbody>{comparisons.flatMap(c=>c.rows.filter(q=>q.verdict!=='match').map(q=><tr key={c.engineId+'-'+q.q}>
+                 <td>{c.engineId}</td><td>{q.q}</td>
+                 <td>{q.referenceAnswer??q.referenceStatus}</td><td>{q.candidateAnswer??q.candidateStatus}</td>
+                 <td>{q.verdict}</td></tr>))}</tbody>
+             </table></div>
+           </details>
+         </div>}
          {results.filter(r=>Boolean(r.researchImage)).map(r=><div key={r.id} className="border rounded p-3 mb-3">
            <h3 className="h6">{r.name} — research visualization</h3>
            <img src={r.researchImage} alt={r.id==='uvdoc'?'Unverified UVDoc unwarped image':'Unverified DeepLab document mask overlay'}

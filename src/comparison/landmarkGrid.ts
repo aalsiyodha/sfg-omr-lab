@@ -147,6 +147,19 @@ function bubbleFill(g:Uint8Array,x:number,y:number):{fill:number;background:numb
   return {fill:interior.filter(v=>v<threshold).length/Math.max(1,interior.length),
     background:paper};
 }
+/** Circular OMR decisions: keep blank, multiple and uncertainty distinct.
+ * Returning a question status does not establish registration or grading.
+ */
+function classifyFills(fills:number[]):{answer:string|null;status:string;confidence:number}{
+  const ranks=fills.map((fill,i)=>({fill,i})).sort((a,b)=>b.fill-a.fill);
+  const high=ranks.filter(r=>r.fill>=.80);
+  const separation=ranks[0].fill-ranks[1].fill;
+  if(high.length>=2)return {answer:null,status:'multiple',confidence:Math.round(100*Math.min(1,high[1].fill))};
+  if(high.length===1&&separation>=.40)return {
+    answer:OPTIONS[ranks[0].i],status:'detected',confidence:Math.round(separation*100)};
+  if(ranks[0].fill<=.25)return {answer:null,status:'blank',confidence:Math.round((1-ranks[0].fill)*100)};
+  return {answer:null,status:'uncertain',confidence:Math.round(separation*100)};
+}
 function strip(g:Uint8Array){
   const values=[132,141,150,159,168,177,186].map(x=>meanRect(g,x*MM,286.5*MM,4,4));
   const ordered=values.slice(1).every((v,i)=>v+11>=values[i]);
@@ -254,11 +267,8 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
         const p=getBubbleCentre(q,option as 0|1|2|3);
         return bubbleFill(g,p.xMm*MM+shift.dx,p.yMm*MM+shift.dy).fill;
       });
-      const ranked=fills.map((fill,i)=>({fill,i})).sort((a,b)=>b.fill-a.fill);
-      const found=ranked[0].fill>=.80&&ranked[0].fill-ranked[1].fill>=.40;
-      answers.push({q,answer:found?OPTIONS[ranked[0].i]:null,
-        status:found?'experimental':'uncertain',
-        confidence:Math.round((ranked[0].fill-ranked[1].fill)*100)});
+      const decision=classifyFills(fills);
+      answers.push({q,...decision});
     }
   }
   return {left:left.length,right:right.length,
@@ -367,10 +377,9 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         // Raise the exploratory gate after v2.4.611 produced a Q25=C
         // false positive (0.711 fill) on a verified blank row. Still not
         // permission to score: a strong dark core can be a stray mark.
-        const decisive=ranks[0].fill>=.80&&ranks[0].fill-ranks[1].fill>=.40;
-        const answer=decisive?OPTIONS[ranks[0].i]:null;
-        answers.push({q:question,answer,status:decisive?'experimental':'uncertain',
-          confidence:Math.round((ranks[0].fill-ranks[1].fill)*100)});
+        const decision=classifyFills(values.map(v=>v.fill));
+        const answer=decision.answer;
+        answers.push({q:question,...decision});
         if(row===0||row===12||row===24)traces.push({stage:'landmark',
           message:'example-row-sample',data:{side,question,track:shift,
             fill:values.map(v=>Number(v.fill.toFixed(3))),answer,
@@ -403,12 +412,20 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         leftTrack:best.left.length,rightTrack:best.right.length,
         grayscale:best.strip,source:best.anchorSource,variant:best.variant,
         noTrustedResults:true}});
-    const reason='Optical four-anchor '+best.variant+' + separate row-wise timing tracks: left '+
-      best.left.length+'/25, right '+best.right.length+'/25; '+answers.length+
-      ' unverified row samples, '+answers.filter(a=>a.answer).length+
-      ' candidate marks. No QR identity or independent ground truth; NEVER grade.';
-    return finish(answers.length?'provisional':'rejected',reason,answers,
+    const reason='Local-Grid independent optical analysis: '+best.variant+
+      ', left '+best.left.length+'/25, right '+best.right.length+'/25; QR '+
+      (observedQR.valid?'decoded at expected location':'not decoded')+
+      '; '+answers.length+' row decisions ('+
+      answers.filter(a=>a.status==='detected').length+' marked, '+
+      answers.filter(a=>a.status==='multiple').length+' multiple, '+
+      answers.filter(a=>a.status==='blank').length+' blank, '+
+      answers.filter(a=>a.status==='uncertain').length+' uncertain). '+
+      'Compare against a reference; not authorized for official grading.';
+    const result=finish(answers.length?'provisional':'rejected',reason,answers,
       best.left.length,best.right.length,best.strip.usable?'ok':'unverified');
+    result.qrValid=observedQR.valid;
+    result.alignmentVerified=false; // Separate engine has no full independent registration approval.
+    return result;
   }catch(error){
     traces.push({stage:'landmark',message:'engine-error',
       data:{error:String(error)},level:'ERROR'});

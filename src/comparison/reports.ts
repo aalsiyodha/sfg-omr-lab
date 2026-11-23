@@ -1,4 +1,5 @@
 import {cornersNormalized} from './engines';
+import {compareAnswers} from './answerComparison';
 import type {EngineResult,EngineDefinition,Point,ImageSpace} from './engines';
 export type ReportMode='compact'|'differences'|'full';
 const important=(s:string)=>/AI geometry to optical|AI-warp 50-row|UVDoc to independent|DeepLab mask bounding|local-grid-v2|QR-less provisional geometry evidence|AI candidate verification result|scanic-variant|raw-model-corners|AI last-resort summary|Selected .+ registration|Registration performance summary|timing marks \d+\/50|QR missing|calibration/i.test(s);
@@ -44,6 +45,27 @@ export function buildCompareReport(params:{
  lines.push('AI and local-grid research outputs may observe a valid QR but are never independently verified scanning results. Experimental rows cannot be graded.');
  if(!results.length)lines.push('  No results generated.');
  for(const r of fail)lines.push('  '+r.id+': '+r.outcome+' — '+r.reason);
+ const referenceScanner=results.find(r=>r.kind==='scanner'&&
+   r.alignmentVerified===true&&r.qrValid===true&&r.answers.length===50);
+ if(referenceScanner){
+   lines.push('REAL 50-QUESTION INTER-ENGINE COMPARISON vs '+referenceScanner.id+
+     ' (scanner reference, NOT human ground truth):');
+   lines.push('engine | observed | comparable | exact | wrong-option | extra | missed | status-mismatch | unresolved');
+   for(const r of results.filter(r=>r.id!==referenceScanner.id)){
+     const comparison=compareAnswers(referenceScanner,r);
+     lines.push([r.id,comparison.coverage,comparison.comparable,
+       comparison.exactMatches,comparison.optionErrors,comparison.extraMarks,
+       comparison.missedMarks,comparison.statusErrors,comparison.unresolved].join(' | '));
+     if(mode!=='compact'){
+       const disagree=comparison.rows.filter(x=>x.verdict!=='match');
+       lines.push('  '+r.id+' problem rows: '+
+         disagree.map(x=>x.q+':'+x.referenceStatus+
+           (x.referenceAnswer?'('+x.referenceAnswer+')':'')+' / '+
+           x.candidateStatus+(x.candidateAnswer?'('+x.candidateAnswer+')':'')+
+           ' ['+x.verdict+']').join(', '));
+     }
+   }
+ }else lines.push('INTER-ENGINE ANSWER COMPARISON unavailable: no QR+timing verified 50-row reference scanner.');
  const scanners=results.filter(r=>r.kind==='scanner'&&r.answers.length===50);
  const differences:number[]=[];
  if(scanners.length>=2){
@@ -83,7 +105,7 @@ export function buildCompareReport(params:{
    }
  }
  if(mode==='compact'){
-   lines.push('Next: inspect full or differences report only if registration or bubbles disagree.');
+   lines.push('For per-question mismatches choose Differences report. A reference scanner is not manual ground truth.');
    lines.push('Image pixels not embedded. Attach original photo separately for visual diagnosis.');
    return lines.join('\n');
  }
