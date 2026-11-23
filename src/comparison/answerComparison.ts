@@ -14,7 +14,7 @@ export type ComparisonSummary={engineId:string;referenceId:string;rows:Compariso
 const status=(s:string|undefined,answer:string|null|undefined):AnswerClass=>{
   if(s==='multiple')return 'multiple';
   if(s==='blank')return 'blank';
-  if(s==='uncertain'||s==='experimental')return 'uncertain';
+  if(s==='uncertain')return 'uncertain';
   if(s==='detected'||(s==='experimental'&&answer))return 'detected';
   return 'unobserved';
 };
