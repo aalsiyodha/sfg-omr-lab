@@ -1825,7 +1825,7 @@ test('focused AI benchmark preserves optical correction evidence and UPSC partia
   assert.match(grid,/correctionChangedRows/);
   assert.match(grid,/assisted-local-grid-dependency-cost/);
   assert.match(engines,/changedByOpticalCorrection/);
-  assert.match(page,/\['current','v226','landmark','scanic','lcnet','uvdoc'\]/);
+  assert.match(page,/\['current','v226','landmark','scanic'\]/);
 });
 
 test('v2.4.618 fresh-sheet diagnostics preserve strict grading and expose row geometry',()=>{
