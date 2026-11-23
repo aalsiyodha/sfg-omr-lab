@@ -5,6 +5,7 @@ import {cornersNormalized} from '../comparison/engines';
 import type {EngineId,EngineResult,Point} from '../comparison/engines';
 import {buildCompareReport,downloadJson,downloadText} from '../comparison/reports';
 import type {ReportMode} from '../comparison/reports';
+import {exportCornerOverlay} from '../comparison/exportOverlay';
 
 const initial:EngineId[]=['current','v2345','v226','scanic','lcnet','bubblecnn'];
 const overlayColors=['#10b981','#f97316','#6366f1','#ec4899','#06b6d4','#a855f7','#eab308'];
@@ -24,6 +25,7 @@ export default function ComparePage(){
  const [reportMode,setReportMode]=useState<ReportMode>('compact');
  const [showAllCorners,setShowAllCorners]=useState(true);
  const [markReference,setMarkReference]=useState(false);
+ const [exportingOverlay,setExportingOverlay]=useState(false);
  const [reference,setReference]=useState<Point[]>([]);
  const [referenceConfirmed,setReferenceConfirmed]=useState(false);
  const [tab,setTab]=useState<'results'|'overlay'|'diagnostics'>('results');
@@ -81,6 +83,16 @@ export default function ComparePage(){
    return normalized&&dimensions?normalized.map(p=>({x:p.x*dimensions.w,y:p.y*dimensions.h})):[];
  };
  const resultById=(id:EngineId)=>results.find(x=>x.id===id);
+ const saveOverlay=async()=>{
+   if(!file||exportingOverlay)return;
+   setExportingOverlay(true);setError('');
+   try{
+     await exportCornerOverlay({file,hash,results,reference,referenceConfirmed,
+       showModels:showAllCorners,colors:overlayColors,version:APP_BUILD_META.version});
+   }catch(err){
+     setError('Could not export annotated overlay: '+String(err));
+   }finally{setExportingOverlay(false);}
+ };
  return <div className="compare-page">
    <div className="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
      <div>
@@ -187,6 +199,11 @@ export default function ComparePage(){
              onClick={()=>setMarkReference(x=>!x)}>{markReference?'Marking corners…':'Mark reference corners'}</button>
            <button className="btn btn-sm btn-outline-secondary" onClick={()=>{
              setReference([]);setReferenceConfirmed(false);}}>Clear reference</button>
+           <button className="btn btn-sm btn-dark"
+             disabled={!file||!dimensions||exportingOverlay}
+             onClick={()=>void saveOverlay()}>
+             {exportingOverlay?'Preparing PNG…':'Download overlay PNG'}
+           </button>
            {reference.length===4&&<label className="small d-flex gap-2 align-items-center">
              <input type="checkbox" checked={referenceConfirmed}
                onChange={e=>setReferenceConfirmed(e.target.checked)}/>
@@ -233,7 +250,7 @@ export default function ComparePage(){
              (imageCorners(r).reduce((sum,p,i)=>sum+Math.hypot(p.x-reference[i].x,p.y-reference[i].y),0)/4).toFixed(1)
            } px</div>)}
          </div>}
-         <p className="small text-secondary mt-2">AI proposals are not ground truth. Use the manual reference only after confirming real paper corners.</p>
+         <p className="small text-secondary mt-2">Save a full-resolution PNG containing the original photograph, visible model boundaries, manually marked reference corners and a legend. The export stays on your device. AI proposals are not ground truth.</p>
        </>}
        {tab==='diagnostics'&&<>
          <h2 className="h5">Token-efficient comparison diagnostic</h2>
