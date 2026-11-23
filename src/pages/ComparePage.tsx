@@ -45,8 +45,7 @@ export default function ComparePage(){
  const report=useMemo(()=>buildCompareReport({fileName:file?.name||'unselected',
    fileBytes:file?.size||0,hash:hash||'pending',selected:ordered,results,mode:reportMode,
    reference:referenceConfirmed&&reference.length===4?reference:undefined,
-   referenceSpace:referenceConfirmed&&reference.length===4&&dimensions?
-     {width:dimensions.w,height:dimensions.h}:undefined}),
+   referenceSpace:dimensions?{width:dimensions.w,height:dimensions.h}:undefined}),
  [file,hash,ordered.map(e=>e.id).join(','),results,reportMode,reference,referenceConfirmed,dimensions]);
  const resetFile=(f:File|null)=>{
    if(busy)return;
