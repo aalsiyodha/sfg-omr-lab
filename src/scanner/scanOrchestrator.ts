@@ -6,6 +6,9 @@ import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetect
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import { canStopUnifiedRegistration } from './unifiedGeometryPolicy';
+import { chooseGeometryAction } from './geometryRouter';
+import { auditBubbleDecision, applyDecisionReview } from './decisionProof';
+import { inspectLocalBubble } from './localVisualProof';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
@@ -872,6 +875,11 @@ export async function runFullScan(
       logger.info('perspective', `Selected ${registrationMethod} registration`,
         { timingMarks: alignmentMatched, rotated,
           provisional:Boolean(chosen.provisional),qrValid });
+      const geometryDecision=chooseGeometryAction({
+        qrValid:chosen.qr.valid,timingMatched:chosen.check.matched,
+        leftMatched:chosen.check.leftMatched,rightMatched:chosen.check.rightMatched
+      });
+      logger.info('perspective','v2.5.1 geometry decision router',geometryDecision);
       images.perspectiveCorrected = chosen.canvas.toDataURL('image/png');
       if(arucoAdaptive.found)images.markerOverlay=generateArucoOverlay(
         loaded.canvas,arucoAdaptive,registrationMethod,alignmentMatched,
@@ -965,6 +973,52 @@ export async function runFullScan(
       } finally {
         cleanupMats(tone.corrected);
       }
+      // Decision-model-inspired SELECTIVE proof audit. The baseline scanner
+      // remains unchanged unless ?proofscan=1 is explicitly enabled.
+      // No external model/API, no duplicate full-page warp or crop inference.
+      const proofEnabled = typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('proofscan')==='1';
+      const proofs=answers.map(row=>auditBubbleDecision(row,
+        offsetForQuestion(grid,row.question),rawAnswers.find(raw=>raw.question===row.question)));
+      const reviewProofs=proofs.filter(p=>p.action==='review');
+      // Only ambiguous or previously accepted ink gets the 15 tiny
+      // local counterfactuals; blank 0%-ink rows do no extra work.
+      const localVisualProofs=answers.flatMap(row=>{
+        const top=[...row.measurements].sort((a,b)=>b.fillPercent-a.fillPercent)[0];
+        if(!top||top.fillPercent<35||row.status==='multiple')return [];
+        if(top.sampleXPx===undefined||top.sampleYPx===undefined||
+           top.inkThreshold===undefined)return [];
+        const proof=inspectLocalBubble(chosen.gray,top.sampleXPx,
+          top.sampleYPx,dpi,top.inkThreshold);
+        return proof.available?[{question:row.question,option:top.option,
+          status:row.status,fill:top.fillPercent,...proof}]:[];
+      });
+      // Counterfactual failure only demotes an already accepted answer in
+      // explicit experimental mode. Deliberate partial marks remain blank.
+      const unstableAccepted=new Set(localVisualProofs.filter(p=>
+        p.status==='detected'&&!p.stable&&p.spread>=35&&p.minFill<45)
+        .map(p=>p.question));
+      if(proofEnabled){
+        const lookup=new Map(proofs.map(p=>[p.question,p]));
+        answers=answers.map(row=>{
+          const reviewed=applyDecisionReview(row,lookup.get(row.question)!,true);
+          return reviewed.status==='detected'&&unstableAccepted.has(row.question)
+            ? {...reviewed,status:'uncertain' as const,detectedAnswer:null,confidence:0}
+            : reviewed;
+        });
+      }
+      logger.info('bubbleDetection','v2.5.1 selective DecisionScan audit',{
+        enabled:proofEnabled,mode:proofEnabled?'conservative review':'shadow only',
+        evaluated:proofs.length,reviewCount:reviewProofs.length,
+        localCounterfactualCount:localVisualProofs.length,
+        unstableAccepted:[...unstableAccepted],
+        localVisualProofs,
+        reviewCandidates:reviewProofs.map(p=>({
+          question:p.question,option:p.option,markClass:p.markClass,
+          reason:p.reason,evidence:p.evidence
+        })),
+        note:'No trained model or calibrated probabilities; only suspicious accepted marks can be demoted, never auto-promoted'
+      });
       finishStage('toneCorrectionAndConsensus');
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
