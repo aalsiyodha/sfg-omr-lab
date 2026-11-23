@@ -16,8 +16,9 @@ function quadDistance(a:Point[],b:Point[]):number|null{
 export function buildCompareReport(params:{
  fileName:string;hash:string;fileBytes:number;
  selected:EngineDefinition[];results:EngineResult[];mode:ReportMode;
+ reference?:Point[];
 }):string{
- const {results,selected,mode}=params;
+ const {results,selected,mode,reference}=params;
  const lines=[
    'SFG OMR LAB v2.4 — UNIVERSAL COMPARISON',
    'Image SHA-256='+params.hash,
@@ -51,6 +52,14 @@ export function buildCompareReport(params:{
  lines.push('Complete-answer scanner disagreements='+differences.length+
    (differences.length?' | rows='+differences.join(','):''));
  const cornered=results.filter(r=>r.corners.length===4);
+ if(reference?.length===4){
+   lines.push('MANUALLY CONFIRMED true paper corners='+JSON.stringify(reference));
+   lines.push('Page-corner mean error vs manual reference:');
+   for(const r of cornered){
+     const d=quadDistance(r.corners,reference);
+     lines.push('  '+r.id+': '+round(d,2)+' px');
+   }
+ }
  if(cornered.length>=2){
    lines.push('AI/corner coordinate disagreement (average px, same source image):');
    for(let i=0;i<cornered.length;i++)for(let j=i+1;j<cornered.length;j++){
