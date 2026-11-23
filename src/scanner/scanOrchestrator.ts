@@ -6,6 +6,7 @@ import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetect
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import { canStopRegistrationSearch } from './litePolicy';
+import { recoverPaperBoundary } from './pageBoundaryRecovery';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import { correctMildPageWarp, countHeldOutTimingMarks } from './mildCurveCorrection';
@@ -323,6 +324,9 @@ export async function runFullScan(
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     const dpi = getSettings().scanDpi;
     const curveBudget={remaining:1};
+    const registrationStarted=Date.now();
+    let warpAttempts=0;
+    let boundaryAttempted=false;
     for (const hypothesis of hypotheses) {
       logger.info('markerDetection', `${hypothesis.name}: candidate coordinates`,
         hypothesis.kind === 'corner'
@@ -338,6 +342,7 @@ export async function runFullScan(
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
+      warpAttempts++;
       const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi, curveBudget);
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
@@ -388,6 +393,7 @@ export async function runFullScan(
         const hypothesis:Hypothesis={
           kind:'midpoint',name:'midpoint/alternate-'+side,markers:alternateMid
         };
+        warpAttempts++;
         const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
         if(!attempt)continue;
         const score=registrationScore({kind:'midpoint',
@@ -407,6 +413,81 @@ export async function runFullScan(
         if(selected?.check.matched===50)break;
       }
     }
+
+    // Last-chance local rescue for strong tilt or missing distorted fiducials.
+    // The outer paper is NEVER trusted as registration: it only produces a
+    // normalized search canvas. Every resulting ArUco/midpoint/corner warp
+    // still goes through evaluateHypothesis, QR identity, and dual-side timing.
+    if(!selected){
+      boundaryAttempted=true;
+      const boundaryStart=Date.now();
+      const rough=recoverPaperBoundary(loaded.canvas,evidence=>{
+        logger.info('perspective','Outer-page boundary recovery evidence',{
+          reason:evidence.reason,candidates:evidence.candidates,
+          contourAreaRatio:evidence.contourAreaRatio,
+          quadrilateral:evidence.quadrilateral});
+      });
+      if(rough){
+        let rescueGray:any=null,rescueBlur:any=null,rescueThreshold:any=null;
+        try{
+          const processed=preprocessImage(rough.canvas);
+          rescueGray=processed.gray;rescueBlur=processed.blurred;
+          rescueThreshold=processed.thresholded;
+          const rescueAruco=detectArucoMarkers(rescueGray,rescueThreshold);
+          const rescueCorner=detectMarkers(rescueThreshold,rough.canvas.width,rough.canvas.height);
+          const rescueMid=detectMidpointMarkers(rescueThreshold,rough.canvas.width,rough.canvas.height);
+          const guidedPrediction=predictMidpointsFromArucos(rescueAruco);
+          const candidates:Hypothesis[]=[];
+          // Stable identity-bearing ArUco first when all IDs are decoded.
+          if(rescueAruco.found)candidates.push({kind:'aruco',
+            name:'boundary/aruco',markers:rescueAruco});
+          if(guidedPrediction){
+            const guided=detectMidpointMarkers(rescueThreshold,
+              rough.canvas.width,rough.canvas.height,guidedPrediction);
+            if(guided.found)candidates.push({kind:'midpoint',
+              name:'boundary/guided-midpoint',markers:guided});
+          }
+          if(rescueMid.found)candidates.push({kind:'midpoint',
+            name:'boundary/midpoint',markers:rescueMid});
+          if(rescueCorner.found)candidates.push({kind:'corner',
+            name:'boundary/corner',markers:rescueCorner});
+          logger.info('perspective','Outer-page fiducial redetection',{
+            arucoIds:rescueAruco.count,cornerCount:rescueCorner.count,
+            midpointComplete:rescueMid.found,candidates:candidates.map(c=>c.name)});
+          for(const hypothesis of candidates){
+            warpAttempts++;
+            const candidate=evaluateHypothesis(rough.canvas,hypothesis,dpi,curveBudget);
+            if(!candidate)continue;
+            const score=registrationScore({
+              kind:candidate.hypothesis.kind,timingMatched:candidate.check.matched,
+              leftMatched:candidate.check.leftMatched,rightMatched:candidate.check.rightMatched,
+              qrVerified:candidate.qr.valid});
+            const previous=selected?registrationScore({
+              kind:selected.hypothesis.kind,timingMatched:selected.check.matched,
+              leftMatched:selected.check.leftMatched,rightMatched:selected.check.rightMatched,
+              qrVerified:selected.qr.valid}):-Infinity;
+            if(score>previous){
+              if(selected)disposeAlignment(selected);
+              selected=candidate;
+              images.markerOverlay=generateArucoOverlay(rough.canvas,rescueAruco,
+                hypothesis.name,candidate.check.matched);
+            }else disposeAlignment(candidate);
+            if(selected&&canStopRegistrationSearch(selected.qr.valid,
+              selected.check.matched,selected.check.leftMatched,
+              selected.check.rightMatched))break;
+          }
+        }catch(error){
+          logger.warning('perspective','Outer-page recovery aborted',{reason:String(error)});
+        }finally{cleanupMats(rescueGray,rescueBlur,rescueThreshold);}
+      }
+      logger.info('perspective','Outer-page rescue timing',{
+        durationMs:Date.now()-boundaryStart,verified:Boolean(selected)});
+    }
+    logger.info('perspective','Registration performance summary',{
+      durationMs:Date.now()-registrationStarted,warpAttempts,
+      boundaryAttempted,curveAttempts:1-curveBudget.remaining,
+      selected:selected?.hypothesis.name??null,
+      timing:selected?.check.matched??0});
 
     let answers: QuestionResult[] = [];
     let testId: number | null = null;
