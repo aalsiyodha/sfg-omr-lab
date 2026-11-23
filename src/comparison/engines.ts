@@ -162,7 +162,12 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
       reason:result?'Page-corner hypothesis only; no bubble scanning or timing verification':
         'Model returned no accepted geometry (inspect per-view diagnostics)'};
   }catch(error){
-    return {...empty(def,String(error),Math.round(performance.now()-started)),traces};
+    const message=String(error);
+    const invalidQuad=/DegenerateQuadError|Could not assign all four corners/i.test(message);
+    traces.push({stage:'AI',message:invalidQuad?'geometry-rejected':'model-error',
+      data:{reason:message},level:invalidQuad?'WARNING':'ERROR'});
+    return {...empty(def,message,Math.round(performance.now()-started)),
+      outcome:invalidQuad?'rejected':'error',traces};
   }
 }
 export async function runEngine(def:EngineDefinition,file:File,previous:EngineResult[]=[]):Promise<EngineResult>{
