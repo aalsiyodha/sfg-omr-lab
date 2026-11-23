@@ -1756,3 +1756,9 @@ test('v2.3.45: hybrid recovery remains fail-only with strict QR/timing acceptanc
   assert.ok(qr.includes("locateQRInPhoto"));
   assert.ok(diagnostics.includes("Hybrid cross-family recovery evidence"));
 });
+
+test('DeepLab fixed ONNX input remains 384x384 instead of invalid 512x512',()=>{
+  const source=readFileSync(resolve(process.cwd(),'src/comparison/denseResearch.ts'),'utf8');
+  assert.match(source,/const w=isUv\?496:384,h=isUv\?720:384;/);
+  assert.doesNotMatch(source,/const w=isUv\?496:512,h=isUv\?720:512;/);
+});
