@@ -7,7 +7,7 @@ import {buildCompareReport,downloadJson,downloadText} from '../comparison/report
 import type {ReportMode} from '../comparison/reports';
 import {exportCornerOverlay} from '../comparison/exportOverlay';
 
-const initial:EngineId[]=['current','v2345','v226','scanic','lcnet','bubblecnn'];
+const initial:EngineId[]=['current','v2345','v226','landmark','scanic','lcnet','bubblecnn'];
 const overlayColors=['#10b981','#f97316','#6366f1','#ec4899','#06b6d4','#a855f7','#eab308'];
 function word(outcome:string){return outcome==='verified'?'Verified':outcome==='partial'?'Review':
   outcome==='provisional'?'Provisional':outcome==='detected'?'Page candidate':
@@ -32,7 +32,7 @@ export default function ComparePage(){
  const stop=useRef(false);
  const active=useRef(0);
  const choose=(value:EngineId,on:boolean)=>{
-   setSelected(prev=>on?Array.from(new Set([...prev,...(value==='bubblecnn'?['current' as EngineId]:[]),value])):prev.filter(x=>x!==value));
+   setSelected(prev=>on?Array.from(new Set([...prev,...(value==='bubblecnn'||value==='landmark'?['current' as EngineId]:[]),value])):prev.filter(x=>x!==value));
  };
  useEffect(()=>{
    if(!file){setImageUrl(null);setDimensions(null);setHash('');return;}
@@ -125,7 +125,7 @@ export default function ComparePage(){
    <div className="card shadow-sm mb-3">
      <div className="card-body">
        <h2 className="h5">2. Select comparison engines</h2>
-       <p className="small text-secondary">Full scanners read bubbles. AI corner detectors only propose geometry. Bubble AI compares 200 crop classifications against the current engine, if it aligns the sheet.</p>
+       <p className="small text-secondary">Full scanners read bubbles. The ninth Optical Local-Grid engine uses independent timing tracks to propose unverified rows without AI. AI corner detectors suggest geometry, and bubble AI makes research-only predictions.</p>
        <div className="row g-2">
          {ENGINES.map(engine=><div className="col-md-6" key={engine.id}>
            <label className="compare-engine-choice d-flex gap-2 align-items-start p-3 border rounded h-100">
@@ -135,7 +135,7 @@ export default function ComparePage(){
              <span>
                <strong className="d-block">{engine.name}</strong>
                <small className="text-secondary d-block">{engine.details}</small>
-               <small className="text-secondary">{engine.kind==='scanner'?'Full scanner':engine.kind==='detector'?'AI geometry only':'Experimental AI bubble classifier'} · {engine.version}</small>
+               <small className="text-secondary">{engine.kind==='scanner'?'Full scanner':engine.kind==='detector'?'AI geometry only':engine.kind==='landmark'?'Experimental non-AI local alignment':'Experimental AI bubble classifier'} · {engine.version}</small>
                {engine.sizeNote&&<small className="d-block text-secondary">{engine.sizeNote}</small>}
              </span>
            </label>
@@ -172,10 +172,10 @@ export default function ComparePage(){
            <tbody>{ordered.map(e=>{
              const r=resultById(e.id);
              return <tr key={e.id}>
-               <td><strong>{e.name}</strong></td><td>{e.kind==='scanner'?'Scanner':e.kind==='detector'?'AI corners':'Bubble AI'}</td>
+               <td><strong>{e.name}</strong></td><td>{e.kind==='scanner'?'Scanner':e.kind==='detector'?'AI corners':e.kind==='landmark'?'Local grid':'Bubble AI'}</td>
                <td>{r?word(r.outcome):'Not run'}</td><td>{r?(r.elapsedMs/1000).toFixed(2)+'s':'—'}</td>
                <td>{r?.timing===null||!r?'—':r.timing+'/50'}</td>
-               <td>{r?(e.kind==='detector'?'—':e.kind==='bubble'?r.answers.length+' experimental':' '+r.answers.length+'/50'):'—'}</td>
+               <td>{r?(e.kind==='detector'?'—':e.kind==='bubble'||e.kind==='landmark'?r.answers.length+' experimental':' '+r.answers.length+'/50'):'—'}</td>
                <td>{r?.confidence!=null?r.confidence.toFixed(4):'—'}</td>
              </tr>})}</tbody>
          </table></div>
@@ -183,7 +183,7 @@ export default function ComparePage(){
          {results.map(r=><details key={r.id} className="border rounded p-2 mb-2">
            <summary><strong>{r.name}</strong> · {word(r.outcome)}</summary>
            <p className="small mb-1 mt-2">{r.reason}</p>
-           {r.kind==='scanner'&&<p className="small mb-0">QR: {r.qrValid?'valid':'not verified'} ·
+           {(r.kind==='scanner'||r.kind==='landmark')&&<p className="small mb-0">QR: {r.qrValid?'valid':'not verified'} ·
              timing: {r.timing??'—'}/50 · gray reference: {r.calibration??'—'}</p>}
          </details>)}
        </>}
