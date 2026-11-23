@@ -72,7 +72,7 @@ export async function runBubbleAi(def:EngineDefinition,
  const failed=(reason:string):EngineResult=>({
    id:def.id,name:def.name,kind:'bubble',version:def.version,
    outcome:'error',elapsedMs:Math.round(performance.now()-start),reason,
-   corners:[],confidence:null,qrValid:null,alignmentVerified:null,
+   corners:[],confidence:null,imageSpace:null,qrValid:null,alignmentVerified:null,
    timing:null,timingLeft:null,timingRight:null,markerCount:null,
    calibration:null,testId:null,answers:[],traces:[]
  });
@@ -151,7 +151,7 @@ export async function runBubbleAi(def:EngineDefinition,
      outcome:'provisional',elapsedMs:Math.round(performance.now()-start),
      qrValid:source.qrValid,alignmentVerified:false,timing:source.timing,
      timingLeft:source.timingLeft,timingRight:source.timingRight,
-     corners:source.corners,testId:source.testId,
+     corners:source.corners,imageSpace:source.imageSpace,testId:source.testId,
      answers,confidence:null,traces,
      reason:'UNVERIFIED experimental bubble predictions from '+provenance+
        '; '+(sourceVerified?agreements+' optical matches, '+disagreements+' disagreements, ':'optical comparison unavailable; ')+
