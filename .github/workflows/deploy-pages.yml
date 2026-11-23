@@ -33,6 +33,31 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: 'true'
+      # Vendor pinned AI runtime and model into GitHub Pages.
+      # No runtime dependency on third-party CDNs, and no network request
+      # on normal successful scans: assets are loaded only on failure.
+      - name: Check out pinned Quadscan source
+        uses: actions/checkout@v4
+        with:
+          repository: storrealbac/quadscan
+          ref: 5bbd55b58cabc196323ce541e0528deb42c57ee5
+          path: quadscan-source
+      - name: Install pinned AI runtime dependencies
+        run: npm ci
+        working-directory: quadscan-source
+      - name: Build pinned AI runtime
+        run: npm run build
+        working-directory: quadscan-source
+      - name: Bundle AI runtime and weights into Pages
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ai-model dist/ai-runtime
+          cp quadscan-source/dist/quadscan.iife.js dist/ai-runtime/quadscan.iife.js
+          cp quadscan-source/models/lcnet100_h_e_bifpn_256_fp32.onnx dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
+          cp quadscan-source/node_modules/onnxruntime-web/dist/*.wasm dist/ai-runtime/
+          test -s dist/ai-runtime/quadscan.iife.js
+          test -s dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
+          ls -lh dist/ai-runtime dist/ai-model
       # Preserve the original v2.3.45 scanner on a dedicated subpath.
       # Its archived source and build remain independent of current main.
       - name: Check out archived v2.3.45
