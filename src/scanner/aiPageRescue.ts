@@ -16,17 +16,25 @@ type QuadscanResult={
 };
 type QuadscanAPI={scan:(src:HTMLCanvasElement,options:{mode:'detect';minDetectionConfidence:number})=>Promise<QuadscanResult>};
 declare global {
-  interface Window { Quadscan?: QuadscanAPI }
+  interface Window { Quadscan?: QuadscanAPI | {Quadscan:QuadscanAPI} }
 }
 let loader:Promise<QuadscanAPI>|null=null;
 const SCRIPT='https://cdn.jsdelivr.net/npm/quadscan@1.0.0/dist/quadscan.iife.js';
+function exportedDetector():QuadscanAPI|null {
+  const exported=window.Quadscan;
+  if(!exported)return null;
+  if('scan' in exported && typeof exported.scan==='function')return exported;
+  if('Quadscan' in exported && typeof exported.Quadscan?.scan==='function')return exported.Quadscan;
+  return null;
+}
 function loadDetector():Promise<QuadscanAPI>{
-  if(window.Quadscan)return Promise.resolve(window.Quadscan);
+  const existing=exportedDetector();
+  if(existing)return Promise.resolve(existing);
   if(loader)return loader;
   loader=new Promise<QuadscanAPI>((resolve,reject)=>{
     const el=document.createElement('script');
     el.src=SCRIPT;el.async=true;
-    el.onload=()=>window.Quadscan?resolve(window.Quadscan):
+    el.onload=()=>exportedDetector()?resolve(exportedDetector()!):
       reject(new Error('Quadscan library loaded without exported API'));
     el.onerror=()=>reject(new Error('Could not download optional vision runtime'));
     document.head.appendChild(el);
