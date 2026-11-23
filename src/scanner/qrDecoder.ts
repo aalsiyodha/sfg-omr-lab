@@ -110,6 +110,50 @@ export function decodeQRFromRegion(
     const result = decodeQR(regionCanvas);
     if (result.found) return result;
 
+    // Failure-only QR rescue. The printed QR can occupy only ~20mm and camera
+    // resampling may leave each module near one working-image pixel. Try
+    // enlargements and contrast normalization on this SAME expected QR region.
+    // Do not widen the search beyond the registered QR position or change
+    // the strict SFGOMR1 identity prefix and independent timing policy.
+    for (const sizeScale of [2,3]) {
+      const enlarged = document.createElement('canvas');
+      enlarged.width = regionCanvas.width * sizeScale;
+      enlarged.height = regionCanvas.height * sizeScale;
+      const ec = enlarged.getContext('2d',{willReadFrequently:true});
+      if(!ec)continue;
+      ec.imageSmoothingEnabled=false;
+      ec.drawImage(regionCanvas,0,0,enlarged.width,enlarged.height);
+      const nearest=decodeQR(enlarged);
+      if(nearest.found)return nearest;
+      // Normalize luminance using 5th and 95th percentile; shadows and
+      // nonuniform light can hide finder modules from the raw decoder.
+      const image=ec.getImageData(0,0,enlarged.width,enlarged.height);
+      const hist=new Uint32Array(256);
+      const data=image.data;
+      for(let i=0;i<data.length;i+=4)
+        hist[Math.round(.299*data[i]+.587*data[i+1]+.114*data[i+2])]++;
+      const total=enlarged.width*enlarged.height;
+      let lo=0,hi=255,cumulative=0;
+      for(let v=0;v<256;v++){
+        cumulative+=hist[v];
+        if(cumulative>=total*.05){lo=v;break;}
+      }
+      cumulative=0;
+      for(let v=0;v<256;v++){
+        cumulative+=hist[v];
+        if(cumulative>=total*.95){hi=v;break;}
+      }
+      if(hi-lo<20)continue;
+      const gain=255/(hi-lo);
+      for(let i=0;i<data.length;i+=4){
+        const gray=Math.max(0,Math.min(255,Math.round(
+          (.299*data[i]+.587*data[i+1]+.114*data[i+2]-lo)*gain)));
+        data[i]=gray;data[i+1]=gray;data[i+2]=gray;
+      }
+      ec.putImageData(image,0,0);
+      const normalized=decodeQR(enlarged);
+      if(normalized.found)return normalized;
+    }
     return result;
   } catch (err) {
     return { found: false, raw: null, valid: false, studentId: null, error: 'Could not decode regional QR' };
