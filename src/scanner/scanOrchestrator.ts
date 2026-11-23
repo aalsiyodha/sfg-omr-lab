@@ -374,7 +374,8 @@ export async function runFullScan(
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
-      if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name, hypothesis.kind)) {
+      if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name,
+        hypothesis.kind==='hybrid'?'corner':hypothesis.kind)) {
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
