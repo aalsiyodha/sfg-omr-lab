@@ -57,7 +57,12 @@ jobs:
           cp quadscan-source/models/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
           cp quadscan-source/node_modules/onnxruntime-web/dist/*.wasm dist/ai-runtime/
           cp quadscan-source/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs dist/ai-runtime/
+          # ort.wasm.min.mjs loads its matching worker/wasm .mjs at runtime.
+          # Copy both JS companions and matching WASM instead of only the entry module.
+          cp quadscan-source/node_modules/onnxruntime-web/dist/ort-wasm*.mjs dist/ai-runtime/
           test -s dist/ai-runtime/ort.wasm.min.mjs
+          test -s dist/ai-runtime/ort-wasm-simd-threaded.mjs
+          test -s dist/ai-runtime/ort-wasm-simd-threaded.wasm
           test -s dist/ai-runtime/quadscan.iife.js
           test -s dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
           test -s dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
@@ -182,7 +187,7 @@ jobs:
       - name: Validate comparison assets
         run: |
           set -euo pipefail
-          for file in             dist/index.html             dist/v2.3.45/index.html             dist/versions/v2.2.6/index.html             dist/versions/v2.2.4/index.html             dist/ai-runtime/scanic.js             dist/ai-model/scanic/doccornernet_lean.ort             dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx             dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/bubble/omr_model.onnx; do
+          for file in             dist/index.html             dist/v2.3.45/index.html             dist/versions/v2.2.6/index.html             dist/versions/v2.2.4/index.html             dist/ai-runtime/scanic.js             dist/ai-model/scanic/doccornernet_lean.ort             dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx             dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/bubble/omr_model.onnx dist/ai-runtime/ort-wasm-simd-threaded.mjs dist/ai-runtime/ort-wasm-simd-threaded.wasm; do
             test -s "$file"
           done
       - name: Configure GitHub Pages
