@@ -400,6 +400,8 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
     const rightGood=best.right.length>=18&&best.right[0].row<=3&&best.right.at(-1)!.row>=21&&timingCoherence(best.right).coherent;
     traces.push({stage:'landmark',message:'independent-side-validation',
       data:{left:best.left.length,right:best.right.length,leftGood,rightGood,
+        lattice:{left:timingLatticeDiagnostics(best.left),
+          right:timingLatticeDiagnostics(best.right)},
         leftCoherence:timingCoherence(best.left),rightCoherence:timingCoherence(best.right),
         selected:best.variant,from:best.anchorSource,
         curveRecovery:'per-row independently interpolated timing-bar displacements',
