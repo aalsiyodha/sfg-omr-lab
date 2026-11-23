@@ -1,5 +1,5 @@
 /**
- * Ninth engine v2: deterministic landmark-driven local grid experiment.
+ * Local-Grid v4: optical registration and spatial ink-morphology research.
  *
  * Uses optical corner squares + *independently decoded* bottom ArUco IDs
  * from an earlier optical scanner's failed/successful trace. Four known
@@ -131,33 +131,56 @@ function timingCoherence(track:Track[]){
   return {heldOut:errors.length,meanResidualPx:mean===null?null:+mean.toFixed(2),
     coherent:errors.length>=5&&mean!==null&&mean<=4.5};
 }
-function bubbleFill(g:Uint8Array,x:number,y:number):{fill:number;background:number}{
-  // 1mm interior, exclude printed 1.7mm outline. Background reference in
-  // near annulus but away from printed A/B/C/D text where possible.
-  const radius=MM*.95,ring:number[]=[],interior:number[]=[];
+interface BubbleEvidence {fill:number;background:number;centerFill:number;
+  quadrantMinimum:number;quadrantMaximum:number;solid:boolean}
+/** Inner-disk density alone accepts crescents. Evaluate center and all four
+ * quadrants independently, excluding the printed ring and option letters.
+ * Thresholds are conservative research heuristics, not official UPSC rules.
+ */
+function bubbleFill(g:Uint8Array,x:number,y:number):BubbleEvidence{
+  const radius=MM*.95,ring:number[]=[];
   const cx=Math.round(x),cy=Math.round(y);
+  let dark=0,total=0,centerDark=0,centerTotal=0;
+  const quadrants=[0,0,0,0],quadrantTotals=[0,0,0,0];
   for(let dy=-11;dy<=11;dy++)for(let dx=-11;dx<=11;dx++){
     const d=Math.hypot(dx,dy);
-    if(d<=radius)interior.push(pixel(g,cx+dx,cy+dy));
-    else if(d>=8.3&&d<=10.5&&dx<=2)ring.push(pixel(g,cx+dx,cy+dy));
+    if(d>=8.3&&d<=10.5&&dx<=2)ring.push(pixel(g,cx+dx,cy+dy));
   }
   ring.sort((a,b)=>a-b);
   const paper=ring.length?ring[Math.floor(ring.length/2)]:240;
   const threshold=Math.min(155,paper-34);
-  return {fill:interior.filter(v=>v<threshold).length/Math.max(1,interior.length),
-    background:paper};
+  for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){
+    const d=Math.hypot(dx,dy);
+    if(d>radius)continue;
+    const isDark=pixel(g,cx+dx,cy+dy)<threshold;
+    total++;if(isDark)dark++;
+    if(d<=MM*.48){centerTotal++;if(isDark)centerDark++;}
+    const q=(dy>=0?2:0)+(dx>=0?1:0);
+    quadrantTotals[q]++;if(isDark)quadrants[q]++;
+  }
+  const qFill=quadrants.map((n,i)=>n/Math.max(1,quadrantTotals[i]));
+  const fill=dark/Math.max(1,total);
+  const centerFill=centerDark/Math.max(1,centerTotal);
+  const quadrantMinimum=Math.min(...qFill),quadrantMaximum=Math.max(...qFill);
+  // Require central coverage and distributed ink, not just a dark crescent.
+  const solid=fill>=.80&&centerFill>=.68&&quadrantMinimum>=.54&&
+    quadrantMaximum-quadrantMinimum<=.42;
+  return {fill,background:paper,centerFill,quadrantMinimum,quadrantMaximum,solid};
 }
 /** Circular OMR decisions: keep blank, multiple and uncertainty distinct.
  * Returning a question status does not establish registration or grading.
  */
-function classifyFills(fills:number[]):{answer:string|null;status:string;confidence:number}{
-  const ranks=fills.map((fill,i)=>({fill,i})).sort((a,b)=>b.fill-a.fill);
-  const high=ranks.filter(r=>r.fill>=.80);
+function classifyFills(evidence:BubbleEvidence[]):{answer:string|null;status:string;confidence:number}{
+  const ranks=evidence.map((b,i)=>({...b,i})).sort((a,b)=>b.fill-a.fill);
+  const valid=ranks.filter(r=>r.solid);
   const separation=ranks[0].fill-ranks[1].fill;
-  if(high.length>=2)return {answer:null,status:'multiple',confidence:Math.round(100*Math.min(1,high[1].fill))};
-  if(high.length===1&&separation>=.40)return {
-    answer:OPTIONS[ranks[0].i],status:'detected',confidence:Math.round(separation*100)};
-  if(ranks[0].fill<=.25)return {answer:null,status:'blank',confidence:Math.round((1-ranks[0].fill)*100)};
+  if(valid.length>=2)return {answer:null,status:'multiple',
+    confidence:Math.round(100*Math.min(1,valid[1].fill))};
+  if(valid.length===1&&separation>=.25)return {
+    answer:OPTIONS[valid[0].i],status:'detected',confidence:Math.round(separation*100)};
+  if(ranks[0].fill<=.25)return {answer:null,status:'blank',
+    confidence:Math.round((1-ranks[0].fill)*100)};
+  // Partially dark / crescent shapes must not silently become blanks.
   return {answer:null,status:'uncertain',confidence:Math.round(separation*100)};
 }
 function strip(g:Uint8Array){
@@ -265,7 +288,7 @@ export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
       const q=row+1+(side==='right'?25:0);
       const fills=[0,1,2,3].map(option=>{
         const p=getBubbleCentre(q,option as 0|1|2|3);
-        return bubbleFill(g,p.xMm*MM+shift.dx,p.yMm*MM+shift.dy).fill;
+        return bubbleFill(g,p.xMm*MM+shift.dx,p.yMm*MM+shift.dy);
       });
       const decision=classifyFills(fills);
       answers.push({q,...decision});
@@ -377,12 +400,14 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         // Raise the exploratory gate after v2.4.611 produced a Q25=C
         // false positive (0.711 fill) on a verified blank row. Still not
         // permission to score: a strong dark core can be a stray mark.
-        const decision=classifyFills(values.map(v=>v.fill));
+        const decision=classifyFills(values);
         const answer=decision.answer;
         answers.push({q:question,...decision});
         if(row===0||row===12||row===24)traces.push({stage:'landmark',
           message:'example-row-sample',data:{side,question,track:shift,
-            fill:values.map(v=>Number(v.fill.toFixed(3))),answer,
+            fill:values.map(v=>Number(v.fill.toFixed(3))),
+            morphology:values.map(v=>({center:Number(v.centerFill.toFixed(2)),
+              minQuadrant:Number(v.quadrantMinimum.toFixed(2)),solid:v.solid})),answer,
             noGroundTruth:true}});
       }
     }
