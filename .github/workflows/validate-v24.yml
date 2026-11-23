@@ -8,7 +8,8 @@ on:
       - fix/v2.4.3-coordinate-evidence
       - feature/v2.4.4-overlay-export
       - feature/v2.4.5
-      - fix/v2.4.6-landmark-baseline-landmark-grid
+      - feature/v2.4.5-landmark-grid
+      - fix/v2.4.6-landmark-baseline
   workflow_dispatch:
 permissions:
   contents: read
