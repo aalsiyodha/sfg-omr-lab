@@ -2,7 +2,6 @@ import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AppState } from '../App';
 import type { AnswerOption } from '../types';
-import { ErrorLogBox } from '../components/ErrorLogBox';
 import { generateLLMDiagnosticPrompt, generateBetaFeedbackPrompt } from '../diagnostics/llmPromptGenerator';
 import { APP_VERSION, APP_BUILD_META, APP_DEPLOY_LABEL } from '../config/version';
 import { copyText } from '../utils/copyText';
@@ -27,7 +26,7 @@ export default function ScanPage({ appState }: Props) {
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ResultViewTab>('table');
+  const [activeTab, setActiveTab] = useState<ResultViewTab>('overlay');
   const [reviewFilter, setReviewFilter] = useState<'flagged' | 'all'>('flagged');
   const [llmCopied, setLlmCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
@@ -137,7 +136,7 @@ export default function ScanPage({ appState }: Props) {
     setCapturedFile(null);
     setPreviewUrl(null);
     setSubmitError(null);
-    setActiveTab('table');
+    setActiveTab('overlay');
     setReviewFilter('flagged');
     setLlmCopied(false);
     setCopyFailed(false);
@@ -199,520 +198,247 @@ export default function ScanPage({ appState }: Props) {
     navigate('/results');
   };
 
-  const StatusBadge = ({ status }: { status: string }) => {
-    const map: Record<string, string> = {
-      success: 'bg-success', partial: 'bg-warning text-dark', failed: 'bg-danger'
-    };
-    return <span className={`badge ${map[status] || 'bg-secondary'}`}>{status.toUpperCase()}</span>;
-  };
-
-  const hasAnswers = scanResult?.answers && scanResult.answers.length > 0;
-  const hasErrorsOrWarnings = (scanResult?.errors && scanResult.errors.length > 0) || !hasAnswers;
-
-  const betaReportPreview = scanResult ? generateBetaFeedbackPrompt({scanResult, file: capturedFile, activeTestId: practice.activeTest?.testId}) : '';
-  // Strict-invalid marks (ticks, crescents, dots and partials) are blanks,
-  // not review cases. A manual edit resolves a previously flagged question.
   const reviewCount = scanResult?.answers.filter(needsReview).length ?? 0;
-  const resolvedCount = (scanResult?.answers.length ?? 0) - reviewCount;
   const invalidBlankCount = countRejectedBlankMarks(scanResult?.answers ?? []);
   const visibleAnswers = filterReviewAnswers(scanResult?.answers ?? [], reviewFilter);
-  const llmReportPreview = scanResult
-    ? generateLLMDiagnosticPrompt({
-        scanResult,
-        file: capturedFile,
-        activeTestId: practice.activeTest?.testId,
-        answerKey: practice.activeTest?.answerKey,
-      })
-    : '';
-
+  const reportFull = scanResult ? generateLLMDiagnosticPrompt({
+    scanResult,file:capturedFile,activeTestId:practice.activeTest?.testId,
+    answerKey:practice.activeTest?.answerKey
+  }) : '';
+  const reportCompact = scanResult ? generateBetaFeedbackPrompt({
+    scanResult,file:capturedFile,activeTestId:practice.activeTest?.testId
+  }) : '';
+  const diagnostic = showTechnicalReport ? reportFull : reportCompact;
+  const saveReport = () => {
+    if(!scanResult)return;
+    const blob=new Blob([diagnostic],{type:'text/plain;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;
+    a.download='sfg-omr-'+(capturedFile?.name||'scan').replace(/[^a-zA-Z0-9._-]/g,'_')+
+      (showTechnicalReport?'-full':'-compact')+'.txt';
+    document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  };
+  const saveMarkerOverlay=()=>{
+    if(!intermediateImages.markerOverlay)return;
+    const a=document.createElement('a');a.href=intermediateImages.markerOverlay;
+    a.download='sfg-omr-markers.png';document.body.appendChild(a);a.click();a.remove();
+  };
+  const counts=scanResult?.answers.reduce((a,q)=>{
+    a[q.status]=(a[q.status]||0)+1;return a;
+  },{} as Record<string,number>)??{};
+  const verified=Boolean(scanResult?.alignmentVerified && scanResult?.qrValid);
   return (
-    <div>
-      <div className="product-scan-header">
+    <div className="minimal-scan">
+      <header className="minimal-scan-heading">
         <div>
-          <span className="product-kicker" style={{ color:'#0d9488',fontWeight:900 }}>2.3.31 · LOCAL OPENCV</span>
-          <h1 style={{ letterSpacing:'-.035em' }}>SFG OMR Lab <span style={{ color:'#0d9488' }}>OpenCV Recovery</span></h1>
-          <p>Fast local scanner · one guarded timing-track recovery on failure · full diagnostics available.</p>
+          <span className="minimal-kicker">SFG OMR LAB · v2.3.4</span>
+          <h1>Scan a sheet</h1>
         </div>
-        <div className="d-flex flex-column align-items-start align-items-md-end gap-1">
-          <span className="product-scan-version">{APP_VERSION}</span>
-          <span className="product-deployment-label" title={`Full commit: ${APP_BUILD_META.sha} · built ${APP_BUILD_META.builtAt}`}>
-            <i className="bi bi-hdd-network me-1" />{APP_DEPLOY_LABEL} · {APP_BUILD_META.buildId}{APP_BUILD_META.dirty ? ' · modified' : ''}
-          </span>
-        </div>
-      </div>
+        <span className="minimal-build" title={APP_DEPLOY_LABEL+' · '+APP_BUILD_META.sha}>{APP_VERSION}</span>
+      </header>
 
       {opencv !== 'ready' && (
-        <div className={`alert alert-${opencv === 'loading' ? 'warning' : 'danger'} mb-3`}>
-          <i className="bi bi-exclamation-triangle me-2" />
-          OpenCV is {opencv === 'loading' ? 'still loading — please wait a moment…' : 'not available. Please refresh the page.'}
+        <div role="status" className="minimal-notice">
+          {opencv==='loading'?'Preparing scanner…':'OpenCV unavailable — reload the page.'}
         </div>
       )}
 
-      {!scanResult && <div className="product-scan-instructions">
-        <span><b>01</b> Add a photo</span><i className="bi bi-chevron-right" />
-        <span><b>02</b> Verify geometry</span><i className="bi bi-chevron-right" />
-        <span><b>03</b> Review answers</span>
-      </div>}
-      {/* Input section (hidden once scan result exists) */}
       {!scanResult && (
-        <div className="row g-3">
-          <div className="col-12">
-            <div className="d-flex flex-wrap gap-2 mb-2 product-upload-actions">
-              <button className="btn btn-primary" onClick={triggerNativeCamera} disabled={isScanning}>
-                <i className="bi bi-camera-fill me-2" />Take a photo
-              </button>
-              <button className="btn btn-outline-primary" onClick={() => fileInputRef.current?.click()} disabled={isScanning}>
-                <i className="bi bi-upload me-2" />Upload a photo
-              </button>
-              <button className="btn btn-outline-secondary" onClick={openCamera} disabled={isScanning}>
-                <i className="bi bi-webcam me-2" />Live Camera
-              </button>
-
-              {/* Native mobile camera capture input (activates phone's native camera app with flash) */}
-              <input
-                ref={nativeCameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                hidden
-                onChange={handleFileChange}
-              />
-
-              {/* Standard file input for gallery/desktop */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-                hidden
-                onChange={handleFileChange}
-              />
-            </div>
-            <small className="text-muted d-block mb-3">
-              <i className="bi bi-lightning-charge me-1 text-warning" />
-              <strong>Photo tip:</strong> Lay the page flat, include all edges, and avoid glare or blur. Flash is optional.
-            </small>
+        <section className="minimal-upload">
+          <div className="minimal-upload-buttons">
+            <button className="btn btn-dark" type="button"
+              onClick={triggerNativeCamera} disabled={isScanning}>
+              <i className="bi bi-camera me-2" />Take photo
+            </button>
+            <button className="btn btn-outline-secondary" type="button"
+              onClick={()=>fileInputRef.current?.click()} disabled={isScanning}>
+              <i className="bi bi-upload me-2" />Choose image
+            </button>
+            <button className="btn btn-link text-secondary" type="button"
+              onClick={openCamera} disabled={isScanning}>Live camera</button>
           </div>
-
-          {mode === 'camera' && (
-            <div className="col-12 col-md-8">
-              <div className="position-relative">
-                <video ref={videoRef} autoPlay playsInline className="w-100 border rounded" />
-                {torchSupported && (
-                  <button
-                    className={`btn btn-sm btn-${torchOn ? 'warning' : 'secondary'} position-absolute top-0 end-0 m-2 shadow`}
-                    onClick={toggleTorch}
-                  >
-                    <i className="bi bi-lightning-fill me-1" />
-                    {torchOn ? 'Torch ON' : 'Torch OFF'}
-                  </button>
-                )}
-              </div>
-              <div className="mt-2 d-flex gap-2">
-                <button className="btn btn-primary" onClick={capturePhoto}>
-                  <i className="bi bi-camera-fill me-2" />Capture Photo
-                </button>
-                {torchSupported && (
-                  <button className={`btn btn-outline-${torchOn ? 'warning' : 'secondary'}`} onClick={toggleTorch}>
-                    <i className="bi bi-lightning-fill me-1" />
-                    {torchOn ? 'Disable Flash' : 'Enable Flash'}
-                  </button>
-                )}
-                <button className="btn btn-outline-secondary" onClick={stopCamera}>Close Live Camera</button>
+          <input ref={nativeCameraInputRef} type="file" accept="image/*"
+            capture="environment" hidden onChange={handleFileChange}/>
+          <input ref={fileInputRef} type="file"
+            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            hidden onChange={handleFileChange}/>
+          {mode==='camera' && (
+            <div className="minimal-camera">
+              <video ref={videoRef} autoPlay playsInline className="w-100 rounded"/>
+              <div className="minimal-actions">
+                <button className="btn btn-dark btn-sm" onClick={capturePhoto}>Capture</button>
+                {torchSupported && <button className="btn btn-outline-secondary btn-sm"
+                  onClick={toggleTorch}>{torchOn?'Flash off':'Flash on'}</button>}
+                <button className="btn btn-outline-secondary btn-sm" onClick={stopCamera}>Close</button>
               </div>
             </div>
           )}
-
+          {capturedFile && (
+            <div className="minimal-selected">
+              {previewUrl && <img src={previewUrl} alt="Selected sheet" />}
+              <div className="minimal-selected-details">
+                <strong className="minimal-filename">{capturedFile.name}</strong>
+                <span className="text-secondary small">{(capturedFile.size/1024/1024).toFixed(2)} MB</span>
+                <button className="btn btn-dark" onClick={handleScan}
+                  disabled={isScanning||opencv!=='ready'}>
+                  {isScanning?'Scanning…':'Scan sheet'} <i className="bi bi-arrow-right ms-1"/>
+                </button>
+              </div>
+            </div>
+          )}
           {isScanning && (
-            <div className="col-12 col-md-10 col-lg-8 mx-auto my-3">
-              <div className="scanner-animation-container">
-                <div className="scanner-viewport product-scanning-sheet" role="img" aria-label="Illustration of a sheet being scanned">
-                  <div className="product-scan-paper-header"><span>SFG</span><span>OMR</span><span className="product-scan-qr" /></div>
-                  <div className="viewport-grid">
-                    {Array.from({length:12},(_,r)=>(
-                      <div className="grid-row-mock" key={r}>
-                        <span className="product-scan-row-number">{String(r+1).padStart(2,'0')}</span>
-                        {Array.from({length:4},(_,i)=><span key={i} className={`grid-dot-mock ${(r*3+i)%7===0?'filled':''}`}/>)}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="scanner-laser-line" />
-                  <div className="product-scan-corner tl"/><div className="product-scan-corner tr"/><div className="product-scan-corner bl"/><div className="product-scan-corner br"/>
-                </div>
-
-                <div className="product-scan-live-label"><span className="product-live-dot" /> SCAN IN PROGRESS</div>\n                <h5 className="fw-bold mb-1" style={{ color: 'var(--text-main)' }}>
-                  Reading your answer sheet
-                </h5>
-                <p className="text-muted small mb-3">
-                  {progress?.stage || 'Finding reference markers and checking bubble shapes…'}
-                </p>
-
-                <div className="progress mb-3" style={{ height: 6, maxWidth: 440, margin: '0 auto' }}>
-                  <div
-                    className="progress-bar product-scanning-progress"
-                    style={{ width: `${progress?.percent || 20}%`, backgroundColor: 'var(--primary)' }}
-                  />
-                </div>
-
-                <div className="scan-stages-checklist">
-                  <div className={`scan-stage-item ${(progress?.percent || 0) >= 30 ? 'completed' : (progress?.percent || 0) >= 10 ? 'active' : ''}`}>
-                    <span className="scan-stage-icon">
-                      {(progress?.percent || 0) >= 30 ? <i className="bi bi-check-circle-fill text-success" /> : <span className="spinner-border spinner-border-sm" />}
-                    </span>
-                    <span>1. Align printed sheet</span>
-                  </div>
-                  <div className={`scan-stage-item ${(progress?.percent || 0) >= 60 ? 'completed' : (progress?.percent || 0) >= 30 ? 'active' : ''}`}>
-                    <span className="scan-stage-icon">
-                      {(progress?.percent || 0) >= 60 ? <i className="bi bi-check-circle-fill text-success" /> : (progress?.percent || 0) >= 30 ? <span className="spinner-border spinner-border-sm" /> : <i className="bi bi-circle text-muted" />}
-                    </span>
-                    <span>2. Verify QR orientation and Test ID</span>
-                  </div>
-                  <div className={`scan-stage-item ${(progress?.percent || 0) >= 80 ? 'completed' : (progress?.percent || 0) >= 60 ? 'active' : ''}`}>
-                    <span className="scan-stage-icon">
-                      {(progress?.percent || 0) >= 80 ? <i className="bi bi-check-circle-fill text-success" /> : (progress?.percent || 0) >= 60 ? <span className="spinner-border spinner-border-sm" /> : <i className="bi bi-circle text-muted" />}
-                    </span>
-                    <span>3. Read all 50 questions</span>
-                  </div>
-                  <div className={`scan-stage-item ${(progress?.percent || 0) >= 100 ? 'completed' : (progress?.percent || 0) >= 80 ? 'active' : ''}`}>
-                    <span className="scan-stage-icon">
-                      {(progress?.percent || 0) >= 100 ? <i className="bi bi-check-circle-fill text-success" /> : (progress?.percent || 0) >= 80 ? <span className="spinner-border spinner-border-sm text-primary" /> : <i className="bi bi-circle text-muted" />}
-                    </span>
-                    <span>4. Flag unclear marks</span>
-                  </div>
-                </div>
+            <div role="status" className="minimal-progress">
+              <div className="progress" style={{height:4}}>
+                <div className="progress-bar bg-dark" style={{width:(progress?.percent||10)+'%'}} />
               </div>
+              <span>{progress?.stage||'Scanning…'}</span>
             </div>
           )}
-
-          {!isScanning && previewUrl && (
-            <div className="col-12 col-md-8 col-lg-6">
-              <p className="fw-semibold mb-1">Photo preview:</p>
-              <img src={previewUrl} alt="Preview" className="img-fluid border rounded mb-2" style={{ maxHeight: 420 }} />
-              <div className="d-flex gap-2">
-                <button className="btn btn-primary" onClick={handleScan} disabled={isScanning || opencv !== 'ready'}>
-                  <i className="bi bi-upc-scan me-2" />Scan this photo
-                </button>
-                <button className="btn btn-outline-secondary" onClick={() => { setCapturedFile(null); setPreviewUrl(null); }} disabled={isScanning}>
-                  Retake / Choose Another
-                </button>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="col-12">
-              <ErrorLogBox
-                title="Scan Execution Failed"
-                errorMessage={error}
-                file={capturedFile}
-              />
-            </div>
-          )}
-        </div>
+          {error && <p role="alert" className="text-danger small mt-3">{error}</p>}
+        </section>
       )}
 
-      {/* Results section */}
       {scanResult && (
-        <div>
-          <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-            <h4 className="mb-0">Scan Result ({APP_VERSION})</h4>
-            <StatusBadge status={scanResult.overallStatus} />
-            <span className="text-muted small">({scanResult.processingTimeMs} ms)</span>
-
-            <div className="ms-auto d-flex gap-2 flex-wrap">
-              <button className={`btn btn-sm ${llmCopied ? 'btn-success' : 'btn-primary'}`} onClick={handleCopyBetaReport}>
-                <i className="bi bi-clipboard-check me-1"/>{llmCopied ? 'Copied!' : 'Copy compact LLM report'}
-              </button>
-              <button className="btn btn-sm btn-outline-secondary" onClick={handleCopyLLMReport}>
-                <i className="bi bi-clipboard me-1"/>Copy full diagnostic
-              </button>
-            </div>
-            <button className="btn btn-sm btn-outline-primary" onClick={downloadOverlay} disabled={!intermediateImages.bubbleOverlay}>
-              <i className="bi bi-download me-1"/>Save overlay
-            </button>
-
-            <button className="btn btn-sm btn-outline-secondary" onClick={handleReset}>
-              <i className="bi bi-arrow-repeat me-1" />Scan Another
-            </button>
-          </div>
-
-          {copyFailed && <div role="alert" className="alert alert-warning py-2 small mb-3">Clipboard was blocked. Open Share feedback, tap the text area and copy manually.</div>}
-          {llmCopied && (
-            <div className="alert alert-success py-2 small mb-3">
-              <i className="bi bi-check2-circle me-1" />
-              <strong>Report copied!</strong> Send it with your original photo and saved overlay. Blur names or identifying QR codes before sharing images.
-            </div>
-          )}
-
-          <div className={`beta-review-banner mb-3 ${scanResult.overallStatus === 'failed' ? 'beta-review-failed' : reviewCount ? 'beta-review-attention' : 'beta-review-clear'}`}>
+        <section className="minimal-results">
+          <div className="minimal-result-top">
             <div>
-              <strong>{scanResult.overallStatus === 'failed' ? 'This photo could not be verified' : reviewCount ? `${reviewCount} question(s) need review` : 'Scan complete — please check the answers'}</strong>
-              <p className="mb-0 small">{scanResult.overallStatus === 'failed'
-                ? 'Try another full-page photo; this result cannot be scored.'
-                : 'Green = detected · Red = multiple · Yellow = unclear · Grey = blank. Confirm against the photograph.'}</p>
+              <span className={'minimal-status '+(verified?'is-good':'is-bad')}>
+                {verified?(scanResult.overallStatus==='success'?'Verified':'Verified · review needed'):'Unverified'}
+              </span>
+              <h2>{verified?'Scan result':'Registration failed'}</h2>
+              <span className="text-secondary small">{capturedFile?.name||'Photo'}</span>
             </div>
-            {scanResult.overallStatus !== 'failed' && <button className="btn btn-sm btn-outline-primary" onClick={() => setActiveTab('table')}>Review answers</button>}
+            <button className="btn btn-outline-secondary btn-sm"
+              onClick={handleReset}><i className="bi bi-arrow-repeat me-1"/>New scan</button>
           </div>
 
-          {invalidBlankCount > 0 && (
-            <div className="alert alert-info py-2 small d-flex flex-wrap align-items-center gap-2" role="status">
-              <i className="bi bi-info-circle" aria-hidden="true" />
-              <span><strong>{invalidBlankCount} question(s)</strong> contained incomplete or non-solid markings and were treated as blank under strict SFG rules.</span>
-              <button type="button" className="btn btn-sm btn-outline-secondary ms-auto"
-                onClick={() => {setActiveTab('table');setReviewFilter('all');}}>
-                View all answers
+          <div className="minimal-stat-grid">
+            <div><strong>{scanResult.alignmentMatched||0}<small>/50</small></strong><span>Timing</span></div>
+            <div><strong>{scanResult.testId===null?'—':String(scanResult.testId).padStart(2,'0')}</strong><span>Test ID</span></div>
+            <div><strong>{(scanResult.processingTimeMs/1000).toFixed(2)}<small>s</small></strong><span>Duration</span></div>
+            <div><strong>{counts.detected||0}</strong><span>Answers</span></div>
+          </div>
+
+          {scanResult.errors.length>0 && <div className="minimal-notice is-error" role="alert">
+            {scanResult.errors.join(' · ')}
+          </div>}
+          {scanResult.warnings.length>0 && <div className="minimal-notice" role="status">
+            {scanResult.warnings.join(' · ')}
+          </div>}
+          {invalidBlankCount>0 && <p className="minimal-footnote">
+            {invalidBlankCount} incomplete or non-solid mark(s) treated as blank.
+          </p>}
+
+          <div className="minimal-tabs" role="tablist" aria-label="Scan inspection">
+            {([
+              ['overlay','Overlay'],['table','Answers'],['markers','Markers'],['llm','Diagnostics']
+            ] as const).map(([id,label])=>
+              <button key={id} role="tab" aria-selected={activeTab===id}
+                className={activeTab===id?'is-active':''} onClick={()=>setActiveTab(id)}>
+                {label}{id==='table'&&reviewCount>0?' · '+reviewCount:''}
               </button>
-            </div>
-          )}
-
-          {/* Warnings & errors */}
-          {scanResult.warnings.map((w, i) => (
-            <div key={i} className="alert alert-warning alert-sm py-2 small mb-2">
-              <i className="bi bi-exclamation-circle me-1" />{w}
-            </div>
-          ))}
-          {scanResult.errors.map((e, i) => (
-            <div key={i} className="alert alert-danger alert-sm py-2 small mb-2">
-              <i className="bi bi-x-circle me-1" />{e}
-            </div>
-          ))}
-
-          {/* Metadata badges */}
-          <div className="row g-2 mb-3">
-            <div className="col-auto">
-              <span className="badge bg-secondary">Student ID: {scanResult.studentId || 'Not found'}</span>
-            </div>
-            <div className="col-auto">
-              <span className="badge bg-primary">Test ID: {scanResult.testId ? String(scanResult.testId).padStart(2,'0') : 'Not detected'}</span>
-            </div>
-            <div className="col-auto">
-              <span className={`badge ${scanResult.markerCount >= 4 ? 'bg-success' : 'bg-warning text-dark'}`}>
-                Alignment: {scanResult.registrationMethod || 'unverified'}
-              </span>
-            </div>
-            <div className="col-auto">
-              <span className={`badge ${scanResult.qrValid ? 'bg-success' : 'bg-warning text-dark'}`}>
-                QR Code: {scanResult.qrValid ? 'Valid' : 'Not verified'}
-              </span>
-            </div>
+            )}
           </div>
-
-          {/* Inspection View Tabs */}
-          <div className="card mb-3 shadow-sm">
-            <div className="card-header bg-white p-2">
-              <ul className="nav nav-pills card-header-pills small">
-                <li className="nav-item">
-                  <button
-                    className={`nav-link py-1 px-3 ${activeTab === 'overlay' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('overlay')}
-                  >
-                    <i className="bi bi-bullseye me-1" />Bubble Detection Overlay
-                  </button>
-                </li>
-                <li className="nav-item">
-                  <button
-                    className={`nav-link py-1 px-3 ${activeTab === 'markers' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('markers')}
-                  >
-                    <i className="bi bi-crop me-1" />Reference markers
-                  </button>
-                </li>
-                <li className="nav-item">
-                  <button
-                    className={`nav-link py-1 px-3 ${activeTab === 'table' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('table')}
-                  >
-                    <i className="bi bi-clipboard-check me-1" />Review answers {reviewCount > 0 && <span className="review-nav-count">{reviewCount}</span>}
-                  </button>
-                </li>
-                <li className="nav-item ms-auto">
-                  <button
-                    className={`nav-link py-1 px-3 ${activeTab === 'llm' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('llm')}
-                  >
-                    <i className="bi bi-robot me-1" />Share feedback
-                  </button>
-                </li>
-              </ul>
-            </div>
-
-            <div className="card-body p-3">
-              {/* Tab 1: Bubble Overlay */}
-              {activeTab === 'overlay' && (
-                <div className="text-center">
-                  <div className="d-flex justify-content-between align-items-center mb-2 small text-muted">
-                    <span>
-                      <span className="text-success fw-bold">● Green:</span> Detected &nbsp;|&nbsp;
-                      <span className="text-danger fw-bold">● Red:</span> Multiple &nbsp;|&nbsp;
-                      <span className="text-warning text-dark fw-bold">● Yellow:</span> Uncertain &nbsp;|&nbsp;
-                      <span className="text-secondary">○ Grey:</span> Blank
-                    </span>
-                    <span>Scroll / zoom to inspect bubble alignment</span>
-                  </div>
-                  {intermediateImages.bubbleOverlay ? (
-                    <div style={{ maxHeight: '600px', overflow: 'auto' }} className="border rounded bg-dark p-2">
-                      <img src={intermediateImages.bubbleOverlay} alt="Bubble Overlay" className="img-fluid" style={{ maxWidth: '100%' }} />
-                    </div>
-                  ) : (
-                    <div className="alert alert-secondary small mb-0">Overlay not available for this scan.</div>
-                  )}
+          <div className="minimal-tab-panel">
+            {activeTab==='overlay'&&(
+              <>
+                <div className="minimal-tab-tools">
+                  <span>Green: filled · Red: multiple · Amber: review</span>
+                  <button className="minimal-text-button" onClick={downloadOverlay}
+                    disabled={!intermediateImages.bubbleOverlay}>Save overlay</button>
                 </div>
-              )}
-
-              {/* Tab 2: Detected Markers on Original Image */}
-              {activeTab === 'markers' && (
-                <div className="text-center">
-                  <p className="small text-muted mb-2">
-                    Highlighted reference points used to align your original photograph:
-                  </p>
-                  {intermediateImages.markerOverlay ? (
-                    <div style={{ maxHeight: '600px', overflow: 'auto' }} className="border rounded bg-dark p-2">
-                      <img src={intermediateImages.markerOverlay} alt="Marker Overlay" className="img-fluid" style={{ maxWidth: '100%' }} />
-                    </div>
-                  ) : (
-                    <div className="alert alert-secondary small mb-0">Marker overlay not available.</div>
-                  )}
+                {intermediateImages.bubbleOverlay
+                  ? <img className="minimal-inspection-image" src={intermediateImages.bubbleOverlay}
+                    alt="Bubble detection overlay"/>
+                  : <p className="minimal-empty">No bubble overlay. Check the marker image and diagnostics.</p>}
+              </>
+            )}
+            {activeTab==='markers'&&(
+              <>
+                <div className="minimal-tab-tools">
+                  <span>Detected reference points</span>
+                  <button className="minimal-text-button" onClick={saveMarkerOverlay}
+                    disabled={!intermediateImages.markerOverlay}>Save markers</button>
                 </div>
-              )}
-
-              {/* Tab 3: Review-first answer table. Complete answers are visible on demand. */}
-              {activeTab === 'table' && (
-                <section className="review-workspace" aria-label="Answer review">
-                  <div className="review-summary">
-                    <div>
-                      <h5 className="mb-1 fw-bold">Review your answers</h5>
-                      <p className="mb-0">Only questions that need attention appear by default. You can inspect all 50 at any time.</p>
-                    </div>
-                    <div className="review-summary-counts" aria-live="polite">
-                      <span className="review-count-pill resolved"><i className="bi bi-check-circle me-1" />{resolvedCount} resolved</span>
-                      <span className="review-count-pill flagged"><i className="bi bi-exclamation-circle me-1" />{reviewCount} to review</span>
-                    </div>
+                {intermediateImages.markerOverlay
+                  ? <img className="minimal-inspection-image" src={intermediateImages.markerOverlay}
+                    alt="Detected reference markers"/>
+                  : <p className="minimal-empty">Marker overlay unavailable.</p>}
+              </>
+            )}
+            {activeTab==='table'&&(
+              <>
+                <div className="minimal-tab-tools">
+                  <span>{counts.detected||0} filled · {counts.blank||0} blank · {counts.multiple||0} multiple · {counts.uncertain||0} uncertain</span>
+                  <div className="minimal-actions">
+                    <button className={'minimal-text-button '+(reviewFilter==='flagged'?'is-active':'')}
+                      onClick={()=>setReviewFilter('flagged')}>Review ({reviewCount})</button>
+                    <button className={'minimal-text-button '+(reviewFilter==='all'?'is-active':'')}
+                      onClick={()=>setReviewFilter('all')}>All 50</button>
                   </div>
-                  <div className="review-filter-bar" role="group" aria-label="Filter reviewed answers">
-                    <button type="button" aria-pressed={reviewFilter === 'flagged'}
-                      className={`review-filter-btn ${reviewFilter === 'flagged' ? 'active' : ''}`}
-                      onClick={() => setReviewFilter('flagged')}>
-                      <i className="bi bi-flag me-1" /> Needs review ({reviewCount})
-                    </button>
-                    <button type="button" aria-pressed={reviewFilter === 'all'}
-                      className={`review-filter-btn ${reviewFilter === 'all' ? 'active' : ''}`}
-                      onClick={() => setReviewFilter('all')}>
-                      <i className="bi bi-grid-3x3-gap me-1" /> All questions ({scanResult.answers.length})
+                </div>
+                {visibleAnswers.length===0
+                  ? <p className="minimal-empty">{verified?'Nothing needs review.':'No answers available.'}</p>
+                  : <div className="table-responsive">
+                    <table className="table table-sm minimal-answer-table">
+                      <thead><tr><th>Q</th><th>Read</th><th>Flag</th><th>Correction</th></tr></thead>
+                      <tbody>{visibleAnswers.map(answer=>
+                        <tr key={answer.question}>
+                          <td>{String(answer.question).padStart(2,'0')}</td>
+                          <td><strong>{answer.detectedAnswer||'—'}</strong></td>
+                          <td>{answer.isManuallyEdited?'Edited':answer.status}</td>
+                          <td><div className="minimal-choice-row">
+                            {(['A','B','C','D'] as AnswerOption[]).map(opt=>
+                              <button key={opt} className={answer.detectedAnswer===opt?'chosen':''}
+                                aria-label={'Set Q'+answer.question+' to '+opt}
+                                onClick={()=>updateAnswer(answer.question,opt)}>{opt}</button>
+                            )}
+                            <button className={!answer.detectedAnswer?'chosen':''}
+                              aria-label={'Mark Q'+answer.question+' blank'}
+                              onClick={()=>updateAnswer(answer.question,null)}>—</button>
+                          </div></td>
+                        </tr>
+                      )}</tbody>
+                    </table>
+                  </div>}
+              </>
+            )}
+            {activeTab==='llm'&&(
+              <>
+                <div className="minimal-tab-tools">
+                  <div className="minimal-actions">
+                    <button className={'minimal-text-button '+(!showTechnicalReport?'is-active':'')}
+                      onClick={()=>setShowTechnicalReport(false)}>Compact</button>
+                    <button className={'minimal-text-button '+(showTechnicalReport?'is-active':'')}
+                      onClick={()=>setShowTechnicalReport(true)}>Full diagnostic</button>
+                  </div>
+                  <div className="minimal-actions">
+                    <button className="minimal-text-button" onClick={saveReport}>Download .txt</button>
+                    <button className="btn btn-dark btn-sm"
+                      onClick={showTechnicalReport?handleCopyLLMReport:handleCopyBetaReport}>
+                      <i className="bi bi-clipboard me-1"/>Copy report
                     </button>
                   </div>
-                  {!hasAnswers ? (
-                    <div className="review-empty-state">No answers could be processed.</div>
-                  ) : reviewFilter === 'flagged' && reviewCount === 0 ? (
-                    <div className="review-empty-state">
-                      <i className="bi bi-check-circle-fill" aria-hidden="true" />
-                      <strong>No questions need review</strong>
-                      <span>Every question is resolved. Check the full sheet if you want to double-check.</span>
-                      <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => setReviewFilter('all')}>View all answers</button>
-                    </div>
-                  ) : (
-                    <div className="table-responsive answer-grid-table">
-                      <table className="table review-answer-table mb-0">
-                        <thead><tr><th scope="col">Question</th><th scope="col">Reading</th><th scope="col">Status</th><th scope="col">Confidence</th><th scope="col">Confirm or change answer</th></tr></thead>
-                        <tbody>
-                          {visibleAnswers.map(answer => {
-                            const flagged = needsReview(answer);
-                            return (
-                              <tr key={answer.question} className={flagged ? 'review-answer-flagged' : 'review-answer-resolved'}>
-                                <th scope="row" className="review-question-number">Q{String(answer.question).padStart(2,'0')}</th>
-                                <td className="review-current-answer">{answer.detectedAnswer || '—'}</td>
-                                <td><span className={`review-status-pill ${answer.status}`}>
-                                  {flagged && <i className="bi bi-exclamation-circle me-1" />}
-                                  {answer.isManuallyEdited ? 'Confirmed' : answer.status}
-                                </span></td>
-                                <td className="review-confidence">{answer.confidence.toFixed(0)}%</td>
-                                <td>
-                                  <div className="review-answer-actions" role="group" aria-label={`Set answer for question ${answer.question}`}>
-                                    {(['A','B','C','D'] as AnswerOption[]).map(opt => (
-                                      <button key={opt} type="button"
-                                        aria-label={`Question ${answer.question}: set ${opt}`}
-                                        aria-pressed={answer.detectedAnswer === opt}
-                                        className={`review-choice ${answer.detectedAnswer === opt ? 'selected' : ''}`}
-                                        onClick={() => updateAnswer(answer.question,opt)}>{opt}</button>
-                                    ))}
-                                    <button type="button" aria-label={`Question ${answer.question}: mark blank`}
-                                      aria-pressed={answer.status === 'blank'}
-                                      className={`review-choice review-blank-choice ${answer.status === 'blank' ? 'selected' : ''}`}
-                                      onClick={() => updateAnswer(answer.question,null)}>Blank</button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  <p className="review-help-text"><i className="bi bi-info-circle me-1" />
-                    A tick, slash, dot, crescent or incomplete fill is blank under SFG rules. Only uncertain, multiple or error readings require review.
-                    Changes are saved in this scan.
-                  </p>
-                </section>
-              )}
-
-              {/* Tab 4: LLM Prompt Format */}
-              {activeTab === 'llm' && (
-                <div>
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <span className="small text-muted">
-                      {showTechnicalReport ? 'Complete detailed report (larger):' : 'Compact report (low tokens) — send with your OMR photo:'}
-                    </span>
-                    <div className="d-flex gap-2 flex-wrap">
-                      <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowTechnicalReport(v => !v)}>
-                        {showTechnicalReport ? 'Compact preview' : 'Full technical preview'}
-                      </button>
-                      <button className="btn btn-sm btn-primary" onClick={showTechnicalReport ? handleCopyLLMReport : handleCopyBetaReport}>
-                        <i className="bi bi-clipboard me-1"/>{llmCopied ? 'Copied!' : showTechnicalReport ? 'Copy full diagnostic' : 'Copy compact report'}
-                      </button>
-                    </div>
-                  </div>
-                  <textarea
-                    className="form-control font-monospace small bg-light"
-                    rows={12}
-                    readOnly
-                    value={showTechnicalReport ? llmReportPreview : betaReportPreview}
-                    onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                    style={{ fontSize: '0.75rem', lineHeight: '1.3' }}
-                  />
                 </div>
-              )}
-            </div>
+                {copyFailed&&<p role="alert" className="text-danger small">Clipboard unavailable. Select and copy the text below.</p>}
+                {llmCopied&&<p className="text-success small">Report copied.</p>}
+                <textarea aria-label="Diagnostic report" className="minimal-report"
+                  readOnly value={diagnostic} onClick={e=>e.currentTarget.select()} rows={17}/>
+                <p className="minimal-footnote">Attach the original photo for investigation. Redact personal details before sharing.</p>
+              </>
+            )}
           </div>
-
-          {/* Submission bar */}
-          {hasAnswers && (
-            <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-              <button className="btn btn-success btn-lg" onClick={handleSubmit} disabled={!practice.activeTest || scanResult.overallStatus === 'failed'}>
-                <i className="bi bi-check-circle me-2" />Submit & Score
-              </button>
-              {scanResult.overallStatus === 'failed' && <span className="text-danger small">Scan validation failed — rescan before scoring.</span>}
-              {!practice.activeTest && (
-                <span className="text-danger small">
-                  <i className="bi bi-info-circle me-1" />
-                  No test needed to inspect a scan. Create a practice test only if you want scoring.
-                </span>
-              )}
+          {verified && practice.activeTest&&(
+            <div className="minimal-submit">
+              <button className="btn btn-dark" onClick={handleSubmit}>Submit &amp; score</button>
+              {submitError && <span className="text-danger small">{submitError}</span>}
             </div>
           )}
-
-          {submitError && <div className="alert alert-danger">{submitError}</div>}
-
-          {/* Diagnostic Log Box if any warning/error or missing answers */}
-          {hasErrorsOrWarnings && (
-            <div className="mt-3">
-              <ErrorLogBox
-                title="Diagnostic Report (Copy & Send)"
-                errorMessage={scanResult.errors.join('; ') || (hasAnswers ? null : 'Answers could not be extracted')}
-                scanResult={scanResult}
-                file={capturedFile}
-              />
-            </div>
-          )}
-        </div>
+        </section>
       )}
+      <footer className="minimal-page-footer">
+        On-device processing · {APP_DEPLOY_LABEL} · {APP_BUILD_META.buildId}
+      </footer>
     </div>
   );
 }

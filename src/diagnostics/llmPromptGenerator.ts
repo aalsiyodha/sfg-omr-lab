@@ -21,7 +21,7 @@ export function generateLLMDiagnosticPrompt({
   scanResult, file, activeTestId, answerKey,
 }: LLMReportOptions): string {
   const lines: string[] = [
-    '# SFG OMR LAB — v2.3.31 LOCAL OPENCV RECOVERY diagnostic',
+    '# SFG OMR LAB — v2.3.4 FAST LOCAL SCANNER diagnostic',
     getBuildIdentity(),
     'Generated=' + new Date().toISOString(),
     'File=' + (file?.name ?? 'camera/unknown') +
@@ -104,8 +104,15 @@ export function generateLLMDiagnosticPrompt({
   const logs = scanResult.stageLogs ?? [];
   const significant = logs.filter(l =>
     l.level==='ERROR' || l.level==='WARNING' ||
-    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate/i.test(l.message));
-  lines.push('Important stage logs ('+significant.length+'/'+logs.length+'):');
+    /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|boundary|recovery|performance/i.test(l.message));
+  // Keep one compact, machine-parsable performance and registration summary.
+  const performance=logs.filter(l=>/Registration performance summary|Outer-page rescue timing|Scan complete in/i.test(l.message));
+  const recovery=logs.filter(l=>/timing-track recovery evidence|timing-track holdout validation|Outer-page boundary recovery evidence|Outer-page fiducial redetection/i.test(l.message));
+  lines.push('Registration & performance milestones ('+(performance.length+recovery.length)+'):');
+  const summarize=(l:typeof logs[number])=>
+    '['+l.level+'/'+l.stage+'] '+l.message+(l.data?' '+JSON.stringify(l.data):'');
+  for(const l of [...recovery,...performance])lines.push(summarize(l));
+    lines.push('Important stage logs ('+significant.length+'/'+logs.length+'):');
   if (!significant.length) lines.push('None.');
   const redact=(s:string)=>s
     .replace(/SFGOMR1:[^\s"'|,}]+/gi,'[REDACTED_QR]')

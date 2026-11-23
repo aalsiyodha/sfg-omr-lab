@@ -1,0 +1,59 @@
+/* v2.3.4 — functional, restrained scanner and diagnostics layout. */
+:root{--minimal-bg:#fafbfc;--minimal-surface:#fff;--minimal-text:#17212c;--minimal-muted:#697586;--minimal-line:#e4e8ed}
+html[data-theme="dark"]{--minimal-bg:#111820;--minimal-surface:#19222c;--minimal-text:#f2f5f7;--minimal-muted:#aab5c0;--minimal-line:#33414e}
+body{background:var(--minimal-bg)!important;color:var(--minimal-text)}
+.minimal-nav{height:58px;background:var(--minimal-surface);border-bottom:1px solid var(--minimal-line);display:flex;align-items:center;justify-content:space-between;padding:0 max(20px,calc((100vw - 1080px)/2));gap:20px}
+.minimal-nav-brand{font-weight:750;letter-spacing:-.04em;font-size:19px;color:var(--minimal-text);text-decoration:none;white-space:nowrap}
+.minimal-nav-brand span{font-weight:450;margin-left:4px}
+.minimal-nav-links{display:flex;align-items:center;gap:20px}
+.minimal-nav-links a,.minimal-theme-switch{font-size:13px;color:var(--minimal-muted);text-decoration:none;border:0;background:none;padding:4px}
+.minimal-nav-links a.active{color:var(--minimal-text);font-weight:650}
+.minimal-theme-switch{font-size:16px}
+.minimal-app-main{padding-top:24px!important}
+.minimal-scan{max-width:910px;margin:0 auto;color:var(--minimal-text)}
+.minimal-scan-heading,.minimal-result-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:24px}
+.minimal-kicker{font-size:11px;font-weight:700;color:var(--minimal-muted);letter-spacing:.1em}
+.minimal-scan-heading h1{font-size:clamp(27px,5vw,36px);font-weight:730;letter-spacing:-.055em;margin:5px 0 0}
+.minimal-build{font-size:11px;color:var(--minimal-muted);margin-top:7px;max-width:230px;text-align:right}
+.minimal-upload,.minimal-results{border:1px solid var(--minimal-line);border-radius:15px;background:var(--minimal-surface);padding:24px}
+.minimal-upload-buttons,.minimal-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.minimal-upload-buttons .btn{min-height:41px}
+.minimal-upload .minimal-camera{max-width:550px;margin-top:24px}
+.minimal-selected{border-top:1px solid var(--minimal-line);display:flex;gap:18px;margin-top:23px;padding-top:22px}
+.minimal-selected img{max-width:135px;max-height:180px;object-fit:contain;border:1px solid var(--minimal-line);border-radius:8px;background:#f7f7f7}
+.minimal-selected-details{display:flex;flex-direction:column;gap:10px;align-items:flex-start;min-width:0}
+.minimal-filename{font-size:14px;overflow-wrap:anywhere}
+.minimal-progress{padding-top:20px;font-size:12px;color:var(--minimal-muted);display:grid;gap:9px}
+.minimal-status{display:inline-block;font-size:11px;letter-spacing:.025em;font-weight:700;padding:4px 9px;border-radius:5px;background:#eef0f3;color:#535d67}
+.minimal-status.is-good{background:#e7f4ea;color:#256e46}
+.minimal-status.is-bad{background:#fff0ef;color:#a83434}
+.minimal-result-top h2{font-size:25px;font-weight:720;letter-spacing:-.04em;margin:9px 0 3px}
+.minimal-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--minimal-line);border-radius:10px;overflow:hidden;margin-bottom:22px}
+.minimal-stat-grid>div{display:flex;flex-direction:column;gap:5px;padding:18px 20px;border-right:1px solid var(--minimal-line)}
+.minimal-stat-grid>div:last-child{border-right:0}
+.minimal-stat-grid strong{font-size:26px;letter-spacing:-.05em;font-weight:690}
+.minimal-stat-grid small{font-size:13px;font-weight:450;color:var(--minimal-muted);letter-spacing:0}
+.minimal-stat-grid span{font-size:11px;color:var(--minimal-muted)}
+.minimal-tabs{display:flex;gap:22px;align-items:center;border-bottom:1px solid var(--minimal-line);overflow-x:auto;margin-top:24px}
+.minimal-tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:0 0 12px;font-size:13px;color:var(--minimal-muted);white-space:nowrap}
+.minimal-tabs button.is-active{border-color:var(--minimal-text);color:var(--minimal-text);font-weight:700}
+.minimal-tab-panel{padding-top:18px}
+.minimal-tab-tools{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;color:var(--minimal-muted);font-size:12px;margin-bottom:13px}
+.minimal-text-button{color:var(--minimal-muted);background:none;border:0;padding:5px 7px;font-size:12px}
+.minimal-text-button:hover,.minimal-text-button.is-active{color:var(--minimal-text);font-weight:700}
+.minimal-inspection-image{display:block;width:auto;max-width:100%;height:auto;max-height:75vh;object-fit:contain;margin:0 auto;border-radius:6px;border:1px solid var(--minimal-line)}
+.minimal-empty{padding:36px 12px;text-align:center;color:var(--minimal-muted);font-size:13px}
+.minimal-answer-table{font-size:12px;vertical-align:middle;color:var(--minimal-text)}
+.minimal-answer-table th{font-weight:600;color:var(--minimal-muted)}
+.minimal-choice-row{display:flex;gap:4px}
+.minimal-choice-row button{min-width:29px;height:28px;border-radius:5px;border:1px solid var(--minimal-line);background:var(--minimal-surface);color:var(--minimal-text);font-size:12px}
+.minimal-choice-row button.chosen{background:var(--minimal-text);border-color:var(--minimal-text);color:var(--minimal-surface)}
+.minimal-report{display:block;width:100%;border:1px solid var(--minimal-line);border-radius:8px;padding:14px;font:11px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--minimal-text);background:var(--minimal-bg);resize:vertical}
+.minimal-footnote,.minimal-page-footer{color:var(--minimal-muted);font-size:11px;margin-top:16px}
+.minimal-page-footer{text-align:center;margin:21px 0}
+.minimal-submit{border-top:1px solid var(--minimal-line);padding-top:17px;margin-top:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.minimal-notice{border:1px solid var(--minimal-line);border-radius:8px;padding:12px 15px;color:var(--minimal-muted);font-size:13px;margin:14px 0;background:var(--minimal-bg)}
+.minimal-notice.is-error{color:#a83434}
+html[data-theme="dark"] .minimal-status.is-good{background:#173528;color:#99dfbb}
+html[data-theme="dark"] .minimal-status.is-bad{background:#3b2323;color:#ffb4b4}
+@media(max-width:640px){.minimal-nav{padding:0 16px}.minimal-nav-links{gap:13px}.minimal-app-main{padding:13px!important}.minimal-upload,.minimal-results{padding:15px}.minimal-stat-grid>div{padding:13px 9px}.minimal-stat-grid strong{font-size:21px}.minimal-scan-heading{margin-top:9px}.minimal-build{font-size:10px;max-width:130px}.minimal-tabs{gap:15px}.minimal-selected img{max-width:92px}.minimal-result-top h2{font-size:22px}}

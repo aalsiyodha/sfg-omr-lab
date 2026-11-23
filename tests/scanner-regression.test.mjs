@@ -1407,16 +1407,15 @@ test('OMR 2.1 PDF generator uses new ArUco markers and seven-tone calibration',(
   assert.ok(source.includes('arucoBits'));
 });
 
-test('mobile UX: theme toggle stays outside collapsed navigation and persists selection',()=>{
+test('mobile UX: minimal navigation keeps accessible light/dark toggle',()=>{
   const app=readFileSync('src/App.tsx','utf8');
-  const head=app.indexOf('className="product-header-controls"');
-  const collapse=app.indexOf('className="collapse navbar-collapse"');
-  assert.ok(head>0 && collapse>head);
-  assert.equal((app.match(/className="product-theme-toggle"/g)||[]).length,1);
+  assert.ok(app.includes('className="minimal-nav"'));
+  assert.equal((app.match(/className="minimal-theme-switch"/g)||[]).length,1);
   assert.ok(app.includes("localStorage.setItem('sfg-omr-theme', theme)"));
-  assert.ok(app.includes("aria-label={theme === 'dark'"));
-  const styles=readFileSync('src/index.css','utf8');
-  assert.ok(styles.includes('.product-header-controls .product-theme-toggle{width:auto'));
+  assert.ok(app.includes('aria-label={theme==='));
+  const styles=readFileSync('src/minimal.css','utf8');
+  assert.ok(styles.includes('@media(max-width:640px)'));
+  assert.ok(styles.includes('.minimal-theme-switch'));
 });
 test('onboarding UX: printable sheet and photo guidance remain clear',()=>{
   const home=readFileSync('src/pages/HomePage.tsx','utf8');
@@ -1444,8 +1443,10 @@ test('single-tap diagnostics have compact and full exports and redaction',()=>{
   assert.ok(llm.includes('const samples=suspect.slice(0,12)'));
   assert.ok(llm.includes('All-four-bubbles near 100%'));
   const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
-  assert.ok(scan.includes('Copy compact LLM report'));
-  assert.ok(scan.includes('Copy full diagnostic'));
+  assert.ok(scan.includes('handleCopyBetaReport'));
+  assert.ok(scan.includes('setShowTechnicalReport(false)'));
+  assert.ok(scan.includes('handleCopyLLMReport'));
+  assert.ok(scan.includes('Download .txt'));
   const err=readFileSync('src/components/ErrorLogBox.tsx','utf8');
   assert.ok(!err.includes('scanResult.qrRaw ||'));
   assert.ok(err.includes('File Name: ${file.name}'));
@@ -1461,7 +1462,7 @@ test('diagnostics keep filenames and remove repetitive full-report instructions'
   assert.equal(source.includes('## 8. Instructions for the LLM'),false);
   assert.equal(source.includes('Top | 2nd | Gap | Baseline'),false);
   const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
-  assert.ok(scan.includes('scanResult, file: capturedFile, activeTestId'));
+  assert.ok(scan.includes('file:capturedFile,activeTestId'));
 });
 
 
@@ -1493,12 +1494,15 @@ test('v2.2.5: policy-rejected partial marks are unanswered without penalty', () 
 });
 
 
-test('LITE: only QR-valid 50/50 with two complete timing bands exits early', () => {
+test('v2.3.4: QR-verified near-perfect dual-band geometry exits early', () => {
   const { canStopRegistrationSearch } = loadTS('src/scanner/litePolicy.ts');
   assert.equal(canStopRegistrationSearch(true,50,25,25),true);
   assert.equal(canStopRegistrationSearch(false,50,25,25),false);
-  assert.equal(canStopRegistrationSearch(true,49,25,24),false);
+  assert.equal(canStopRegistrationSearch(true,49,25,24),true);
   assert.equal(canStopRegistrationSearch(true,47,25,22),false);
+  assert.equal(canStopRegistrationSearch(true,48,25,23),true);
+  assert.equal(canStopRegistrationSearch(true,48,26,22),false);
+  assert.equal(canStopRegistrationSearch(true,48,22,26),false);
   assert.equal(canStopRegistrationSearch(true,50,24,26),false);
 });
 
@@ -1612,4 +1616,43 @@ test('v2.3.31: abrupt or excessive deformations are rejected rather than fitted'
   assert.equal(mod.isPlausibleDrift(abrupt,53,26),false);
   const huge=good.map(x=>({...x,dy:x.dy+50}));
   assert.equal(mod.isPlausibleDrift(huge,53,26),false);
+});
+
+test('v2.3.4: outer paper outline rejects degenerate and non-convex polygons',()=>{
+  const mod=loadTS('src/scanner/pageBoundaryRecovery.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}},mmToPx:x=>x},
+    '../config/scannerSettings':{getSettings:()=>({scanDpi:150})}
+  });
+  const good=[{x:150,y:130},{x:770,y:120},{x:850,y:1200},{x:120,y:1200}];
+  assert.equal(mod.plausiblePageBoundary(good,1000,1400),true);
+  const degenerate=[{x:150,y:130},{x:770,y:120},{x:850,y:125},{x:120,y:1200}];
+  assert.equal(mod.plausiblePageBoundary(degenerate,1000,1400),false);
+  const tooSmall=[{x:350,y:420},{x:470,y:420},{x:470,y:560},{x:350,y:560}];
+  assert.equal(mod.plausiblePageBoundary(tooSmall,1000,1400),false);
+});
+
+test('v2.3.4: page-boundary recovery only runs after QR/timing-based registration fails',()=>{
+  const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  const boundary=readFileSync('src/scanner/pageBoundaryRecovery.ts','utf8');
+  assert.ok(scanner.includes('if(!selected){'));
+  assert.ok(scanner.includes('recoverPaperBoundary(loaded.canvas'));
+  assert.ok(scanner.includes('detectArucoMarkers(rescueGray,rescueThreshold)'));
+  assert.ok(scanner.includes('detectMidpointMarkers(rescueThreshold'));
+  assert.ok(scanner.includes('detectMarkers(rescueThreshold'));
+  assert.ok(scanner.includes('evaluateHypothesis(rough.canvas,hypothesis,dpi,curveBudget)'));
+  assert.ok(scanner.includes('Registration performance summary'));
+  assert.ok(boundary.includes("no-plausible-outer-page-quadrilateral"));
+  assert.ok(scanner.includes('meshQR.valid && meshQR.raw===qr.raw'));
+});
+
+test('v2.3.4: minimum UI keeps actionable diagnostics without redundant copy',()=>{
+  const scan=readFileSync('src/pages/ScanPage.tsx','utf8');
+  const app=readFileSync('src/App.tsx','utf8');
+  assert.ok(scan.includes('Full diagnostic'));
+  assert.ok(scan.includes('Save overlay'));
+  assert.ok(scan.includes('Save markers'));
+  assert.ok(scan.includes('Download .txt'));
+  assert.ok(scan.includes('New scan'));
+  assert.ok(app.includes('<Navigate to="/scan" replace />'));
+  assert.ok(!scan.includes('PORT 5175'));
 });
