@@ -35,12 +35,13 @@ export function buildCompareReport(params:{
    lines.push([e.id,e.kind,r.outcome,r.elapsedMs,
      r.qrValid===null?'n/a':r.qrValid?'valid':'invalid',
      r.timing===null?'n/a':r.timing+'/50',
-     r.kind==='detector'?'n/a':r.kind==='bubble'?
+     r.kind==='detector'?'n/a':r.kind==='bubble'||r.kind==='landmark'?
        r.answers.length+' experimental rows / 0 verified':r.answers.length+'/50',
      round(r.confidence,4)].join(' | '));
  }
  const fail=results.filter(r=>r.outcome!=='verified');
  lines.push('Primary findings:');
+ lines.push('Local-grid experiments have no QR/identity verification, even when they sample 50 rows.');
  if(!results.length)lines.push('  No results generated.');
  for(const r of fail)lines.push('  '+r.id+': '+r.outcome+' — '+r.reason);
  const scanners=results.filter(r=>r.kind==='scanner'&&r.answers.length===50);
@@ -96,6 +97,7 @@ export function buildCompareReport(params:{
      ' right='+(r.timingRight??'n/a')+' | QR='+(r.qrValid??'n/a'));
    if(mode==='full'){
      lines.push(r.kind==='bubble'?'Experimental AI estimates (not optical answers): '+JSON.stringify(r.answers):
+       r.kind==='landmark'?'UNVERIFIED optical local-grid estimates (not graded): '+JSON.stringify(r.answers):
        'Answers: '+JSON.stringify(r.answers));
      lines.push('Full stage logs ('+r.traces.length+'):');
      for(const log of r.traces)lines.push('  '+log.stage+' '+log.message+
