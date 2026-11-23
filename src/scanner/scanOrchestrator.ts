@@ -169,9 +169,11 @@ function evaluateHypothesis(
       logger.info('perspective',`${hypothesis.name}: Lite gentle-curve trial`,{
         timingBefore:check.matched, left:check.leftMatched, right:check.rightMatched,
         trialsRemaining:curveBudget.remaining});
-      const mesh = correctMildPageWarp(persp.corrected, dpi);
+      const mesh = correctMildPageWarp(persp.corrected, dpi, evidence=>{
+        logger.info('perspective',`${hypothesis.name}: OpenCV timing-track recovery evidence`,evidence);
+      });
       if (!mesh) {
-        logger.info('perspective',`${hypothesis.name}: gentle-curve control points insufficient or implausible`);
+        logger.info('perspective',`${hypothesis.name}: OpenCV timing-track warp not generated`);
       } else {
         let meshGray:any=null;
         let adopted=false;
@@ -187,7 +189,7 @@ function evaluateHypothesis(
             cv.cvtColor(mesh.corrected,meshGray,cv.COLOR_RGBA2GRAY);
             const after=verifyTimingMarks(meshGray,dpi);
             const holdout=countHeldOutTimingMarks(meshGray,dpi);
-            logger.info('perspective',`${hypothesis.name}: Lite gentle-curve validation`,{
+            logger.info('perspective',`${hypothesis.name}: OpenCV timing-track holdout validation`,{
               before:check.matched,after:after.matched,
               left:after.leftMatched,right:after.rightMatched,
               withheldEvenRows:holdout,
