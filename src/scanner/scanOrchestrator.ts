@@ -22,7 +22,7 @@ import { reconcileToneAnswers } from './toneConsensus';
 import type { PerspectiveResult } from './perspectiveCorrection';
 import { decodeQRFromRegion, locateQRInPhoto } from './qrDecoder';
 import { detectAllAnswers, detectTestId, computeAdaptiveDarkThreshold } from './bubbleDetector';
-import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
+import { measureGrayCalibration, grayStripInkCeiling, investigateGrayStrip } from './grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import { rescueTestIdOffset } from './testIdAlignment';
 import { validateScanResult } from './scanValidator';
