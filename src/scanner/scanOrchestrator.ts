@@ -434,11 +434,14 @@ export async function runFullScan(
           reason:evidence.reason,candidates:evidence.candidates,
           contourAreaRatio:evidence.contourAreaRatio,
           rejectedBorder:evidence.rejectedBorder,
+          rejectedImageCorner:evidence.rejectedImageCorner,
           rejectedGeometry:evidence.rejectedGeometry,
+          candidateSummary:evidence.candidateSummary,
           thresholdsTried:evidence.thresholdsTried,
           method:evidence.method,
           quadrilateral:evidence.quadrilateral});
       });
+      if(!rough)logger.warning('perspective','Outer-page rescue produced no plausible sheet candidate');
       if(rough){
         let rescueGray:any=null,rescueBlur:any=null,rescueThreshold:any=null;
         try{
@@ -492,6 +495,11 @@ export async function runFullScan(
           logger.warning('perspective','Outer-page recovery aborted',{reason:String(error)});
         }finally{cleanupMats(rescueGray,rescueBlur,rescueThreshold);}
       }
+      if(!selected)logger.warning('perspective','Recovery conclusion: no QR-and-timing-verified registration',{
+        normalHypotheses:hypotheses.map(h=>h.name),
+        attemptedWarps:warpAttempts,
+        nextStep:'Check that all four page corners and the printed QR are visible; photograph the full sheet with even lighting.'
+      });
       logger.info('perspective','Outer-page rescue timing',{
         durationMs:Date.now()-boundaryStart,verified:Boolean(selected)});
     }
