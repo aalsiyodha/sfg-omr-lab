@@ -41,7 +41,7 @@ export function fitMaskedLatentPredictor(
       m.localPaperBrightness!==undefined&&m.inkThreshold!==undefined)
       blank.set(row.question+':'+m.option,m);
   const examples:Example[]=[];
-  for(const [key,target] of blank){
+  for(const target of blank.values()){
     const question=target.question,option=target.option;
     const nearby:V[]=[];
     for(const dq of [-1,1]){
