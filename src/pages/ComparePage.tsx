@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {APP_BUILD_META} from '../config/version';
 import {ENGINES,runEngine,imageSha256} from '../comparison/engines';
+import {cornersNormalized} from '../comparison/engines';
 import type {EngineId,EngineResult,Point} from '../comparison/engines';
 import {buildCompareReport,downloadJson,downloadText} from '../comparison/reports';
 import type {ReportMode} from '../comparison/reports';
@@ -43,8 +44,9 @@ export default function ComparePage(){
  const ordered=ENGINES.filter(e=>selected.includes(e.id));
  const report=useMemo(()=>buildCompareReport({fileName:file?.name||'unselected',
    fileBytes:file?.size||0,hash:hash||'pending',selected:ordered,results,mode:reportMode,
-   reference:referenceConfirmed&&reference.length===4?reference:undefined}),
- [file,hash,ordered.map(e=>e.id).join(','),results,reportMode,reference,referenceConfirmed]);
+   reference:referenceConfirmed&&reference.length===4?reference:undefined,
+   referenceSpace:dimensions?{width:dimensions.w,height:dimensions.h}:undefined}),
+ [file,hash,ordered.map(e=>e.id).join(','),results,reportMode,reference,referenceConfirmed,dimensions]);
  const resetFile=(f:File|null)=>{
    if(busy)return;
    setFile(f);setResults([]);setError('');setTab('results');
@@ -73,7 +75,11 @@ export default function ComparePage(){
  };
  const valid=results.filter(r=>r.outcome==='verified').length;
  const provisional=results.filter(r=>r.outcome==='provisional').length;
- const corners=results.filter(r=>r.corners.length===4);
+ const corners=results.filter(r=>r.kind!=='bubble'&&cornersNormalized(r)!==null);
+ const imageCorners=(r:EngineResult)=>{
+   const normalized=cornersNormalized(r);
+   return normalized&&dimensions?normalized.map(p=>({x:p.x*dimensions.w,y:p.y*dimensions.h})):[];
+ };
  const resultById=(id:EngineId)=>results.find(x=>x.id===id);
  return <div className="compare-page">
    <div className="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
@@ -157,7 +163,7 @@ export default function ComparePage(){
                <td><strong>{e.name}</strong></td><td>{e.kind==='scanner'?'Scanner':e.kind==='detector'?'AI corners':'Bubble AI'}</td>
                <td>{r?word(r.outcome):'Not run'}</td><td>{r?(r.elapsedMs/1000).toFixed(2)+'s':'—'}</td>
                <td>{r?.timing===null||!r?'—':r.timing+'/50'}</td>
-               <td>{r?(e.kind==='detector'?'—':r.answers.length+'/50'):'—'}</td>
+               <td>{r?(e.kind==='detector'?'—':e.kind==='bubble'?r.answers.length+' experimental':' '+r.answers.length+'/50'):'—'}</td>
                <td>{r?.confidence!=null?r.confidence.toFixed(4):'—'}</td>
              </tr>})}</tbody>
          </table></div>
@@ -208,8 +214,8 @@ export default function ComparePage(){
                strokeDasharray="13,8" points={reference.map(p=>p.x+','+p.y).join(' ')}/>}
              {showAllCorners&&corners.map((r,i)=><g key={r.id}>
                <polygon fill="none" stroke={overlayColors[i%overlayColors.length]} strokeWidth={Math.max(3,dimensions.w/300)}
-                 points={r.corners.map(p=>p.x+','+p.y).join(' ')}/>
-               {r.corners.map((p,j)=><g key={j}>
+                 points={imageCorners(r).map(p=>p.x+','+p.y).join(' ')}/>
+               {imageCorners(r).map((p,j)=><g key={j}>
                  <circle cx={p.x} cy={p.y} r={Math.max(5,dimensions.w/140)}
                    fill={overlayColors[i%overlayColors.length]} stroke="white" strokeWidth="2"/>
                </g>)}
@@ -224,7 +230,7 @@ export default function ComparePage(){
          {referenceConfirmed&&reference.length===4&&<div className="border rounded p-3 my-3">
            <strong>Mean corner error against your verified reference</strong>
            {corners.map(r=><div className="small mt-1" key={r.id}>{r.name}: {
-             (r.corners.reduce((sum,p,i)=>sum+Math.hypot(p.x-reference[i].x,p.y-reference[i].y),0)/4).toFixed(1)
+             (imageCorners(r).reduce((sum,p,i)=>sum+Math.hypot(p.x-reference[i].x,p.y-reference[i].y),0)/4).toFixed(1)
            } px</div>)}
          </div>}
          <p className="small text-secondary mt-2">AI proposals are not ground truth. Use the manual reference only after confirming real paper corners.</p>
