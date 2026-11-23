@@ -883,6 +883,13 @@ export async function runFullScan(
 
       grayCalibration = measureGrayCalibration(chosen.gray, dpi);
       finishStage('calibrationAndOverlay');
+      if(grayCalibration.status!=='ok'){
+        const investigation=investigateGrayStrip(chosen.gray,dpi);
+        logger.info('bubbleDetection','Grayscale strip geometry diagnostic (no scoring effect)',{
+          ...investigation,selectedRegistration:registrationMethod,
+          note:'Offset hypotheses are diagnostic only; never used to relax calibration or grading.'
+        });
+      }
       const inkCeiling = grayStripInkCeiling(grayCalibration);
       logger.info('bubbleDetection', 'Grayscale reference strip calibration', {
         status:grayCalibration.status,
