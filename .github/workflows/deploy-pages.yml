@@ -66,17 +66,18 @@ jobs:
           repository: marquaye/scanic
           ref: 480193b724fd2f2ad523a1cc279a3c65ce37dc2c
           path: scanic-source
-      - name: Install Scanic dependencies
-        run: npm ci
-        working-directory: scanic-source
-      - name: Build Scanic lazy ESM runtime
-        run: npm run build
-        working-directory: scanic-source
+      - name: Fetch pinned published Scanic ESM build
+        run: |
+          set -euo pipefail
+          mkdir -p scanic-published
+          npm pack scanic@1.8.0 --pack-destination scanic-published
+          tar -xzf scanic-published/scanic-1.8.0.tgz -C scanic-published
+          test -s scanic-published/package/dist/scanic.js
       - name: Bundle Scanic model and runtime in GitHub Pages
         run: |
           set -euo pipefail
           mkdir -p dist/ai-runtime dist/ai-model/scanic
-          cp scanic-source/dist/scanic*.js dist/ai-runtime/
+          cp scanic-published/package/dist/scanic*.js dist/ai-runtime/
           cp scanic-source/scanic-ml/dist/doccornernet_lean.ort dist/ai-model/scanic/
           cp scanic-source/scanic-ml/dist/ort-wasm-simd-threaded.* dist/ai-model/scanic/
           test -s dist/ai-runtime/scanic.js
