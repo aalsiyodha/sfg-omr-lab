@@ -600,13 +600,19 @@ export async function runFullScan(
     if(!selected){
       const aiStart=Date.now();
       let aiAttempted=0;
+      let aiStatus='not-started';
+      let aiRejections:{method:string;reason:string}[]=[];
       try{
         onProgress?.({stage:'Last resort: detecting page corners with local AI…',percent:52});
-        const ai=await recoverPageWithAI(loaded.canvas);
+        const ai=await recoverPageWithAI(loaded.canvas,(event,data)=>{
+          logger.info('perspective','AI trace: '+event,data);
+        });
+        aiStatus=ai?'page-detected':'page-not-detected';
         logger.info('perspective','AI document boundary recovery',{
           model:'DocAligner LCNet-100',invoked:true,
           found:Boolean(ai),confidence:ai?.confidence??null,
-          corners:ai?.corners??[],durationMs:Date.now()-aiStart
+          corners:ai?.corners??[],cornerConfidence:ai?.cornerConfidence??{},
+          modelStageTimings:ai?.timings??[],durationMs:Date.now()-aiStart
         });
         if(ai){
           const processed=preprocessImage(ai.canvas);
@@ -629,11 +635,25 @@ export async function runFullScan(
                 midpointCount:midpoint.count,arucoIds:Object.keys(aruco.points),
                 candidates:candidateList.map(h=>h.name)
               });
+              if(candidateList.length===0){
+                aiRejections.push({method:'ai-boundary/'+variant.name,reason:'no-complete-fiducials'});
+              }
               for(const hypothesis of candidateList){
                 aiAttempted++;warpAttempts++;
+                const attemptStart=Date.now();
                 const evaluated=evaluateHypothesis(ai.canvas,hypothesis,dpi,curveBudget);
-                if(!evaluated)continue;
+                logger.info('perspective','AI candidate verification result',{
+                  method:hypothesis.name,accepted:Boolean(evaluated),
+                  reason:evaluated?'qr-and-timing-verified':'qr-or-timing-rejected-see-stage-logs',
+                  durationMs:Date.now()-attemptStart,
+                  timing:evaluated?.check.matched??0,
+                  left:evaluated?.check.leftMatched??0,right:evaluated?.check.rightMatched??0,
+                  qrValid:evaluated?.qr.valid??false
+                });
+                if(!evaluated){aiRejections.push({method:hypothesis.name,
+                  reason:'qr-or-timing-validation-failed'});continue;}
                 selected=evaluated;
+                aiStatus='verified';
                 logger.info('perspective','AI-assisted registration independently verified',{
                   method:hypothesis.name,qrValid:evaluated.qr.valid,
                   left:evaluated.check.leftMatched,right:evaluated.check.rightMatched
@@ -645,13 +665,16 @@ export async function runFullScan(
           }finally{cleanupMats(aiOtsu,processed.gray,processed.blurred,processed.thresholded);}
         }
       }catch(error){
+        aiStatus='runtime-or-inference-error';
         logger.warning('perspective','Optional AI recovery unavailable',{
-          reason:String(error)
+          reason:String(error),stage:'runtime/model/inference or preprocessing',
+          note:'AI errors do not relax the existing verification requirements'
         });
       }finally{
         logger.info('perspective','AI last-resort summary',{
-          invoked:true,attempts:aiAttempted,verified:Boolean(selected),
-          durationMs:Date.now()-aiStart
+          invoked:true,model:'DocAligner LCNet-100',modelLibrary:'quadscan@1.0.0',
+          status:aiStatus,attempts:aiAttempted,verified:Boolean(selected),
+          rejections:aiRejections,durationMs:Date.now()-aiStart
         });
       }
     }
