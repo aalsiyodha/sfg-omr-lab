@@ -54,9 +54,11 @@ jobs:
           mkdir -p dist/ai-model dist/ai-runtime
           cp quadscan-source/dist/quadscan.iife.js dist/ai-runtime/quadscan.iife.js
           cp quadscan-source/models/lcnet100_h_e_bifpn_256_fp32.onnx dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
+          cp quadscan-source/models/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
           cp quadscan-source/node_modules/onnxruntime-web/dist/*.wasm dist/ai-runtime/
           test -s dist/ai-runtime/quadscan.iife.js
           test -s dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
+          test -s dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
           ls -lh dist/ai-runtime dist/ai-model
       # v2.3.48: independently trained Scanic DocCornerNet (SimCC) fallback.
       # Commit-pinned, MIT licensed; self-host model+minimal WASM.
@@ -108,6 +110,10 @@ jobs:
           assert needle in text
           p.write_text(text.replace(needle,"'/sfg-omr-lab/v2.3.45/'",1))
           PY
+      - name: Copy versioned comparison bridge into archived v2.3.45
+        run: |
+          cp src/comparisonBridge.ts archived-source/src/comparisonBridge.ts
+          printf "\nimport './comparisonBridge'\n" >> archived-source/src/main.tsx
       - name: Build archived v2.3.45 website
         run: npm run build
         working-directory: archived-source
@@ -117,6 +123,51 @@ jobs:
         run: |
           mkdir -p dist/v2.3.45
           cp -R archived-source/dist/. dist/v2.3.45/
+      # Two further fully independent legacy engines (do NOT mix their OpenCV globals).
+      - name: Check out archived v2.2.6 Lite
+        uses: actions/checkout@v4
+        with:
+          ref: release/v2.2.6-lite-old-version-retest
+          path: historical-226
+      - name: Check out archived v2.2.4
+        uses: actions/checkout@v4
+        with:
+          ref: release/v2.2.4-qwen-hardening
+          path: historical-224
+      - name: Build original historical scanner engines with isolated bridge
+        run: |
+          set -euo pipefail
+          for pair in "historical-226:v2.2.6" "historical-224:v2.2.4"; do
+            folder="${pair%%:*}"
+            ver="${pair##*:}"
+            cp src/comparisonBridge.ts "$folder/src/comparisonBridge.ts"
+            printf "\nimport './comparisonBridge'\n" >> "$folder/src/main.tsx"
+            python3 - "$folder" "$ver" <<'PY'
+          from pathlib import Path
+          import sys
+          folder,ver=sys.argv[1:]
+          p=Path(folder)/'vite.config.ts'
+          src=p.read_text()
+          base=f"base: process.env.GITHUB_PAGES === 'true' ? '/sfg-omr-lab/versions/{ver}/' : '/',"
+          if 'return {\n    plugins:' in src:
+              src=src.replace('return {\n    plugins:', 'return {\n    '+base+'\n    plugins:',1)
+          elif 'export default defineConfig({\n  plugins:' in src:
+              src=src.replace('export default defineConfig({\n  plugins:', 'export default defineConfig({\n  '+base+'\n  plugins:',1)
+          else:
+              raise SystemExit('Unsupported historical Vite config: '+folder)
+          p.write_text(src)
+          PY
+            (cd "$folder" && npm ci && GITHUB_PAGES=true npm run build)
+            mkdir -p "dist/versions/$ver"
+            cp -R "$folder/dist/." "dist/versions/$ver/"
+            test -s "dist/versions/$ver/index.html"
+          done
+      - name: Validate comparison assets
+        run: |
+          set -euo pipefail
+          for file in             dist/index.html             dist/v2.3.45/index.html             dist/versions/v2.2.6/index.html             dist/versions/v2.2.4/index.html             dist/ai-runtime/scanic.js             dist/ai-model/scanic/doccornernet_lean.ort             dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx             dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx; do
+            test -s "$file"
+          done
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload website
