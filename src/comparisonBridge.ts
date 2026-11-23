@@ -35,7 +35,7 @@ if(enabled()){
       // Some OpenCV.js builds expose Mat before WASM constructors are callable.
       // A real allocate/free round-trip must succeed before accepting requests.
       try{
-        const probeMat=new runtime.Mat(1,1,runtime.CV_8UC1);
+        const probeMat=new runtime.Mat(1,1,runtime.CV_8UC1??0);
         probeMat.delete();
       }catch{return;}
       announced=true;
