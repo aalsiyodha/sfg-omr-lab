@@ -7,6 +7,7 @@ import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import { canStopRegistrationSearch } from './litePolicy';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
+import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import { correctMildPageWarp, countHeldOutTimingMarks } from './mildCurveCorrection';
@@ -17,7 +18,7 @@ import type { ArucoRegistration } from './arucoDetector';
 import { applySevenToneCorrection } from './grayToneCorrection';
 import { reconcileToneAnswers } from './toneConsensus';
 import type { PerspectiveResult } from './perspectiveCorrection';
-import { decodeQRFromRegion } from './qrDecoder';
+import { decodeQRFromRegion, locateQRInPhoto } from './qrDecoder';
 import { detectAllAnswers, detectTestId, computeAdaptiveDarkThreshold } from './bubbleDetector';
 import { measureGrayCalibration, grayStripInkCeiling } from './grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
@@ -39,7 +40,8 @@ type QRStatus = ReturnType<typeof decodeQRFromRegion>;
 type Hypothesis =
   | { kind: 'corner'; name: string; markers: MarkerDetectionResult }
   | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
-  | { kind: 'aruco'; name: string; markers: ArucoRegistration };
+  | { kind: 'aruco'; name: string; markers: ArucoRegistration }
+  | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration };
 interface AcceptedAlignment {
   hypothesis: Hypothesis;
   perspective: PerspectiveResult;
@@ -74,6 +76,8 @@ function evaluateHypothesis(
       ? correctPerspective(source, hypothesis.markers)
       : hypothesis.kind === 'midpoint'
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
+      : hypothesis.kind === 'hybrid'
+      ? correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco)
       : correctPerspectiveFromArucos(source,hypothesis.markers);
     if (!persp.success || !persp.corrected) return null;
     const canvas = document.createElement('canvas');
@@ -99,6 +103,23 @@ function evaluateHypothesis(
       }
     }
     if (!qr.valid) {
+      // The grayscale strip is independent location evidence for a hybrid warp,
+      // never a replacement for the required QR identity.
+      if(hypothesis.kind==='hybrid'){
+        let probe:any=null;
+        try{
+          probe=new cv.Mat();
+          cv.cvtColor(persp.corrected,probe,cv.COLOR_RGBA2GRAY);
+          const calibration=measureGrayCalibration(probe,dpi);
+          logger.info('perspective',hypothesis.name+': grayscale landmark cross-check',{
+            status:calibration.status,patches:calibration.patchMedians,
+            contrast:calibration.contrast,ordered:calibration.ordered,
+            note:calibration.note
+          });
+        }catch(error){logger.warning('perspective','Hybrid grayscale landmark check failed',{
+          reason:String(error)});}
+        finally{cleanupMats(probe);}
+      }
       logger.warning('qrDecoding', `${hypothesis.name}: QR missing from both expected corners`);
       return null;
     }
@@ -298,9 +319,12 @@ export async function runFullScan(
     }
 
     const alternate = new cv.Mat();
+    let arucoOtsu: ArucoRegistration = arucoAdaptive;
+    let cornerOtsuForHybrid: MarkerDetectionResult = primary;
     try {
       cv.threshold(preprocessed.gray, alternate, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
       const cornerOtsu = detectMarkers(alternate, loaded.width, loaded.height);
+      cornerOtsuForHybrid=cornerOtsu;
       const midOtsu = detectMidpointMarkers(alternate, loaded.width, loaded.height);
       if (cornerOtsu.found) hypotheses.push({ kind: 'corner', name: 'corner/Otsu', markers: cornerOtsu });
       if (midOtsu.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/Otsu', markers: midOtsu });
@@ -310,7 +334,7 @@ export async function runFullScan(
           kind:'midpoint',name:'midpoint/aruco-guided-Otsu',markers:guidedOtsu,
         });
       }
-      const arucoOtsu=detectArucoMarkers(preprocessed.gray,alternate);
+      arucoOtsu=detectArucoMarkers(preprocessed.gray,alternate);
       logger.info('markerDetection','ArUco identification (Otsu)',{
         identified:arucoOtsu.count,ids:Object.keys(arucoOtsu.points),
         readyForRescue:arucoOtsu.found});
@@ -344,11 +368,14 @@ export async function runFullScan(
               bottomRight:hypothesis.markers.bottomRight, validGeometry:hypothesis.markers.validGeometry }
           : hypothesis.kind === 'midpoint'
           ? { top:hypothesis.markers.top, right:hypothesis.markers.right, bottom:hypothesis.markers.bottom, left:hypothesis.markers.left }
-          : { ids:Object.keys(hypothesis.markers.points),points:hypothesis.markers.points });
+          : hypothesis.kind === 'aruco'
+          ? { ids:Object.keys(hypothesis.markers.points),points:hypothesis.markers.points }
+          : {hybrid:true,anchors:hypothesis.aruco.points});
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
-      if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name, hypothesis.kind)) {
+      if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name,
+        hypothesis.kind==='hybrid'?'corner':hypothesis.kind)) {
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
@@ -358,7 +385,7 @@ export async function runFullScan(
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
       const rank = (a: AcceptedAlignment) => registrationScore({
-        kind: a.hypothesis.kind, timingMatched: a.check.matched,
+        kind: a.hypothesis.kind==='hybrid'?'corner':a.hypothesis.kind, timingMatched: a.check.matched,
         leftMatched: a.check.leftMatched, rightMatched: a.check.rightMatched,
         qrVerified: a.qr.valid,
       });
@@ -410,7 +437,7 @@ export async function runFullScan(
           rightMatched:attempt.check.rightMatched,
           qrVerified:attempt.qr.valid});
         const prior=selected?registrationScore({
-          kind:selected.hypothesis.kind,timingMatched:selected.check.matched,
+          kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
           leftMatched:selected.check.leftMatched,
           rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid,
         }): -Infinity;
@@ -420,6 +447,45 @@ export async function runFullScan(
         }else disposeAlignment(attempt);
         if(selected?.check.matched===50)break;
       }
+    }
+
+    // Failure-only hybrid: two bottom ArUco IDs cross-referenced with independently
+    // detected top corner squares. The original QR/timing gates remain mandatory.
+    if(!selected){
+      const hybridSources=[{name:'adaptive',corners:primary,aruco:arucoAdaptive},
+        {name:'Otsu',corners:cornerOtsuForHybrid,aruco:arucoOtsu}];
+      for(const source of hybridSources){
+        const evidence=hybridAnchorEvidence(source.corners,source.aruco);
+        logger.info('perspective','Hybrid cross-family recovery evidence',{
+          source:source.name,reason:evidence.reason,usable:evidence.usable,
+          cornerTopLeft:source.corners.topLeft,cornerTopRight:source.corners.topRight,
+          arucoIds:Object.keys(source.aruco.points),arucoPositions:source.aruco.points,
+          imageAnchors:evidence.imagePoints,templateAnchorsMm:evidence.templateMm
+        });
+        if(!evidence.usable)continue;
+        const hypothesis:Hypothesis={kind:'hybrid',name:'hybrid/corner-aruco-'+source.name,
+          corners:source.corners,aruco:source.aruco};
+        warpAttempts++;
+        const evaluated=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+        if(!evaluated)continue;
+        selected=evaluated;
+        logger.info('perspective','Hybrid cross-family candidate passed QR and timing verification',{
+          name:hypothesis.name,timing:evaluated.check.matched,
+          left:evaluated.check.leftMatched,right:evaluated.check.rightMatched});
+        break;
+      }
+    }
+
+    // Geometric QR finder search on the ORIGINAL photo is independent of
+    // a failed perspective warp. It is diagnostic evidence, not scan approval.
+    if(!selected){
+      const qrLocatorStart=Date.now();
+      const located=locateQRInPhoto(loaded.canvas);
+      logger.info('qrDecoding','Independent original-photo QR locator',{
+        found:located.found,valid:located.valid,center:located.center,
+        corners:located.corners,raw:located.raw,attempts:located.attempts,
+        error:located.error,durationMs:Date.now()-qrLocatorStart
+      });
     }
 
     // Last-chance local rescue for strong tilt or missing distorted fiducials.
@@ -474,11 +540,11 @@ export async function runFullScan(
             const candidate=evaluateHypothesis(rough.canvas,hypothesis,dpi,curveBudget);
             if(!candidate)continue;
             const score=registrationScore({
-              kind:candidate.hypothesis.kind,timingMatched:candidate.check.matched,
+              kind:candidate.hypothesis.kind==='hybrid'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
               leftMatched:candidate.check.leftMatched,rightMatched:candidate.check.rightMatched,
               qrVerified:candidate.qr.valid});
             const previous=selected?registrationScore({
-              kind:selected.hypothesis.kind,timingMatched:selected.check.matched,
+              kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
               leftMatched:selected.check.leftMatched,rightMatched:selected.check.rightMatched,
               qrVerified:selected.qr.valid}):-Infinity;
             if(score>previous){

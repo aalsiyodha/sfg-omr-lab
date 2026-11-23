@@ -115,3 +115,44 @@ export function decodeQRFromRegion(
     return { found: false, raw: null, valid: false, studentId: null, error: 'Could not decode regional QR' };
   }
 }
+
+/** Failure-only independent QR locator. The QR is a geometric landmark,
+ * not permission to read bubbles without full-sheet timing verification.
+ * Downsample to cap CPU cost on large phone photographs.
+ */
+export function locateQRInPhoto(source:HTMLCanvasElement):{
+  found:boolean;valid:boolean;raw:string|null;center:{x:number;y:number}|null;
+  corners:{x:number;y:number}[];attempts:number;error?:string
+}{
+  const absent=(error:string,attempts=0)=>({
+    found:false,valid:false,raw:null,center:null,corners:[],attempts,error
+  });
+  try{
+    const scale=Math.min(1,900/Math.max(source.width,source.height));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(source.width*scale));
+    canvas.height=Math.max(1,Math.round(source.height*scale));
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    if(!ctx)return absent('no-context');
+    ctx.drawImage(source,0,0,canvas.width,canvas.height);
+    const data=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const decoder=getJsQR();
+    let code:ReturnType<typeof jsQR>=null;
+    let attempts=0;
+    for(const mode of ['dontInvert','onlyInvert'] as const){
+      attempts++;
+      try{code=decoder(data.data,data.width,data.height,{inversionAttempts:mode});}
+      catch{code=null;}
+      if(code)break;
+    }
+    if(!code)return absent('not-decoded-in-full-photo',attempts);
+    const coords=[code.location.topLeftCorner,code.location.topRightCorner,
+      code.location.bottomRightCorner,code.location.bottomLeftCorner]
+      .map(p=>({x:Number((p.x/scale).toFixed(1)),y:Number((p.y/scale).toFixed(1))}));
+    const parsed=parseQRData(code.data);
+    return {found:true,valid:parsed.valid,raw:parsed.raw,
+      center:{x:Number((coords.reduce((sum,p)=>sum+p.x,0)/4).toFixed(1)),
+        y:Number((coords.reduce((sum,p)=>sum+p.y,0)/4).toFixed(1))},
+      corners:coords,attempts};
+  }catch(error){return absent('locator-error: '+String(error));}
+}

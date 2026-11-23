@@ -22,7 +22,7 @@ export function generateLLMDiagnosticPrompt({
   scanResult, file, fileSha256, activeTestId, answerKey,
 }: LLMReportOptions): string {
   const lines: string[] = [
-    '# SFG OMR LAB — v2.3.44 FAST LOCAL SCANNER diagnostic',
+    '# SFG OMR LAB — v2.3.45 FAST LOCAL SCANNER diagnostic',
     getBuildIdentity(),
     'Generated=' + new Date().toISOString(),
     'File=' + (file?.name ?? 'camera/unknown') +
@@ -128,7 +128,7 @@ export function generateLLMDiagnosticPrompt({
     /hypothes|registration|timing|test id|alignment|calibrat|complete|threshold|candidate|boundary|recovery|performance/i.test(l.message));
   // Keep one compact, machine-parsable performance and registration summary.
   const performance=logs.filter(l=>/Registration performance summary|Outer-page rescue timing|Scan stage timings|Scan complete in/i.test(l.message));
-  const recovery=logs.filter(l=>/timing-track recovery evidence|timing-track holdout validation|Outer-page boundary recovery evidence|Outer-page fiducial redetection/i.test(l.message));
+  const recovery=logs.filter(l=>/timing-track recovery evidence|timing-track holdout validation|Outer-page boundary recovery evidence|Outer-page fiducial redetection|Hybrid cross-family recovery evidence|grayscale landmark cross-check|Independent original-photo QR locator/i.test(l.message));
   lines.push('Registration & performance milestones ('+(performance.length+recovery.length)+'):');
   const summarize=(l:typeof logs[number])=>
     '['+l.level+'/'+l.stage+'] '+l.message+(l.data?' '+JSON.stringify(l.data):'');
@@ -178,6 +178,12 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file, fil
       ' | patches=' + scanResult.grayCalibration.patchMedians.join(',') +
       ' | contrast=' + (scanResult.grayCalibration.contrast ?? '?'));
   if (scanResult.errors.length) lines.push('Errors=' + scanResult.errors.slice(0, 3).join('; '));
+  if(scanResult.answers.length===0){
+    const recovery=(scanResult.stageLogs??[]).filter(l=>
+      /Hybrid cross-family recovery evidence|Independent original-photo QR locator|grayscale landmark cross-check|Outer-page boundary recovery evidence/.test(l.message));
+    lines.push('Failure recovery landmarks ('+recovery.length+'):');
+    for(const l of recovery)lines.push(l.message+(l.data?' '+JSON.stringify(l.data):''));
+  }
   if (scanResult.answers.length===0) lines.push('No answers were processed: registration failed; this is not a blank sheet.');
   if (scanResult.warnings?.length) lines.push('Warnings=' + scanResult.warnings.slice(0, 2).join('; '));
 
