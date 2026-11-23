@@ -1727,3 +1727,32 @@ test('v2.3.44: full diagnostic retains QR identities and stage logs without reda
   assert.ok(ui.includes("crypto.subtle.digest('SHA-256', bytes)"));
   assert.ok(ui.includes('fileSha256,activeTestId:practice.activeTest?.testId'));
 });
+
+test('v2.3.45: bottom ArUco pair and independent top corners form bounded hybrid geometry',()=>{
+  const m=loadTS('src/scanner/hybridRegistration.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297},markers:{
+      topLeft:{xMm:6,yMm:6,sizeMm:7},topRight:{xMm:197,yMm:6,sizeMm:7}}},mmToPx:x=>x},
+    '../config/scannerSettings':{getSettings:()=>({scanDpi:150})},
+    './arucoDetector':{ARUCO_MARKERS_MM:[{id:2,x:51.5,y:287},{id:3,x:117.5,y:287}]}
+  });
+  const corners={found:true,topLeft:{x:150,y:150},topRight:{x:950,y:180}};
+  const aruco={found:false,count:2,points:{2:{x:330,y:1250},3:{x:680,y:1260}}};
+  const good=m.hybridAnchorEvidence(corners,aruco);
+  assert.equal(good.usable,true);
+  assert.equal(good.imagePoints.length,4);
+  assert.equal(m.hybridAnchorEvidence(corners,{found:false,count:1,points:{2:{x:330,y:1250}}}).usable,false);
+  assert.equal(m.hybridAnchorEvidence(corners,{found:false,count:2,points:{2:{x:330,y:10},3:{x:680,y:10}}}).usable,false);
+});
+test('v2.3.45: hybrid recovery remains fail-only with strict QR/timing acceptance',()=>{
+  const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  const qr=readFileSync('src/scanner/qrDecoder.ts','utf8');
+  const diagnostics=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+  assert.ok(scanner.includes("if(!selected){\n      const hybridSources="));
+  assert.ok(scanner.includes('evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget)'));
+  assert.ok(scanner.includes("if (!qr.valid)"));
+  assert.ok(scanner.includes("if (!check.passed)"));
+  assert.ok(scanner.includes("Independent original-photo QR locator"));
+  assert.ok(scanner.includes("grayscale landmark cross-check"));
+  assert.ok(qr.includes("locateQRInPhoto"));
+  assert.ok(diagnostics.includes("Hybrid cross-family recovery evidence"));
+});
