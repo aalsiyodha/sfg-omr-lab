@@ -33,29 +33,39 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: 'true'
-      # Build the experimental branch separately. The original dist/ root
-      # remains the v2.3.45 production website at its existing URL.
-      - name: Check out v2.3.46 experiment
+      # Preserve the original v2.3.45 scanner on a dedicated subpath.
+      # Its archived source and build remain independent of current main.
+      - name: Check out archived v2.3.45
         uses: actions/checkout@v4
         with:
-          ref: experiment/v2.3.46-qr-aruco-recovery
-          path: experiment-source
-      - name: Install experimental dependencies
+          ref: archive/v2.3.45-stable
+          path: archived-source
+      - name: Install archived dependencies
         run: npm ci
-        working-directory: experiment-source
-      - name: Test experimental scanner
+        working-directory: archived-source
+      - name: Test archived scanner
         run: npm run test:scanner
-        working-directory: experiment-source
-      - name: Build experimental website
+        working-directory: archived-source
+      - name: Set archived Pages base path
+        working-directory: archived-source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('vite.config.ts')
+          text=p.read_text()
+          needle="'/sfg-omr-lab/'"
+          assert needle in text
+          p.write_text(text.replace(needle,"'/sfg-omr-lab/v2.3.45/'",1))
+          PY
+      - name: Build archived v2.3.45 website
         run: npm run build
-        working-directory: experiment-source
+        working-directory: archived-source
         env:
           GITHUB_PAGES: 'true'
-          GITHUB_PAGES_BASE: '/sfg-omr-lab/v2.3.46/'
       - name: Package both versions
         run: |
-          mkdir -p dist/v2.3.46
-          cp -R experiment-source/dist/. dist/v2.3.46/
+          mkdir -p dist/v2.3.45
+          cp -R archived-source/dist/. dist/v2.3.45/
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload website
