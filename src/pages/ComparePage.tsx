@@ -25,7 +25,7 @@ export default function ComparePage(){
  const [busy,setBusy]=useState(false);
  const [current,setCurrent]=useState('');
  const [error,setError]=useState('');
- const [reportMode,setReportMode]=useState<ReportMode>('compact');
+ const [reportMode,setReportMode]=useState<ReportMode>('full');
  const [showAllCorners,setShowAllCorners]=useState(true);
  const [markReference,setMarkReference]=useState(false);
  const [exportingOverlay,setExportingOverlay]=useState(false);
