@@ -1827,3 +1827,17 @@ test('focused AI benchmark preserves optical correction evidence and UPSC partia
   assert.match(engines,/changedByOpticalCorrection/);
   assert.match(page,/\['current','v226','landmark','scanic','lcnet','uvdoc'\]/);
 });
+
+test('v2.4.618 fresh-sheet diagnostics preserve strict grading and expose row geometry',()=>{
+  const grid=readFileSync(resolve(process.cwd(),'src/comparison/landmarkGrid.ts'),'utf8');
+  const scan=readFileSync(resolve(process.cwd(),'src/scanner/scanOrchestrator.ts'),'utf8');
+  const gray=readFileSync(resolve(process.cwd(),'src/scanner/grayCalibration.ts'),'utf8');
+  const page=readFileSync(resolve(process.cwd(),'src/pages/ComparePage.tsx'),'utf8');
+  assert.match(grid,/guardedRowDrift/);
+  assert.match(grid,/row-rejected-inconsistent-timing/);
+  assert.match(grid,/timingLatticeDiagnostics/);
+  assert.match(grid,/decisionStatus:decision.status/);
+  assert.match(gray,/investigateGrayStrip/);
+  assert.match(scan,/Grayscale strip geometry diagnostic \(no scoring effect\)/);
+  assert.match(page,/useState<ReportMode>\('full'\)/);
+});
