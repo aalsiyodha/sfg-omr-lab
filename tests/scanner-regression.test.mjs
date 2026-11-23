@@ -1407,16 +1407,15 @@ test('OMR 2.1 PDF generator uses new ArUco markers and seven-tone calibration',(
   assert.ok(source.includes('arucoBits'));
 });
 
-test('mobile UX: theme toggle stays outside collapsed navigation and persists selection',()=>{
+test('mobile UX: minimal navigation keeps accessible light/dark toggle',()=>{
   const app=readFileSync('src/App.tsx','utf8');
-  const head=app.indexOf('className="product-header-controls"');
-  const collapse=app.indexOf('className="collapse navbar-collapse"');
-  assert.ok(head>0 && collapse>head);
-  assert.equal((app.match(/className="product-theme-toggle"/g)||[]).length,1);
+  assert.ok(app.includes('className="minimal-nav"'));
+  assert.equal((app.match(/className="minimal-theme-switch"/g)||[]).length,1);
   assert.ok(app.includes("localStorage.setItem('sfg-omr-theme', theme)"));
-  assert.ok(app.includes("aria-label={theme === 'dark'"));
-  const styles=readFileSync('src/index.css','utf8');
-  assert.ok(styles.includes('.product-header-controls .product-theme-toggle{width:auto'));
+  assert.ok(app.includes('aria-label={theme==='));
+  const styles=readFileSync('src/minimal.css','utf8');
+  assert.ok(styles.includes('@media(max-width:640px)'));
+  assert.ok(styles.includes('.minimal-theme-switch'));
 });
 test('onboarding UX: printable sheet and photo guidance remain clear',()=>{
   const home=readFileSync('src/pages/HomePage.tsx','utf8');
