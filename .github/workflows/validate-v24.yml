@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/v2.4-universal-comparison
+      - fix/v2.4.1-comparison-reliability
   workflow_dispatch:
 permissions:
   contents: read

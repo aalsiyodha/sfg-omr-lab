@@ -11,7 +11,7 @@ export interface EngineDefinition{
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
-  {id:'current',name:'Current v2.4',kind:'scanner',version:'2.4.0',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'current',name:'Current v2.4.1',kind:'scanner',version:'2.4.1',details:'Complete scanner with QR-less provisional policy',assetPath:''},
   {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
   {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
   {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
@@ -153,20 +153,30 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
     }:null;
     const confidence=result?.confidence??raw?.confidence??null;
     const corners=result?.corners??raw?.corners??[];
+    // AI boundary is NOT independently validated. Export a warped image only
+    // to the research-only bubble model, never to official scanner grading.
+    const alignedImage=def.id==='scanic' && result ? result.canvas.toDataURL('image/png') : undefined;
     return {...empty(def,result?'Page-corner candidate predicted':'No acceptable page-corner candidate',
       Math.round(performance.now()-started)),outcome:result?'detected':'rejected',
-      confidence,corners,traces,
+      confidence,corners,traces,alignedImage,
       reason:result?'Page-corner hypothesis only; no bubble scanning or timing verification':
         'Model returned no accepted geometry (inspect per-view diagnostics)'};
   }catch(error){
-    return {...empty(def,String(error),Math.round(performance.now()-started)),traces};
+    const message=String(error);
+    const invalidQuad=/DegenerateQuadError|Could not assign all four corners/i.test(message);
+    traces.push({stage:'AI',message:invalidQuad?'geometry-rejected':'model-error',
+      data:{reason:message},level:invalidQuad?'WARNING':'ERROR'});
+    return {...empty(def,message,Math.round(performance.now()-started)),
+      outcome:invalidQuad?'rejected':'error',traces};
   }
 }
 export async function runEngine(def:EngineDefinition,file:File,previous:EngineResult[]=[]):Promise<EngineResult>{
   const t=performance.now();
   try{
     return def.kind==='scanner'?await runIframe(def,file):
-      def.kind==='bubble'?await runBubbleAi(def,previous.find(x=>x.id==='current')):
+      def.kind==='bubble'?await runBubbleAi(def,
+        previous.find(x=>x.id==='current'&&Boolean(x.alignedImage))??
+        previous.find(x=>x.id==='scanic'&&Boolean(x.alignedImage))):
       await runDetector(def,file);
   }catch(error){return empty(def,String(error),Math.round(performance.now()-t));}
 }
