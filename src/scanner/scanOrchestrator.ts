@@ -627,7 +627,7 @@ export async function runFullScan(
     }
 
     finishStage('resultPreparation');
-    logger.info('performance', 'Scan stage timings (milliseconds)', {
+    logger.info('complete', 'Scan stage timings (milliseconds)', {
       stages: stageTimes,
       measuredMs: Object.values(stageTimes).reduce((sum, ms) => sum + ms, 0),
       elapsedMs: Date.now() - start,
