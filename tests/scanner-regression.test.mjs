@@ -1949,3 +1949,24 @@ test('v2.5.1: 15 counterfactual probes preserve stable solid ink and reject inst
   assert.deepEqual(fast,fallback);
   assert.equal(inspectLocalBubble(mat(raw),cx,cy,dpi,160).centerFill,0);
 });
+
+test('v2.5.1: predicted Local-Grid row offsets stay bounded and shadow only',()=>{
+ const {predictGridOffset,summarizePredictedGrid}=loadTS('src/scanner/predictiveGrid.ts');
+ const p=(dx,dy,confidence=12)=>({dx,dy,confidence,applied:true});
+ const grid={leftUpper:p(2,-2),leftLower:p(4,0),
+   rightUpper:p(0,0),rightLower:p(0,0),testId:p(0,0)};
+ const row1=predictGridOffset(grid,1),row25=predictGridOffset(grid,25);
+ assert.equal(row1.valid,true);
+ assert.equal(row1.source,'interpolated');
+ assert.equal(row1.dx,2);
+ assert.equal(row25.dx,4);
+ assert.ok(predictGridOffset(grid,13).dx>2);
+ assert.ok(predictGridOffset(grid,13).dx<4);
+ const summary=summarizePredictedGrid(grid);
+ assert.equal(summary.predicted,50);
+ assert.equal(summary.highDriftQuestions.length,0);
+ assert.match(summary.note,/Diagnostic only/);
+ const missing={...grid,leftUpper:{dx:0,dy:0,applied:false,confidence:0},
+   leftLower:{dx:0,dy:0,applied:false,confidence:0}};
+ assert.equal(predictGridOffset(missing,3).valid,false);
+});
