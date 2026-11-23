@@ -1,5 +1,5 @@
 /**
- * Ninth engine: deterministic landmark-driven local grid experiment.
+ * Ninth engine v2: deterministic landmark-driven local grid experiment.
  *
  * Uses optical corner squares + *independently decoded* bottom ArUco IDs
  * from an earlier optical scanner's failed/successful trace. Four known
@@ -12,6 +12,7 @@
  * row extraction is always an unverified research result.
  */
 import {OMR_LAYOUT,getBubbleCentre} from '../config/omrLayout';
+import {decodeQRFromRegion} from '../scanner/qrDecoder';
 import type {EngineDefinition,EngineResult,Point} from './engines';
 
 type Evidence={source:string;imageAnchors:Point[];templateAnchorsMm:Point[]};
@@ -201,6 +202,54 @@ function extractEvidence(results:EngineResult[]):Array<{e:Evidence;from:string;n
     if(seen.has(key))return false;seen.add(key);return true;
   }).slice(0,8);
 }
+
+/** Analyze a rectified research-only A4 candidate produced by any AI engine.
+ * Samples the actual 50 question positions and separately estimates 25
+ * left/right timing bars. Never returns a verified/scorable ScanResult.
+ * This is deliberately independent of the full production scanner.
+ */
+export function evaluateResearchCanvas(canvas:HTMLCanvasElement){
+  const resized=document.createElement('canvas');
+  resized.width=W;resized.height=H;
+  const ctx=resized.getContext('2d',{willReadFrequently:true});
+  if(!ctx)throw Error('Research alignment canvas unavailable');
+  ctx.drawImage(canvas,0,0,W,H);
+  const rgba=ctx.getImageData(0,0,W,H).data;
+  const g=new Uint8Array(W*H);
+  for(let i=0;i<g.length;i++){
+    const off=i*4;g[i]=Math.round(.2126*rgba[off]+.7152*rgba[off+1]+.0722*rgba[off+2]);
+  }
+  const left=scanTrack(g,'left'),right=scanTrack(g,'right');
+  const calibrated=strip(g);
+  const qr=decodeQRFromRegion(resized,OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,
+    OMR_LAYOUT.qr.sizeMm,4*25.4);
+  const sideGood=(track:Track[])=>track.length>=18&&
+    track[0].row<=3&&track.at(-1)!.row>=21;
+  const answers:EngineResult['answers']=[];
+  for(const side of ['left','right'] as const){
+    const track=side==='left'?left:right;
+    if(!sideGood(track))continue;
+    for(let row=0;row<25;row++){
+      const shift=rowDrift(track,row);
+      if(!shift)continue;
+      const q=row+1+(side==='right'?25:0);
+      const fills=[0,1,2,3].map(option=>{
+        const p=getBubbleCentre(q,option as 0|1|2|3);
+        return bubbleFill(g,p.xMm*MM+shift.dx,p.yMm*MM+shift.dy).fill;
+      });
+      const ranked=fills.map((fill,i)=>({fill,i})).sort((a,b)=>b.fill-a.fill);
+      const found=ranked[0].fill>=.80&&ranked[0].fill-ranked[1].fill>=.40;
+      answers.push({q,answer:found?OPTIONS[ranked[0].i]:null,
+        status:found?'experimental':'uncertain',
+        confidence:Math.round((ranked[0].fill-ranked[1].fill)*100)});
+    }
+  }
+  return {left:left.length,right:right.length,qrValid:qr.valid,
+    qrFound:qr.found,qrRaw:qr.raw,grayscale:calibrated,
+    leftGood:sideGood(left),rightGood:sideGood(right),answers,
+    warning:'Research-only geometric sampling; never automatically grade'};
+}
+
 export async function runLandmarkGrid(def:EngineDefinition,file:File,
   previous:EngineResult[]):Promise<EngineResult>{
   const start=performance.now();
@@ -259,6 +308,26 @@ export async function runLandmarkGrid(def:EngineDefinition,file:File,
         curveRecovery:'per-row independently interpolated timing-bar displacements',
         noQR:true,grayscale:best.strip,
         note:'Unverified landmark estimates only; no identity proof or grading'}});
+    const qrCanvas=document.createElement('canvas');
+    qrCanvas.width=W;qrCanvas.height=H;
+    const qrContext=qrCanvas.getContext('2d');
+    let observedQR:{found:boolean;valid:boolean;raw:string|null}={
+      found:false,valid:false,raw:null};
+    if(qrContext){
+      const qrPixels=qrContext.createImageData(W,H);
+      for(let i=0;i<best.g.length;i++){
+        const j=i*4,v=best.g[i];
+        qrPixels.data[j]=v;qrPixels.data[j+1]=v;
+        qrPixels.data[j+2]=v;qrPixels.data[j+3]=255;
+      }
+      qrContext.putImageData(qrPixels,0,0);
+      observedQR=decodeQRFromRegion(qrCanvas,OMR_LAYOUT.qr.xMm,
+        OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,4*25.4);
+    }
+    traces.push({stage:'landmark',message:'local-grid-v2-identity-observation',
+      data:{qrFound:observedQR.found,qrValid:observedQR.valid,
+        qrRaw:observedQR.raw,left:best.left.length,right:best.right.length,
+        note:'QR observation does not authorize Local Grid scoring'}});
     const answers:EngineResult['answers']=[];
     // A side without a sufficiently long independently detected timing track
     // does not receive inferred answer classifications.
