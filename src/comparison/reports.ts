@@ -93,7 +93,7 @@ export function downloadText(name:string,value:string){
 }
 export function downloadJson(name:string,meta:unknown,results:EngineResult[]){
  const url=URL.createObjectURL(new Blob([JSON.stringify({schema:'sfg-comparison/v1',meta,
-   results},null,2)],{type:'application/json'}));
+   results:results.map(({alignedImage,...safe})=>safe)},null,2)],{type:'application/json'}));
  const a=document.createElement('a');a.href=url;a.download=name;a.click();
  window.setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
