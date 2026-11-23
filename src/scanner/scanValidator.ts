@@ -30,7 +30,11 @@ export function validateScanResult(result: ScanResult): { warnings: string[]; er
     }
   }
   if (result.testId === null || result.testId < 1 || result.testId > 40) {
-    errors.push('Test ID missing or outside the valid range 01–40. Check its marked bubbles.');
+    if (result.provisional) {
+      warnings.push('Test ID unverified: provisional bubble readings are not associated with an examination or student.');
+    } else {
+      errors.push('Test ID missing or outside the valid range 01–40. Check its marked bubbles.');
+    }
   }
   if (result.answers.length !== 50) {
     errors.push(`Expected 50 question results, received ${result.answers.length}.`);
