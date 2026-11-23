@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AppState } from '../App';
 import type { AnswerOption } from '../types';
@@ -21,6 +21,21 @@ export default function ScanPage({ appState }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [mode, setMode] = useState<InputMode>('none');
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
+  const [fileSha256, setFileSha256] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setFileSha256(null);
+    if (capturedFile && globalThis.crypto?.subtle) {
+      void capturedFile.arrayBuffer()
+        .then(bytes => crypto.subtle.digest('SHA-256', bytes))
+        .then(hash => {
+          if (!cancelled) setFileSha256(Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0')).join(''));
+        })
+        .catch(() => { if (!cancelled) setFileSha256('unavailable'); });
+    }
+    return () => { cancelled = true; };
+  }, [capturedFile]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [torchSupported, setTorchSupported] = useState(false);
@@ -145,7 +160,7 @@ export default function ScanPage({ appState }: Props) {
   const handleCopyLLMReport = async () => {
     if (!scanResult) return;
     const ok = await copyText(generateLLMDiagnosticPrompt({
-      scanResult, file: capturedFile,
+      scanResult, file: capturedFile, fileSha256,
       activeTestId: practice.activeTest?.testId,
       answerKey: practice.activeTest?.answerKey,
     }));
@@ -156,7 +171,7 @@ export default function ScanPage({ appState }: Props) {
   const handleCopyBetaReport = async () => {
     if (!scanResult) return;
     const ok = await copyText(generateBetaFeedbackPrompt({
-      scanResult, file: capturedFile, activeTestId: practice.activeTest?.testId,
+      scanResult, file: capturedFile, fileSha256, activeTestId: practice.activeTest?.testId,
     }));
     setLlmCopied(ok);
     setCopyFailed(!ok);
@@ -202,11 +217,11 @@ export default function ScanPage({ appState }: Props) {
   const invalidBlankCount = countRejectedBlankMarks(scanResult?.answers ?? []);
   const visibleAnswers = filterReviewAnswers(scanResult?.answers ?? [], reviewFilter);
   const reportFull = scanResult ? generateLLMDiagnosticPrompt({
-    scanResult,file:capturedFile,activeTestId:practice.activeTest?.testId,
+    scanResult,file:capturedFile,fileSha256,activeTestId:practice.activeTest?.testId,
     answerKey:practice.activeTest?.answerKey
   }) : '';
   const reportCompact = scanResult ? generateBetaFeedbackPrompt({
-    scanResult,file:capturedFile,activeTestId:practice.activeTest?.testId
+    scanResult,file:capturedFile,fileSha256,activeTestId:practice.activeTest?.testId
   }) : '';
   const diagnostic = showTechnicalReport ? reportFull : reportCompact;
   const saveReport = () => {
@@ -231,7 +246,7 @@ export default function ScanPage({ appState }: Props) {
     <div className="minimal-scan">
       <header className="minimal-scan-heading">
         <div>
-          <span className="minimal-kicker">SFG OMR LAB · v2.3.43</span>
+          <span className="minimal-kicker">SFG OMR LAB · v2.3.44</span>
           <h1>Scan a sheet</h1>
         </div>
         <span className="minimal-build" title={APP_DEPLOY_LABEL+' · '+APP_BUILD_META.sha}>{APP_VERSION}</span>
@@ -424,7 +439,7 @@ export default function ScanPage({ appState }: Props) {
                 {llmCopied&&<p className="text-success small">Report copied.</p>}
                 <textarea aria-label="Diagnostic report" className="minimal-report"
                   readOnly value={diagnostic} onClick={e=>e.currentTarget.select()} rows={17}/>
-                <p className="minimal-footnote">Attach the original photo for investigation. Redact personal details before sharing.</p>
+                <p className="minimal-footnote">Testing mode: filenames, QR payload and student identifiers are not redacted. Share reports accordingly.</p>
               </>
             )}
           </div>

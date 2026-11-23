@@ -7,6 +7,7 @@ import type { ScanResult } from '../types';
 interface LLMReportOptions {
   scanResult: ScanResult;
   file?: File | null;
+  fileSha256?: string | null;
   activeTestId?: number | null;
   answerKey?: string[] | null;
 }
@@ -18,17 +19,20 @@ interface LLMReportOptions {
 /** Complete diagnostic: compact enough to share, but retains all 50 bubble
  * measurements and every problematic row's individual evidence. */
 export function generateLLMDiagnosticPrompt({
-  scanResult, file, activeTestId, answerKey,
+  scanResult, file, fileSha256, activeTestId, answerKey,
 }: LLMReportOptions): string {
   const lines: string[] = [
-    '# SFG OMR LAB — v2.3.43 FAST LOCAL SCANNER diagnostic',
+    '# SFG OMR LAB — v2.3.44 FAST LOCAL SCANNER diagnostic',
     getBuildIdentity(),
     'Generated=' + new Date().toISOString(),
     'File=' + (file?.name ?? 'camera/unknown') +
       (file ? ' | ' + (file.size / 1024).toFixed(1) + 'KB | ' + file.type : ''),
+    'File SHA-256=' + (fileSha256 ?? 'pending/unavailable'),
     'Status=' + scanResult.overallStatus + ' | elapsed=' + scanResult.processingTimeMs + 'ms' +
       ' | testId=' + (scanResult.testId ?? 'missing') + ' | activeTest=' + (activeTestId ?? 'none') +
       ' | QR=' + (scanResult.qrValid ? 'valid' : 'invalid'),
+    'Student ID=' + (scanResult.studentId ?? 'not decoded') +
+      ' | QR payload=' + (scanResult.qrRaw ?? 'not decoded'),
     'Registration=' + (scanResult.registrationMethod || 'none') +
       ' | corners=' + scanResult.markerCount + '/4' +
       ' | perspective=' + Boolean(scanResult.perspectiveCorrected) +
@@ -131,33 +135,31 @@ export function generateLLMDiagnosticPrompt({
   for(const l of [...recovery,...performance])lines.push(summarize(l));
     lines.push('Important stage logs ('+significant.length+'/'+logs.length+'):');
   if (!significant.length) lines.push('None.');
-  const redact=(s:string)=>s
-    .replace(/SFGOMR1:[^\s"'|,}]+/gi,'[REDACTED_QR]')
-    .replace(/("?(?:studentId|qrRaw|raw)"?\s*:\s*)"[^"]*"/gi,'$1"[REDACTED]"');
   for (const log of significant)
-    lines.push(redact('['+log.level+'/'+log.stage+'] '+log.message+
-      (log.data?' '+JSON.stringify(log.data):'')));
+    lines.push('['+log.level+'/'+log.stage+'] '+log.message+
+      (log.data?' '+JSON.stringify(log.data):''));
 
   lines.push('Original photograph and optional bubble overlay should be attached separately.');
-  lines.push('Filename is included for image/report matching; student and QR identities are omitted.');
+  lines.push('Unredacted testing report: filenames, build commit SHA, student IDs and decoded QR data are retained when available.');
   return lines.join('\n');
 }
 
 /**
- * Compact, privacy-safe beta report for friends. Original photo and
+ * Compact, unredacted testing report. Original photo and
  * optional coloured overlay should be attached separately, never embedded.
  * Includes the answer map plus measurements only for suspicious rows.
  */
-export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: LLMReportOptions): string {
+export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file, fileSha256 }: LLMReportOptions): string {
   // Compact by design: always include identity, overall result, 50 answer
   // decisions and at most 12 detailed review samples. Never paste 50x4 verbose
-  // measurements or raw student/QR identifiers into an LLM by default.
+  // measurements; identifiers are deliberately retained for testing.
   const counts = (['detected', 'blank', 'multiple', 'uncertain', 'error'] as const)
     .map(status => status + '=' + scanResult.answers.filter(q => q.status === status).length).join(', ');
   const lines: string[] = [
     'SFG OMR Lab — compact scan diagnostic',
     getBuildIdentity(),
     'File=' + (file?.name ?? 'camera/unknown') + (file ? ' | ' + (file.size/1024).toFixed(1) + 'KB' : ''),
+    'File SHA-256=' + (fileSha256 ?? 'pending/unavailable'),
     'Attach original OMR photo separately; photo pixels are not in this report.',
     'Status=' + scanResult.overallStatus +
       ' | testId=' + (scanResult.testId === null ? 'missing' : String(scanResult.testId).padStart(2,'0')) +
@@ -167,6 +169,8 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
       ' | timing=' + (scanResult.alignmentMatched ?? '?') + '/50' +
       ' | verified=' + String(scanResult.alignmentVerified === true) +
       ' | rotated180=' + String(Boolean(scanResult.orientationRotated)),
+    'Student ID=' + (scanResult.studentId ?? 'not decoded') +
+      ' | QR payload=' + (scanResult.qrRaw ?? 'not decoded'),
     'Processing=' + scanResult.processingTimeMs + 'ms | ' + counts,
   ];
   if (scanResult.grayCalibration)
@@ -213,6 +217,6 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file }: L
       (q.policyRejectedBlank?' [invalid mark]':'')+' '+m);
   }
   lines.push('Please compare with the original photo; do not infer optical correctness from answer key.');
-  lines.push('QR payload and student ID omitted; filename retained to match original photo.');
+  lines.push('Testing report: all available identifiers and source filenames retained.');
   return lines.join('\n');
 }
