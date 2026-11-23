@@ -5,6 +5,7 @@ on:
       - feature/v2.4-universal-comparison
       - fix/v2.4.1-comparison-reliability
       - fix/v2.4.2-comparison-runtime
+      - fix/v2.4.3-coordinate-evidence
   workflow_dispatch:
 permissions:
   contents: read
