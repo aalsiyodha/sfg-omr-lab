@@ -21,11 +21,11 @@ export interface EngineDefinition{
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
-  {id:'current',name:'Current v2.4.615',kind:'scanner',version:'2.4.615',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'current',name:'Current v2.4.616',kind:'scanner',version:'2.4.616',details:'Official scanner, independent QR/timing verification',assetPath:''},
   {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
   {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
   {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
-  {id:'landmark',name:'Optical Local-Grid v2',kind:'landmark',version:'2.4.615-exp6',details:'Non-AI 4-anchor registration with left/right timing, held-out coherence validation, QR observation and bubble sampling. Research-only, never grades.'},
+  {id:'landmark',name:'Optical Local-Grid v3',kind:'landmark',version:'2.4.616-exp7',details:'Optical independent warp, QR and held-out timing verification, row-by-row blank/multiple/mark decisions, and 50-question comparison. Not a grading authority.'},
   {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
   {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
   {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
