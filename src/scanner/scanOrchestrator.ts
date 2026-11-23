@@ -365,16 +365,14 @@ export async function runFullScan(
       } else {
         disposeAlignment(evaluated);
       }
-      // LITE experiment: after *independent* QR identity and both timing
-      // bands reach a perfect 50/50, no later hypothesis can improve
-      // timing coverage. Avoid remaining costly perspective/QR warps.
-      // Do NOT stop at 47–49: the reference photos needed fallback.
+      // A QR-verified 48+/50 with at least 23 on both sides is an early
+      // completion signal. Lesser passing registrations keep alternatives.
       if (selected && canStopRegistrationSearch(
         selected.qr.valid, selected.check.matched,
         selected.check.leftMatched, selected.check.rightMatched
       )) {
         logger.info('perspective',
-          'LITE fast-path: stopped registration after perfect QR + 50/50 timing',
+          'Fast-path: stopped after QR and near-perfect dual-side timing',
           {selected:selected.hypothesis.name,skipped:Math.max(0,
             hypotheses.length-hypotheses.indexOf(hypothesis)-1)});
         break;
@@ -425,6 +423,10 @@ export async function runFullScan(
         logger.info('perspective','Outer-page boundary recovery evidence',{
           reason:evidence.reason,candidates:evidence.candidates,
           contourAreaRatio:evidence.contourAreaRatio,
+          rejectedBorder:evidence.rejectedBorder,
+          rejectedGeometry:evidence.rejectedGeometry,
+          thresholdsTried:evidence.thresholdsTried,
+          method:evidence.method,
           quadrilateral:evidence.quadrilateral});
       });
       if(rough){
