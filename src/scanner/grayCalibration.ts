@@ -62,3 +62,31 @@ export function grayStripInkCeiling(c:GrayCalibration):number|null{
   if(black>90||white<125||white-black<90)return null;
   return Math.max(100,Math.min(158,Math.round(white-(white-black)*0.22)));
 }
+
+/**
+ * Diagnose strip-template displacement WITHOUT silently changing calibration
+ * or ink thresholds. A bad page warp can put text inside the nominal patch
+ * locations, producing plausible but nonsensical grayscale values.
+ */
+export function investigateGrayStrip(gray:Gray,dpi:number){
+  const attempts:Array<{dxMm:number;dyMm:number;medians:number[];
+    contrast:number;ordered:boolean;plausible:boolean}>=[];
+  if(!gray||!dpi)return {best:null,nominal:null,attempts:0};
+  for(const dyMm of [-3,-2,-1,0,1,2,3]){
+    for(const dxMm of [-12,-9,-6,-3,0,3,6,9,12]){
+      const medians=CALIBRATION_PATCH_CENTRES_MM.map(p=>
+        sampleMedian(gray,dpi,p.x+dxMm,p.y+dyMm,.85));
+      if(medians.some(v=>v===null))continue;
+      const values=medians as number[];
+      const contrast=values[6]-values[0];
+      const ordered=values.slice(1).every((v,i)=>v+10>=values[i]);
+      const plausible=values[0]<=125&&contrast>=55&&ordered;
+      attempts.push({dxMm,dyMm,medians:values,contrast,ordered,plausible});
+    }
+  }
+  const nominal=attempts.find(a=>a.dxMm===0&&a.dyMm===0)??null;
+  const best=attempts.filter(a=>a.plausible).sort((a,b)=>
+    b.contrast-a.contrast||Math.hypot(a.dxMm,a.dyMm)-Math.hypot(b.dxMm,b.dyMm))[0]??null;
+  return {nominal,best,attempts:attempts.length,
+    explanation:'Diagnostic-only offset sweep. Never use this search to set ink thresholds or authorize scoring.'};
+}
