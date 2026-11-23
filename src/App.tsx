@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import PracticeTestPage from './pages/PracticeTestPage';
 import ScanPage from './pages/ScanPage';
-import ComparePage from './pages/ComparePage';
 import ResultsPage from './pages/ResultsPage';
 import DiagnosticsPage from './pages/DiagnosticsPage';
 import { usePracticeTest } from './hooks/usePracticeTest';
@@ -53,7 +52,6 @@ export default function App() {
           </NavLink>
           <div className="minimal-nav-links">
             <NavLink to="/scan">Scan</NavLink>
-            <NavLink to="/compare">Compare</NavLink>
             <NavLink to="/practice">Practice</NavLink>
             <NavLink to="/diagnostics">Tools</NavLink>
             <button type="button" className="minimal-theme-switch"
@@ -68,7 +66,6 @@ export default function App() {
             <Route path="/" element={<Navigate to="/scan" replace />} />
             <Route path="/practice" element={<PracticeTestPage appState={appState} />} />
             <Route path="/scan" element={<ScanPage appState={appState} />} />
-            <Route path="/compare" element={<ComparePage />} />
             <Route path="/results" element={<ResultsPage appState={appState} />} />
             <Route path="/diagnostics" element={<DiagnosticsPage appState={appState} />} />
           </Routes>
