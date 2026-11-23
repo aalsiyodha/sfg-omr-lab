@@ -7,6 +7,7 @@ import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import { canStopRegistrationSearch } from './litePolicy';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
+import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import { correctMildPageWarp, countHeldOutTimingMarks } from './mildCurveCorrection';
@@ -39,7 +40,8 @@ type QRStatus = ReturnType<typeof decodeQRFromRegion>;
 type Hypothesis =
   | { kind: 'corner'; name: string; markers: MarkerDetectionResult }
   | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
-  | { kind: 'aruco'; name: string; markers: ArucoRegistration };
+  | { kind: 'aruco'; name: string; markers: ArucoRegistration }
+  | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration };
 interface AcceptedAlignment {
   hypothesis: Hypothesis;
   perspective: PerspectiveResult;
@@ -74,6 +76,8 @@ function evaluateHypothesis(
       ? correctPerspective(source, hypothesis.markers)
       : hypothesis.kind === 'midpoint'
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
+      : hypothesis.kind === 'hybrid'
+      ? correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco)
       : correctPerspectiveFromArucos(source,hypothesis.markers);
     if (!persp.success || !persp.corrected) return null;
     const canvas = document.createElement('canvas');
@@ -298,9 +302,12 @@ export async function runFullScan(
     }
 
     const alternate = new cv.Mat();
+    let arucoOtsu: ArucoRegistration = arucoAdaptive;
+    let cornerOtsuForHybrid: MarkerDetectionResult = primary;
     try {
       cv.threshold(preprocessed.gray, alternate, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
       const cornerOtsu = detectMarkers(alternate, loaded.width, loaded.height);
+      cornerOtsuForHybrid=cornerOtsu;
       const midOtsu = detectMidpointMarkers(alternate, loaded.width, loaded.height);
       if (cornerOtsu.found) hypotheses.push({ kind: 'corner', name: 'corner/Otsu', markers: cornerOtsu });
       if (midOtsu.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/Otsu', markers: midOtsu });
@@ -310,7 +317,7 @@ export async function runFullScan(
           kind:'midpoint',name:'midpoint/aruco-guided-Otsu',markers:guidedOtsu,
         });
       }
-      const arucoOtsu=detectArucoMarkers(preprocessed.gray,alternate);
+      arucoOtsu=detectArucoMarkers(preprocessed.gray,alternate);
       logger.info('markerDetection','ArUco identification (Otsu)',{
         identified:arucoOtsu.count,ids:Object.keys(arucoOtsu.points),
         readyForRescue:arucoOtsu.found});
@@ -419,6 +426,33 @@ export async function runFullScan(
           selected=attempt;
         }else disposeAlignment(attempt);
         if(selected?.check.matched===50)break;
+      }
+    }
+
+    // Failure-only hybrid: two bottom ArUco IDs cross-referenced with independently
+    // detected top corner squares. The original QR/timing gates remain mandatory.
+    if(!selected){
+      const hybridSources=[{name:'adaptive',corners:primary,aruco:arucoAdaptive},
+        {name:'Otsu',corners:cornerOtsuForHybrid,aruco:arucoOtsu}];
+      for(const source of hybridSources){
+        const evidence=hybridAnchorEvidence(source.corners,source.aruco);
+        logger.info('perspective','Hybrid cross-family recovery evidence',{
+          source:source.name,reason:evidence.reason,usable:evidence.usable,
+          cornerTopLeft:source.corners.topLeft,cornerTopRight:source.corners.topRight,
+          arucoIds:Object.keys(source.aruco.points),arucoPositions:source.aruco.points,
+          imageAnchors:evidence.imagePoints,templateAnchorsMm:evidence.templateMm
+        });
+        if(!evidence.usable)continue;
+        const hypothesis:Hypothesis={kind:'hybrid',name:'hybrid/corner-aruco-'+source.name,
+          corners:source.corners,aruco:source.aruco};
+        warpAttempts++;
+        const evaluated=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+        if(!evaluated)continue;
+        selected=evaluated;
+        logger.info('perspective','Hybrid cross-family candidate passed QR and timing verification',{
+          name:hypothesis.name,timing:evaluated.check.matched,
+          left:evaluated.check.leftMatched,right:evaluated.check.rightMatched});
+        break;
       }
     }
 
