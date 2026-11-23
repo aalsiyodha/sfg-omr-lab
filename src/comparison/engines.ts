@@ -250,6 +250,19 @@ export async function runEngine(def:EngineDefinition,file:File,previous:EngineRe
           exact:c.exactMatches,wrongOptions:c.optionErrors,extraMarks:c.extraMarks,
           missedMarks:c.missedMarks,statusMismatches:c.statusErrors,
           unresolved:c.unresolved,notGroundTruth:true,scoringAllowed:false}});
+      // Before/after metrics isolate whether optical timing correction helps
+      // a neural page warp; both comparisons use the same optical reference.
+      const correction=result.traces.find(t=>t.message==='AI geometry to optical timing, QR and bubble trial');
+      const evidence=correction?.data as {beforeOpticalCorrection?:EngineResult['answers']}|undefined;
+      if(evidence?.beforeOpticalCorrection){
+        const raw=compareAnswers(reference,{...result,answers:evidence.beforeOpticalCorrection});
+        result.traces.push({stage:'research',message:'AI geometry before-versus-after optical refinement',
+          data:{reference:reference.id,raw:{exact:raw.exactMatches,comparable:raw.comparable,
+            extra:raw.extraMarks,missed:raw.missedMarks,unresolved:raw.unresolved},
+            refined:{exact:c.exactMatches,comparable:c.comparable,
+              extra:c.extraMarks,missed:c.missedMarks,unresolved:c.unresolved},
+            notGroundTruth:true,scoringAllowed:false}});
+      }
     }
     return result;
   }catch(error){return empty(def,String(error),Math.round(performance.now()-t));}
