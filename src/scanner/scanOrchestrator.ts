@@ -335,6 +335,7 @@ export async function runFullScan(
     images.thresholded = preprocessed.thresholdedDataUrl;
     onProgress?.({ stage: 'Finding reference markers (corner and edge midpoint)…', percent: 30 });
 
+    const registrationStarted=Date.now();
     const hypotheses: Hypothesis[] = [];
     const primary=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
     const dpi=getSettings().scanDpi;
@@ -423,8 +424,7 @@ export async function runFullScan(
       ? generateArucoOverlay(loaded.canvas,arucoAdaptive)
       : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
-    const registrationStarted=Date.now();
-    let warpAttempts=0;
+    let warpAttempts=selected?1:0;
     let boundaryAttempted=false;
     for (const hypothesis of hypotheses) {
       if(selected&&canStopRegistrationSearch(selected.qr.valid,selected.check.matched,
