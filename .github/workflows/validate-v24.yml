@@ -4,6 +4,7 @@ on:
     branches:
       - feature/v2.4-universal-comparison
       - fix/v2.4.1-comparison-reliability
+      - fix/v2.4.2-comparison-runtime
   workflow_dispatch:
 permissions:
   contents: read
