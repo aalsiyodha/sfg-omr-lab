@@ -12,6 +12,7 @@ on:
       - fix/v2.4.6-landmark-baseline
       - feature/v2.4.611-optical-recovery
       - feature/v2.4.612-optical-sa24-bubbles
+      - feature/v2.4.613-uvdoc-deeplab-learning
   workflow_dispatch:
 permissions:
   contents: read
@@ -98,6 +99,20 @@ jobs:
           test -s dist/ai-model/scanic/doccornernet_lean.ort
           test -s dist/ai-model/scanic/ort-wasm-simd-threaded.wasm
           ls -lh dist/ai-runtime/scanic* dist/ai-model/scanic/*
+      # UVDoc dense grid, 2026-01-12 Apache-2.0 ONNX export.
+      # The ONNX file uses an external tensor-data companion; ship both.
+      # DeepLab document-mask weights are NOT redistributed: upstream license
+      # remains unconfirmed. Browser can optionally fetch them directly.
+      - name: Bundle pinned Apache-2.0 UVDoc grid and external data
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ai-model/uvdoc
+          base='https://huggingface.co/fredcallagan/uvdoc-grid-onnx/resolve/39c8284d324446cfbbba3fd0695c2b3358fefaca'
+          curl -fL --retry 3 --max-time 240 "$base/UVDoc_grid.onnx?download=true" -o dist/ai-model/uvdoc/UVDoc_grid.onnx
+          curl -fL --retry 3 --max-time 240 "$base/UVDoc_grid.onnx.data?download=true" -o dist/ai-model/uvdoc/UVDoc_grid.onnx.data
+          test -s dist/ai-model/uvdoc/UVDoc_grid.onnx
+          test "$(stat -c%s dist/ai-model/uvdoc/UVDoc_grid.onnx.data)" -gt 10000000
+          ls -lh dist/ai-model/uvdoc/
       # Preserve the original v2.3.45 scanner on a dedicated subpath.
       # Its archived source and build remain independent of current main.
       - name: Check out archived v2.3.45

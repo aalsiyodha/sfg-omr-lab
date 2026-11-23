@@ -125,7 +125,7 @@ export default function ComparePage(){
    <div className="card shadow-sm mb-3">
      <div className="card-body">
        <h2 className="h5">2. Select comparison engines</h2>
-       <p className="small text-secondary">Full scanners read bubbles. The ninth Optical Local-Grid engine uses independent timing tracks to propose unverified rows without AI. AI corner detectors suggest geometry, and bubble AI makes research-only predictions.</p>
+       <p className="small text-secondary">Full scanners read bubbles. Optical Local-Grid proposes unverified rows. UVDoc predicts a dense unwarping grid; DeepLab predicts a document mask. Experimental results never grade.</p>
        <div className="row g-2">
          {ENGINES.map(engine=><div className="col-md-6" key={engine.id}>
            <label className="compare-engine-choice d-flex gap-2 align-items-start p-3 border rounded h-100">
@@ -179,7 +179,15 @@ export default function ComparePage(){
                <td>{r?.confidence!=null?r.confidence.toFixed(4):'—'}</td>
              </tr>})}</tbody>
          </table></div>
-         <p className="small text-secondary">A page-corner detection is not a verified OMR registration. Score comparisons are disabled on this page.</p>
+         <p className="small text-secondary">UVDoc and DeepLab outputs are research-only, not validated OMR registration or scoring sources. DeepLab model weights are fetched externally when selected because upstream redistribution licensing is unconfirmed.</p>
+         {results.filter(r=>Boolean(r.researchImage)).map(r=><div key={r.id} className="border rounded p-3 mb-3">
+           <h3 className="h6">{r.name} — research visualization</h3>
+           <img src={r.researchImage} alt={r.id==='uvdoc'?'Unverified UVDoc unwarped image':'Unverified DeepLab document mask overlay'}
+             style={{width:'100%',maxWidth:650,objectFit:'contain',display:'block'}}/>
+           <a className="btn btn-sm btn-outline-secondary mt-2" href={r.researchImage}
+             download={'sfg-omr-'+r.id+'-research.png'}>Download research PNG</a>
+           <p className="small text-secondary mt-2 mb-0">Not QR-verified; do not grade from this image.</p>
+         </div>)}
          {results.map(r=><details key={r.id} className="border rounded p-2 mb-2">
            <summary><strong>{r.name}</strong> · {word(r.outcome)}</summary>
            <p className="small mb-1 mt-2">{r.reason}</p>
@@ -277,6 +285,6 @@ export default function ComparePage(){
        </>}
      </div>
    </div>}
-   <p className="small text-secondary">All engine inference occurs in this browser. AI model weights and versioned code are downloaded from this GitHub Pages site when needed. No image upload API or server is used.</p>
+   <p className="small text-secondary">Inference occurs locally in this browser; photographs are never uploaded. The experimental DeepLab model is fetched directly from Hugging Face only if selected because its redistribution licensing is unconfirmed.</p>
  </div>;
 }

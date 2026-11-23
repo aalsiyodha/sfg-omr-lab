@@ -3,8 +3,9 @@ import { recoverPageWithScanic } from '../scanner/scanicPageRescue';
 import { recoverPageWithAI } from '../scanner/aiPageRescue';
 import { runBubbleAi } from './bubbleAi';
 import { runLandmarkGrid } from './landmarkGrid';
+import { runDenseResearch } from './denseResearch';
 
-export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn'|'landmark'|'sa24';
+export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn'|'landmark'|'sa24'|'uvdoc'|'deeplab';
 export type Outcome='verified'|'partial'|'provisional'|'failed'|'detected'|'rejected'|'error';
 export interface Point {x:number;y:number}
 export interface ImageSpace {width:number;height:number}
@@ -19,15 +20,17 @@ export interface EngineDefinition{
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
-  {id:'current',name:'Current v2.4.612',kind:'scanner',version:'2.4.612',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'current',name:'Current v2.4.613',kind:'scanner',version:'2.4.613',details:'Complete scanner with QR-less provisional policy',assetPath:''},
   {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
   {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
   {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
-  {id:'landmark',name:'Optical Local-Grid v1',kind:'landmark',version:'2.4.612-exp4',details:'Non-AI 4-anchor hybrid registration + independent left/right timing tracks and row-wise bubble sampling. Research-only, never grades.'},
+  {id:'landmark',name:'Optical Local-Grid v1',kind:'landmark',version:'2.4.613-exp5',details:'Non-AI 4-anchor hybrid registration + independent left/right timing tracks and row-wise bubble sampling. Research-only, never grades.'},
   {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
   {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
   {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
   {id:'sa24',name:'DocAligner FastViT-SA24 (large)',kind:'detector',version:'DocAligner / SA24',details:'Large 83 MB document-corner ONNX model (separate from T8); optional and not a scored OMR scanner.',sizeNote:'~83 MB model · may be slow on phones'},
+  {id:'uvdoc',name:'UVDoc Neural Unwarping Grid',kind:'detector',version:'UVDoc 2023 / ONNX 2026-01-12',details:'Dense 45×31 deformation grid; exports research-only unwarped view. Grid is not OMR-verified.',sizeNote:'~30 MB ONNX + external weight file · Apache-2.0'},
+  {id:'deeplab',name:'DeepLabV3-MobileNetV3 Document Mask',kind:'detector',version:'Pagescan legacy / update date unverified',details:'Optional third-party document mask from Hugging Face; weights load remotely, upstream redistribution license unconfirmed. Experimental overlay only.',sizeNote:'~44 MB external weight fetch · internet/CORS required'},
   {id:'bubblecnn',name:'SmallOMRNet Bubble AI',kind:'bubble',version:'hermitkk / AGPL-3.0',details:'Experimental filled/empty checkbox classifier on aligned bubble crops. NOT scoring.',sizeNote:'~148 KB model'},
 ];
 export interface EngineResult {
@@ -44,6 +47,8 @@ export interface EngineResult {
   raw?:ScanResult;
   /** Internal browser-only image for aligned bubble benchmarking; omitted from exports. */
   alignedImage?:string;
+  /** Independent research visualization only; never interpreted as an aligned scoring sheet. */
+  researchImage?:string;
 }
 const CHANNEL='sfg-omr-lab-compare-v1';
 const MAX_FILE=25*1024*1024;
@@ -207,6 +212,7 @@ export async function runEngine(def:EngineDefinition,file:File,previous:EngineRe
   try{
     return def.kind==='scanner'?await runIframe(def,file):
       def.kind==='landmark'?await runLandmarkGrid(def,file,previous):
+      def.id==='uvdoc'||def.id==='deeplab'?await runDenseResearch(def,file):
       def.kind==='bubble'?await runBubbleAi(def,
         previous.find(x=>x.id==='current'&&Boolean(x.alignedImage))??
         previous.find(x=>x.id==='scanic'&&Boolean(x.alignedImage))):
