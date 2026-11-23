@@ -67,7 +67,7 @@ export function fitMaskedLatentPredictor(
   const held=examples.filter(e=>e.question%5===0);
   if(train.length<18||held.length<4)return {...empty,examples:examples.length};
   // 4x4 online-trained student predictor initialized as identity.
-  const weights=Array.from({length:4},(_,i)=>
+  const weights:number[][]=Array.from({length:4},(_,i)=>
     Array.from({length:4},(_,j)=>i===j?1:0));
   const bias=[0,0,0,0],rate=.08;
   const predict=(x:V)=>weights.map((w,i)=>
