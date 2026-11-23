@@ -15,6 +15,7 @@ on:
       - feature/v2.4.613-uvdoc-deeplab-learning
       - feature/v2.4.615-end-to-end-research
       - feature/v2.4.616-real-comparison
+      - feature/v2.4.617-focused-optical-ai
   workflow_dispatch:
 permissions:
   contents: read
