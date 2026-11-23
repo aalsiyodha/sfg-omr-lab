@@ -1881,3 +1881,51 @@ test('v2.4.618 fresh-sheet diagnostics preserve strict grading and expose row ge
   assert.match(scan,/if\(!selected\|\|!canStopUnifiedRegistration/);
   assert.match(page,/useState<ReportMode>\('full'\)/);
 });
+
+
+test('v2.5.1: geometry decision router cannot bypass QR or 50/50 criteria',()=>{
+  const {assessGeometry}=loadTS('src/scanner/unifiedGeometryPolicy.ts');
+  const {chooseGeometryAction}=loadTS('src/scanner/geometryRouter.ts',{
+    './unifiedGeometryPolicy':{assessGeometry}
+  });
+  const evidence=(timing,left,right,qrValid=true)=>({
+    qrValid,timingMatched:timing,leftMatched:left,rightMatched:right
+  });
+  assert.equal(chooseGeometryAction(evidence(50,25,25)).action,'accept');
+  assert.equal(chooseGeometryAction(evidence(49,25,24)).action,'recover');
+  assert.equal(chooseGeometryAction(evidence(47,24,23)).safeToScore,false);
+  assert.equal(chooseGeometryAction(evidence(50,25,25,false)).action,'reject_identity');
+  assert.equal(chooseGeometryAction({...evidence(50,25,25),withheldErrorPx:3}).action,'refine');
+});
+test('v2.5.1: decision proof never promotes invalid marks or blanks',()=>{
+  const {auditBubbleDecision,applyDecisionReview}=loadTS('src/scanner/decisionProof.ts');
+  const geom={dx:0,dy:0,confidence:20,applied:false};
+  const row=(status,fill,shape,extra={})=>({
+    question:38,detectedAnswer:status==='detected'?'D':null,status,
+    confidence:99,isManuallyEdited:false,measurements:[{
+      question:38,option:'D',fillPercent:fill,validMark:true,
+      radialShape:shape,radialCore:96,radialMiddle:85,radialOuter:65,
+      filledSectors:8,filledQuadrants:4,xMm:0,yMm:0,...extra
+    }]
+  });
+  const solid=row('detected',100,'solid_like');
+  const crescent=row('detected',100,'hollow_ring');
+  const blank=row('blank',65,'partial');
+  assert.equal(auditBubbleDecision(solid,geom).action,'accept_existing');
+  const suspicious=auditBubbleDecision(crescent,geom);
+  assert.equal(suspicious.action,'review');
+  const reviewed=applyDecisionReview(crescent,suspicious,true);
+  assert.equal(reviewed.status,'uncertain');
+  assert.equal(reviewed.detectedAnswer,null);
+  assert.deepEqual(applyDecisionReview(crescent,suspicious,false),crescent);
+  const invalid=auditBubbleDecision(blank,geom);
+  assert.equal(applyDecisionReview(blank,invalid,true).status,'blank');
+  const conflict=auditBubbleDecision(solid,geom,row('blank',20,'partial'));
+  assert.equal(conflict.action,'review');
+});
+test('v2.5.1: proof audit is feature-gated and uses one optical geometry',()=>{
+  const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.match(scan,/new URLSearchParams\(window\.location\.search\)\.get\('proofscan'\)==='1'/);
+  assert.match(scan,/v2\.5\.1 selective DecisionScan audit/);
+  assert.match(scan,/chooseGeometryAction/);
+});
