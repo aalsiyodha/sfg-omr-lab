@@ -76,9 +76,14 @@ export async function runBubbleAi(def:EngineDefinition,
    timing:null,timingLeft:null,timingRight:null,markerCount:null,
    calibration:null,testId:null,answers:[],traces:[]
  });
- if(!source || !source.alignedImage || !source.raw?.perspectiveCorrected){
-   return failed('Requires a geometrically aligned image from the current scanner; no trustworthy bubble ROIs exist.');
+ if(!source || !source.alignedImage){
+   return failed('No source warp available; select the current scanner or Scanic corner detector.');
  }
+ // Scanic geometry is AI-only: samples are exploratory, unverified and must
+ // never be interpreted as student answers or compared as verified scores.
+ const sourceVerified=source.kind==='scanner'&&source.alignmentVerified===true;
+ const provenance=source.kind==='detector'?'AI-predicted unverified Scanic page':
+   sourceVerified?'independently verified optical registration':'provisional optical registration';
  const traces:EngineResult['traces']=[];
  try{
    const t=performance.now();
@@ -86,7 +91,8 @@ export async function runBubbleAi(def:EngineDefinition,
    traces.push({stage:'bubbleAI',message:'runtime-initialized',data:{
      loadMs:Math.round(performance.now()-t),modelUrl,runtimeUrl,
      model:'SmallOMRNet',license:'AGPL-3.0',training:'synthetic checkbox crops',
-     modelInput:[1,1,64,64],notCalibratedFor:'SFG circular answer bubbles'
+     modelInput:[1,1,64,64],notCalibratedFor:'SFG circular answer bubbles',
+     source:source.id,provenance,sourceVerified
    }});
    const image=await alignedCanvas(source.alignedImage);
    // Use rendered page geometry instead of assuming source camera pixels.
@@ -128,7 +134,8 @@ export async function runBubbleAi(def:EngineDefinition,
      const choice=decisive?'ABCD'[sorted[0].i]:null;
      const optical=source.answers.find(a=>a.q===q);
      if(!decisive)unresolved++;
-     else if(optical?.answer===choice)agreements++;
+     else if(!sourceVerified || !optical)unresolved++;
+     else if(optical.answer===choice)agreements++;
      else disagreements++;
      answers.push({q,answer:choice,status:decisive?'experimental':'uncertain',
        confidence:sorted[0].p});
@@ -136,6 +143,7 @@ export async function runBubbleAi(def:EngineDefinition,
    traces.push({stage:'bubbleAI',message:'bubble-classifier-summary',
      data:{agreement:agreements,disagreement:disagreements,unresolved,
        noGroundTruth:true,confidenceCalibrated:false,
+       source:source.id,provenance,sourceVerified,
        scores:scores.map((row,i)=>({q:i+1,
          filledProbabilities:row.map(v=>+v.toFixed(4)),
          raw:rawValues[i].map(v=>+v.toFixed(4))}))}});
@@ -145,7 +153,8 @@ export async function runBubbleAi(def:EngineDefinition,
      timingLeft:source.timingLeft,timingRight:source.timingRight,
      corners:source.corners,testId:source.testId,
      answers,confidence:null,traces,
-     reason:'Experimental AI bubble readings (not calibrated for SFG); '+
-       agreements+' matches, '+disagreements+' differences, '+unresolved+' uncertain vs optical'};
+     reason:'UNVERIFIED experimental bubble predictions from '+provenance+
+       '; '+(sourceVerified?agreements+' optical matches, '+disagreements+' disagreements, ':'optical comparison unavailable; ')+
+       unresolved+' unverified/uncertain rows; NEVER for grading'};
  }catch(error){return {...failed(String(error)),traces};}
 }
