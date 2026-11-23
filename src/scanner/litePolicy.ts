@@ -1,14 +1,11 @@
-/**
- * Lite experiment: stop spending CPU on alternative full-page warps only
- * after the QR identity and both independent timing bands are perfect.
- * Intentionally retains the baseline fallback path for 49/50 or worse.
+/** Fast-path only for independently QR-verified, near-perfect two-sided registration.
+ * 48/50 with at least 23 on each side avoids redundant costly warps.
+ * A merely passing 35/50 candidate is NOT sufficient to end the search.
  */
-export function canStopRegistrationSearch(
-  qrVerified: boolean,
-  timingMatched: number,
-  leftMatched: number,
-  rightMatched: number,
-): boolean {
-  return qrVerified && timingMatched === 50 &&
-    leftMatched === 25 && rightMatched === 25;
+export function canStopRegistrationSearch(qrVerified:boolean,timingMatched:number,
+  leftMatched:number,rightMatched:number):boolean{
+  return qrVerified && timingMatched>=48 && timingMatched<=50 &&
+    leftMatched>=23 && rightMatched>=23 &&
+    leftMatched<=25 && rightMatched<=25 &&
+    leftMatched+rightMatched===timingMatched;
 }
