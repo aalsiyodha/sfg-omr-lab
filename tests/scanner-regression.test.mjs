@@ -1784,3 +1784,33 @@ test('question comparison includes blank, multiple and missing rows without inve
   assert.match(grid,/function classifyFills/);
   assert.match(grid,/observedQR\.valid/);
 });
+
+test('real comparator separates exact answers, blanks, multiple, wrong choices and missing rows',()=>{
+  const {compareAnswers}=loadTS('src/comparison/answerComparison.ts');
+  const ref={id:'current',answers:[
+    {q:1,status:'detected',answer:'B'},
+    {q:2,status:'blank',answer:null},
+    {q:3,status:'multiple',answer:null},
+    {q:4,status:'detected',answer:'D'},
+    {q:5,status:'detected',answer:'B'},
+    {q:6,status:'detected',answer:'A'}
+  ]};
+  const trial={id:'landmark',answers:[
+    {q:1,status:'detected',answer:'B'},
+    {q:2,status:'detected',answer:'C'},
+    {q:3,status:'blank',answer:null},
+    {q:4,status:'blank',answer:null},
+    {q:5,status:'detected',answer:'C'},
+    {q:6,status:'uncertain',answer:null}
+  ]};
+  const output=compareAnswers(ref,trial);
+  assert.equal(output.exactMatches,1);
+  assert.equal(output.extraMarks,1);
+  assert.equal(output.statusErrors,1);
+  assert.equal(output.missedMarks,1);
+  assert.equal(output.optionErrors,1);
+  assert.equal(output.unresolved,45);
+  assert.equal(output.comparable,5);
+  assert.equal(output.coverage,6);
+  assert.equal(output.referenceIsGroundTruth,false);
+});
