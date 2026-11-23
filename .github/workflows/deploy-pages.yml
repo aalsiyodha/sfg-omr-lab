@@ -1,227 +1,34 @@
-name: Deploy SFG OMR Lab to GitHub Pages
-
+name: Deploy SFG OMR Lab v2.5 to GitHub Pages
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
   id-token: write
-
 concurrency:
   group: github-pages
   cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Run scanner regression tests
-        run: npm run test:scanner
-      - name: Build website
-        run: npm run build
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:scanner
+      - run: npm run build
         env:
           GITHUB_PAGES: 'true'
-      # Vendor pinned AI runtime and model into GitHub Pages.
-      # No runtime dependency on third-party CDNs, and no network request
-      # on normal successful scans: assets are loaded only on failure.
-      - name: Check out pinned Quadscan source
-        uses: actions/checkout@v4
-        with:
-          repository: storrealbac/quadscan
-          ref: 5bbd55b58cabc196323ce541e0528deb42c57ee5
-          path: quadscan-source
-      - name: Install pinned AI runtime dependencies
-        run: npm ci
-        working-directory: quadscan-source
-      - name: Build pinned AI runtime
-        run: npm run build
-        working-directory: quadscan-source
-      - name: Bundle AI runtime and weights into Pages
-        run: |
-          set -euo pipefail
-          mkdir -p dist/ai-model dist/ai-runtime
-          cp quadscan-source/dist/quadscan.iife.js dist/ai-runtime/quadscan.iife.js
-          cp quadscan-source/models/lcnet100_h_e_bifpn_256_fp32.onnx dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
-          cp quadscan-source/models/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
-          cp quadscan-source/node_modules/onnxruntime-web/dist/*.wasm dist/ai-runtime/
-          cp quadscan-source/node_modules/onnxruntime-web/dist/ort.wasm.min.mjs dist/ai-runtime/
-          # ort.wasm.min.mjs loads its matching worker/wasm .mjs at runtime.
-          # Copy both JS companions and matching WASM instead of only the entry module.
-          cp quadscan-source/node_modules/onnxruntime-web/dist/ort-wasm*.mjs dist/ai-runtime/
-          test -s dist/ai-runtime/ort.wasm.min.mjs
-          test -s dist/ai-runtime/ort-wasm-simd-threaded.mjs
-          test -s dist/ai-runtime/ort-wasm-simd-threaded.wasm
-          test -s dist/ai-runtime/quadscan.iife.js
-          test -s dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
-          test -s dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx
-          ls -lh dist/ai-runtime dist/ai-model
-      # Optional tenth detector: the larger Apache-2.0 DocAligner FastViT-SA24.
-      # Pin to known model repository revision; fetch at build, never on a
-      # standard scanner's fast path. 83 MB may be impractical on mobile.
-      - name: Vendor FastViT-SA24 large independent corner detector
-        run: |
-          set -euo pipefail
-          curl --fail --location --retry 3 --retry-delay 3 --max-time 240 \
-            'https://huggingface.co/7rplus/pagescan-weights/resolve/6ffde6b/fastvit_sa24_h_e_bifpn_256_fp32.onnx?download=true' \
-            -o dist/ai-model/fastvit_sa24_h_e_bifpn_256_fp32.onnx
-          test "$(stat -c%s dist/ai-model/fastvit_sa24_h_e_bifpn_256_fp32.onnx)" -gt 75000000
-          ls -lh dist/ai-model/fastvit_sa24_h_e_bifpn_256_fp32.onnx
-      # v2.3.48: independently trained Scanic DocCornerNet (SimCC) fallback.
-      # Commit-pinned, MIT licensed; self-host model+minimal WASM.
-      - name: Check out pinned Scanic source
-        uses: actions/checkout@v4
-        with:
-          repository: marquaye/scanic
-          ref: 480193b724fd2f2ad523a1cc279a3c65ce37dc2c
-          path: scanic-source
-      - name: Fetch pinned published Scanic ESM build
-        run: |
-          set -euo pipefail
-          mkdir -p scanic-published
-          npm pack scanic@1.8.0 --pack-destination scanic-published
-          tar -xzf scanic-published/scanic-1.8.0.tgz -C scanic-published
-          test -s scanic-published/package/dist/scanic.js
-      - name: Bundle Scanic model and runtime in GitHub Pages
-        run: |
-          set -euo pipefail
-          mkdir -p dist/ai-runtime dist/ai-model/scanic
-          cp scanic-published/package/dist/scanic*.js dist/ai-runtime/
-          cp scanic-source/scanic-ml/dist/doccornernet_lean.ort dist/ai-model/scanic/
-          cp scanic-source/scanic-ml/dist/ort-wasm-simd-threaded.* dist/ai-model/scanic/
-          test -s dist/ai-runtime/scanic.js
-          test -s dist/ai-model/scanic/doccornernet_lean.ort
-          test -s dist/ai-model/scanic/ort-wasm-simd-threaded.wasm
-          ls -lh dist/ai-runtime/scanic* dist/ai-model/scanic/*
-      # UVDoc dense grid, 2026-01-12 Apache-2.0 ONNX export.
-      # The ONNX file uses an external tensor-data companion; ship both.
-      # DeepLab document-mask weights are NOT redistributed: upstream license
-      # remains unconfirmed. Browser can optionally fetch them directly.
-      - name: Bundle pinned Apache-2.0 UVDoc grid and external data
-        run: |
-          set -euo pipefail
-          mkdir -p dist/ai-model/uvdoc
-          base='https://huggingface.co/fredcallagan/uvdoc-grid-onnx/resolve/39c8284d324446cfbbba3fd0695c2b3358fefaca'
-          curl -fL --retry 3 --max-time 240 "$base/UVDoc_grid.onnx?download=true" -o dist/ai-model/uvdoc/UVDoc_grid.onnx
-          curl -fL --retry 3 --max-time 240 "$base/UVDoc_grid.onnx.data?download=true" -o dist/ai-model/uvdoc/UVDoc_grid.onnx.data
-          test -s dist/ai-model/uvdoc/UVDoc_grid.onnx
-          test "$(stat -c%s dist/ai-model/uvdoc/UVDoc_grid.onnx.data)" -gt 10000000
-          ls -lh dist/ai-model/uvdoc/
-      # Preserve the original v2.3.45 scanner on a dedicated subpath.
-      # Its archived source and build remain independent of current main.
-      - name: Check out archived v2.3.45
-        uses: actions/checkout@v4
-        with:
-          ref: archive/v2.3.45-stable
-          path: archived-source
-      - name: Install archived dependencies
-        run: npm ci
-        working-directory: archived-source
-      - name: Test archived scanner
-        run: npm run test:scanner
-        working-directory: archived-source
-      - name: Set archived Pages base path
-        working-directory: archived-source
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('vite.config.ts')
-          text=p.read_text()
-          needle="'/sfg-omr-lab/'"
-          assert needle in text
-          p.write_text(text.replace(needle,"'/sfg-omr-lab/v2.3.45/'",1))
-          PY
-      - name: Copy versioned comparison bridge into archived v2.3.45
-        run: |
-          cp src/comparisonBridge.ts archived-source/src/comparisonBridge.ts
-          printf "\nimport './comparisonBridge'\n" >> archived-source/src/main.tsx
-      - name: Build archived v2.3.45 website
-        run: npm run build
-        working-directory: archived-source
-        env:
-          GITHUB_PAGES: 'true'
-      - name: Package both versions
-        run: |
-          mkdir -p dist/v2.3.45
-          cp -R archived-source/dist/. dist/v2.3.45/
-      # Experimental checkbox classifier: AGPL-3.0, small 64x64 grayscale CNN.
-      # Never used for actual scoring; only an independent bubble comparison.
-      - name: Vendor experimental SmallOMRNet ONNX and license
-        run: |
-          set -euo pipefail
-          mkdir -p dist/ai-model/bubble
-          curl -fL --retry 3 --max-time 90 \
-            'https://huggingface.co/hermitkk/omr-checkbox-classifier/resolve/046c24e/omr_model.onnx?download=true' \
-            -o dist/ai-model/bubble/omr_model.onnx
-          curl -fL --retry 3 --max-time 90 \
-            'https://raw.githubusercontent.com/spdx/license-list-data/main/text/AGPL-3.0-only.txt' \
-            -o dist/ai-model/bubble/LICENSE-AGPL-3.0.txt
-          printf 'SmallOMRNet / omr-checkbox-classifier\nAuthor: hermitkk (Chenfeng Xu), UBC / Plom Project\nModel: https://huggingface.co/hermitkk/omr-checkbox-classifier\nRevision: 046c24e\nLicense: AGPL-3.0\nExperimental only: trained on synthetic checkboxes, not verified on SFG circular bubbles.\n' > dist/ai-model/bubble/NOTICE.txt
-          test -s dist/ai-model/bubble/omr_model.onnx
-          test -s dist/ai-model/bubble/LICENSE-AGPL-3.0.txt
-      # Two further fully independent legacy engines (do NOT mix their OpenCV globals).
-      - name: Check out archived v2.2.6 Lite
-        uses: actions/checkout@v4
-        with:
-          ref: release/v2.2.6-lite-old-version-retest
-          path: historical-226
-      - name: Check out archived v2.2.4
-        uses: actions/checkout@v4
-        with:
-          ref: release/v2.2.4-qwen-hardening
-          path: historical-224
-      - name: Build original historical scanner engines with isolated bridge
-        run: |
-          set -euo pipefail
-          for pair in "historical-226:v2.2.6" "historical-224:v2.2.4"; do
-            folder="${pair%%:*}"
-            ver="${pair##*:}"
-            cp src/comparisonBridge.ts "$folder/src/comparisonBridge.ts"
-            printf "\nimport './comparisonBridge'\n" >> "$folder/src/main.tsx"
-            python3 - "$folder" "$ver" <<'PY'
-          from pathlib import Path
-          import sys
-          folder,ver=sys.argv[1:]
-          p=Path(folder)/'vite.config.ts'
-          src=p.read_text()
-          base=f"base: process.env.GITHUB_PAGES === 'true' ? '/sfg-omr-lab/versions/{ver}/' : '/',"
-          if 'return {\n    plugins:' in src:
-              src=src.replace('return {\n    plugins:', 'return {\n    '+base+'\n    plugins:',1)
-          elif 'export default defineConfig({\n  plugins:' in src:
-              src=src.replace('export default defineConfig({\n  plugins:', 'export default defineConfig({\n  '+base+'\n  plugins:',1)
-          else:
-              raise SystemExit('Unsupported historical Vite config: '+folder)
-          p.write_text(src)
-          PY
-            (cd "$folder" && npm ci && GITHUB_PAGES=true npm run build)
-            mkdir -p "dist/versions/$ver"
-            cp -R "$folder/dist/." "dist/versions/$ver/"
-            test -s "dist/versions/$ver/index.html"
-          done
-      - name: Validate comparison assets
-        run: |
-          set -euo pipefail
-          for file in             dist/index.html             dist/v2.3.45/index.html             dist/versions/v2.2.6/index.html             dist/versions/v2.2.4/index.html             dist/ai-runtime/scanic.js             dist/ai-model/scanic/doccornernet_lean.ort             dist/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx             dist/ai-model/fastvit_t8_h_e_bifpn_256_fp32.onnx dist/ai-model/bubble/omr_model.onnx dist/ai-runtime/ort-wasm-simd-threaded.mjs dist/ai-runtime/ort-wasm-simd-threaded.wasm; do
-            test -s "$file"
-          done
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-      - name: Upload website
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-
   deploy:
     environment:
       name: github-pages
@@ -229,6 +36,5 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
