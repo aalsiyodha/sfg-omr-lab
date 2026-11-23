@@ -52,6 +52,7 @@ interface AcceptedAlignment {
   qr: QRStatus;
   check: AlignmentCheck;
   rotated: boolean;
+  provisional?: boolean;
 }
 
 function disposeAlignment(alignment: AcceptedAlignment): void {
@@ -68,7 +69,8 @@ function evaluateHypothesis(
   source: HTMLCanvasElement,
   hypothesis: Hypothesis,
   dpi: number,
-  curveBudget: { remaining: number }
+  curveBudget: { remaining: number },
+  allowQrlessProvisional = false
 ): AcceptedAlignment | null {
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
@@ -105,6 +107,32 @@ function evaluateHypothesis(
         );
         rotated = true;
       }
+    }
+    if (!qr.valid && allowQrlessProvisional && !rotated) {
+      // Independent fallback for READ-ONLY provisional measurements. Never
+      // bypass QR for an automatically verified or gradable examination.
+      let candidateGray:any=null;
+      try {
+        candidateGray=new cv.Mat();
+        cv.cvtColor(persp.corrected,candidateGray,cv.COLOR_RGBA2GRAY);
+        const timing=verifyTimingMarks(candidateGray,dpi);
+        const strip=measureGrayCalibration(candidateGray,dpi);
+        const strongTiming=timing.matched>=48 && timing.leftMatched>=23 && timing.rightMatched>=23;
+        const stripValid=strip.status==='ok' && strip.ordered &&
+          strip.patchMedians.length===7 && (strip.contrast??0)>=90;
+        logger.info('perspective',`${hypothesis.name}: QR-less provisional geometry evidence`,{
+          timing:timing.matched,left:timing.leftMatched,right:timing.rightMatched,
+          requiredTiming:48,requiredPerSide:23,stripStatus:strip.status,
+          stripContrast:strip.contrast,stripOrdered:strip.ordered,
+          strongTiming,stripValid,accepted:strongTiming&&stripValid
+        });
+        if(strongTiming&&stripValid){
+          gray=candidateGray;candidateGray=null;keep=true;
+          logger.warning('perspective',`${hypothesis.name}: PROVISIONAL ONLY — QR not decoded; scoring prohibited`);
+          return {hypothesis,perspective:persp,gray,canvas,qr,check:timing,
+            rotated:false,provisional:true};
+        }
+      }finally{cleanupMats(candidateGray);}
     }
     if (!qr.valid) {
       // The grayscale strip is independent location evidence for a hybrid warp,
@@ -641,10 +669,13 @@ export async function runFullScan(
               for(const hypothesis of candidateList){
                 aiAttempted++;warpAttempts++;
                 const attemptStart=Date.now();
-                const evaluated=evaluateHypothesis(ai.canvas,hypothesis,dpi,curveBudget);
+                const allowProvisional=corner.found && midpoint.found &&
+                  ai.confidence>=.5 && variant.name==='adaptive';
+                const evaluated=evaluateHypothesis(ai.canvas,hypothesis,dpi,curveBudget,allowProvisional);
                 logger.info('perspective','AI candidate verification result',{
                   method:hypothesis.name,accepted:Boolean(evaluated),
-                  reason:evaluated?'qr-and-timing-verified':'qr-or-timing-rejected-see-stage-logs',
+                  reason:evaluated?(evaluated.provisional?'provisional-geometry-only':'qr-and-timing-verified'):
+                    'qr-or-strong-independent-geometry-rejected-see-stage-logs',
                   durationMs:Date.now()-attemptStart,
                   timing:evaluated?.check.matched??0,
                   left:evaluated?.check.leftMatched??0,right:evaluated?.check.rightMatched??0,
@@ -653,8 +684,10 @@ export async function runFullScan(
                 if(!evaluated){aiRejections.push({method:hypothesis.name,
                   reason:'qr-or-timing-validation-failed'});continue;}
                 selected=evaluated;
-                aiStatus='verified';
-                logger.info('perspective','AI-assisted registration independently verified',{
+                aiStatus=evaluated.provisional?'provisional-only':'verified';
+                logger.info('perspective',evaluated.provisional?
+                  'AI-assisted provisional geometry available (NO scoring)':
+                  'AI-assisted registration independently verified',{
                   method:hypothesis.name,qrValid:evaluated.qr.valid,
                   left:evaluated.check.leftMatched,right:evaluated.check.rightMatched
                 });
@@ -693,6 +726,7 @@ export async function runFullScan(
     let markerCount = primary.count;
     let corrected = false;
     let alignmentVerified = false;
+    let provisional = false;
     let alignmentMatched = 0;
     let registrationMethod: string | null = null;
     let rotated = false;
@@ -701,16 +735,18 @@ export async function runFullScan(
     if (selected) {
       const chosen = selected;
       corrected = true;
-      qrValid = true;
+      provisional=Boolean(chosen.provisional);
+      qrValid = chosen.qr.valid;
       studentId = chosen.qr.studentId;
       qrRaw = chosen.qr.raw;
-      alignmentVerified = true;
+      alignmentVerified = !chosen.provisional && chosen.qr.valid;
       alignmentMatched = chosen.check.matched;
       registrationMethod = chosen.hypothesis.name;
       rotated = chosen.rotated;
       markerCount = 4;
       logger.info('perspective', `Selected ${registrationMethod} registration`,
-        { timingMarks: alignmentMatched, rotated });
+        { timingMarks: alignmentMatched, rotated,
+          provisional:Boolean(chosen.provisional),qrValid });
       images.perspectiveCorrected = chosen.canvas.toDataURL('image/png');
       if(arucoAdaptive.found)images.markerOverlay=generateArucoOverlay(
         loaded.canvas,arucoAdaptive,registrationMethod,alignmentMatched,
@@ -819,11 +855,12 @@ export async function runFullScan(
     const partial: ScanResult = {
       studentId, testId, answers, qrRaw, qrValid, markerCount,
       perspectiveCorrected: corrected, alignmentVerified, alignmentMatched,
+      provisional,
       registrationMethod, orientationRotated: rotated,
       processingTimeMs: Date.now() - start,
       grayCalibration,
       stageLogs: [],
-      warnings: [],
+      warnings: provisional?['PROVISIONAL extraction: QR identity unverified. Answers require human review; automatic scoring disabled.']:[],
       errors: selected ? [] : [
         'No registration hypothesis passed QR identity and independent left/right timing checks (corners, midpoint squares, ArUco). Try a sharper full-page image.'
       ],
