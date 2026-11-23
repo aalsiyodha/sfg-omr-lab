@@ -4,7 +4,6 @@
  * NEVER used for official scoring. Requires a separately aligned scanner image.
  */
 import {getBubbleCentre,mmToPx} from '../config/omrLayout';
-import {getSettings} from '../config/scannerSettings';
 import type {EngineResult,EngineDefinition} from './engines';
 
 type OrtTensor={data:Float32Array|number[];dims:readonly number[]};
@@ -134,15 +133,12 @@ export async function runBubbleAi(def:EngineDefinition,
      answers.push({q,answer:choice,status:decisive?'experimental':'uncertain',
        confidence:sorted[0].p});
    }
-   traces.push({stage:'bubbleAI',message:'bubble-classifier-comparison',{
-     // Shallow spread in neutral form avoids introducing additional UI fields.
-   }});
-   traces[traces.length-1]={stage:'bubbleAI',message:'bubble-classifier-summary',
+   traces.push({stage:'bubbleAI',message:'bubble-classifier-summary',
      data:{agreement:agreements,disagreement:disagreements,unresolved,
        noGroundTruth:true,confidenceCalibrated:false,
        scores:scores.map((row,i)=>({q:i+1,
          filledProbabilities:row.map(v=>+v.toFixed(4)),
-         raw:rawValues[i].map(v=>+v.toFixed(4))}))}};
+         raw:rawValues[i].map(v=>+v.toFixed(4))}))}});
    return {...failed('Experimental checkbox classifier; never used for scoring'),
      outcome:'provisional',elapsedMs:Math.round(performance.now()-start),
      qrValid:source.qrValid,alignmentVerified:false,timing:source.timing,
