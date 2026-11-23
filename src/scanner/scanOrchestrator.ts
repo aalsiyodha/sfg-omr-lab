@@ -337,6 +337,7 @@ export async function runFullScan(
 
     const registrationStarted=Date.now();
     const hypotheses: Hypothesis[] = [];
+    let fastWarpAttempts=0;
     const primary=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
     const dpi=getSettings().scanDpi;
     const curveBudget={remaining:1};
@@ -352,6 +353,7 @@ export async function runFullScan(
         topLeft:primary.topLeft,topRight:primary.topRight,
         bottomLeft:primary.bottomLeft,bottomRight:primary.bottomRight,
         validGeometry:primary.validGeometry});
+      fastWarpAttempts++;
       const candidate=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
       if(candidate)selected=candidate;
       if(candidate&&canStopRegistrationSearch(candidate.qr.valid,candidate.check.matched,
@@ -424,7 +426,7 @@ export async function runFullScan(
       ? generateArucoOverlay(loaded.canvas,arucoAdaptive)
       : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
-    let warpAttempts=selected?1:0;
+    let warpAttempts=fastWarpAttempts;
     let boundaryAttempted=false;
     for (const hypothesis of hypotheses) {
       if(selected&&canStopRegistrationSearch(selected.qr.valid,selected.check.matched,
