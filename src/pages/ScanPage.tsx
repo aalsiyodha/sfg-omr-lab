@@ -231,7 +231,7 @@ export default function ScanPage({ appState }: Props) {
     <div className="minimal-scan">
       <header className="minimal-scan-heading">
         <div>
-          <span className="minimal-kicker">SFG OMR LAB · v2.3.4</span>
+          <span className="minimal-kicker">SFG OMR LAB · v2.3.41</span>
           <h1>Scan a sheet</h1>
         </div>
         <span className="minimal-build" title={APP_DEPLOY_LABEL+' · '+APP_BUILD_META.sha}>{APP_VERSION}</span>
@@ -350,7 +350,7 @@ export default function ScanPage({ appState }: Props) {
                 {intermediateImages.bubbleOverlay
                   ? <img className="minimal-inspection-image" src={intermediateImages.bubbleOverlay}
                     alt="Bubble detection overlay"/>
-                  : <p className="minimal-empty">No bubble overlay. Check the marker image and diagnostics.</p>}
+                  : <p className="minimal-empty">No alignment verified. Check Markers and Diagnostics for the failed registration.</p>}
               </>
             )}
             {activeTab==='markers'&&(
@@ -363,7 +363,7 @@ export default function ScanPage({ appState }: Props) {
                 {intermediateImages.markerOverlay
                   ? <img className="minimal-inspection-image" src={intermediateImages.markerOverlay}
                     alt="Detected reference markers"/>
-                  : <p className="minimal-empty">Marker overlay unavailable.</p>}
+                  : <p className="minimal-empty">No marker overlay available. Check the diagnostic report.</p>}
               </>
             )}
             {activeTab==='table'&&(
