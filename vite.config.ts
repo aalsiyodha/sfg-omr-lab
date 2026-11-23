@@ -28,6 +28,8 @@ export default defineConfig(({ command }) => {
     dirty: !isVercel && localDirty(),
   }
   return {
+    // GitHub Pages serves this repository under /sfg-omr-lab/, not /.
+    base: process.env.GITHUB_PAGES === 'true' ? '/sfg-omr-lab/' : '/',
     plugins: [
       react(),
       { name: 'app-version-html', transformIndexHtml: html => html.replaceAll('__APP_VERSION__', `v${version}`) },
