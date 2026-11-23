@@ -223,13 +223,35 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
 export async function runEngine(def:EngineDefinition,file:File,previous:EngineResult[]=[]):Promise<EngineResult>{
   const t=performance.now();
   try{
-    return def.kind==='scanner'?await runIframe(def,file):
+    const result=def.kind==='scanner'?await runIframe(def,file):
       def.kind==='landmark'?await runLandmarkGrid(def,file,previous):
       def.id==='uvdoc'||def.id==='deeplab'?await runDenseResearch(def,file):
       def.kind==='bubble'?await runBubbleAi(def,
         previous.find(x=>x.id==='current'&&Boolean(x.alignedImage))??
         previous.find(x=>x.id==='scanic'&&Boolean(x.alignedImage))):
       await runDetector(def,file);
+    // The same independently aligned optical scanner provides an exploratory
+    // reference for all AI geometry models. It is NOT human ground truth.
+    const reference=previous.find(x=>x.kind==='scanner'&&x.alignmentVerified===true
+      &&x.qrValid===true&&x.answers.length===50);
+    if(reference&&result.kind==='detector'){
+      let matches=0,wrong=0,extra=0,missed=0,unknown=0;
+      for(let q=1;q<=50;q++){
+        const a=result.answers.find(x=>x.q===q);
+        const b=reference.answers.find(x=>x.q===q);
+        if(!a||!b){unknown++;continue;}
+        if(a.answer){
+          if(b.status==='detected'){
+            if(a.answer===b.answer)matches++;else wrong++;
+          }else extra++;
+        }else if(b.status==='detected')missed++;
+        else unknown++;
+      }
+      result.traces.push({stage:'research',message:'AI-warp 50-row optical reference comparison',
+        data:{reference:reference.id,matches,wrong,extra,missed,unknown,
+          notGroundTruth:true,scoringAllowed:false}});
+    }
+    return result;
   }catch(error){return empty(def,String(error),Math.round(performance.now()-t));}
 }
 export async function imageSha256(file:File):Promise<string>{
