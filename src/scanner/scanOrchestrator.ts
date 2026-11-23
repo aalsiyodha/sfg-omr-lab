@@ -7,6 +7,7 @@ import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
 import { canStopRegistrationSearch } from './litePolicy';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
+import { recoverPageWithAI } from './aiPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { correctPerspectiveFromQrAruco } from './qrArucoRegistration';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
@@ -591,6 +592,68 @@ export async function runFullScan(
       });
       logger.info('perspective','Outer-page rescue timing',{
         durationMs:Date.now()-boundaryStart,verified:Boolean(selected)});
+    }
+    // LAST RESORT: load the ~4.5 MB document corner model only after all
+    // deterministic registration and page-boundary methods have failed.
+    // AI provides candidate geometry, never permission to grade. Every
+    // candidate must pass the original QR identity and two timing-track gates.
+    if(!selected){
+      const aiStart=Date.now();
+      let aiAttempted=0;
+      try{
+        onProgress?.({stage:'Last resort: detecting page corners with local AI…',percent:52});
+        const ai=await recoverPageWithAI(loaded.canvas);
+        logger.info('perspective','AI document boundary recovery',{
+          model:'DocAligner LCNet-100',invoked:true,
+          found:Boolean(ai),confidence:ai?.confidence??null,
+          corners:ai?.corners??[],durationMs:Date.now()-aiStart
+        });
+        if(ai){
+          const processed=preprocessImage(ai.canvas);
+          let aiOtsu:any=null;
+          try{
+            const variants=[{name:'adaptive',binary:processed.thresholded}];
+            aiOtsu=new cv.Mat();
+            cv.threshold(processed.gray,aiOtsu,0,255,cv.THRESH_BINARY_INV|cv.THRESH_OTSU);
+            variants.push({name:'Otsu',binary:aiOtsu});
+            for(const variant of variants){
+              const corner=detectMarkers(variant.binary,ai.canvas.width,ai.canvas.height);
+              const midpoint=detectMidpointMarkers(variant.binary,ai.canvas.width,ai.canvas.height);
+              const aruco=detectArucoMarkers(processed.gray,variant.binary);
+              const candidateList:Hypothesis[]=[];
+              if(corner.found)candidateList.push({kind:'corner',name:'ai-boundary/corner-'+variant.name,markers:corner});
+              if(midpoint.found)candidateList.push({kind:'midpoint',name:'ai-boundary/midpoint-'+variant.name,markers:midpoint});
+              if(aruco.found)candidateList.push({kind:'aruco',name:'ai-boundary/aruco-'+variant.name,markers:aruco});
+              logger.info('markerDetection','AI-prewarped fiducial discovery',{
+                variant:variant.name,cornerCount:corner.count,
+                midpointCount:midpoint.count,arucoIds:Object.keys(aruco.points),
+                candidates:candidateList.map(h=>h.name)
+              });
+              for(const hypothesis of candidateList){
+                aiAttempted++;warpAttempts++;
+                const evaluated=evaluateHypothesis(ai.canvas,hypothesis,dpi,curveBudget);
+                if(!evaluated)continue;
+                selected=evaluated;
+                logger.info('perspective','AI-assisted registration independently verified',{
+                  method:hypothesis.name,qrValid:evaluated.qr.valid,
+                  left:evaluated.check.leftMatched,right:evaluated.check.rightMatched
+                });
+                break;
+              }
+              if(selected)break;
+            }
+          }finally{cleanupMats(aiOtsu,processed.gray,processed.blurred,processed.thresholded);}
+        }
+      }catch(error){
+        logger.warning('perspective','Optional AI recovery unavailable',{
+          reason:String(error)
+        });
+      }finally{
+        logger.info('perspective','AI last-resort summary',{
+          invoked:true,attempts:aiAttempted,verified:Boolean(selected),
+          durationMs:Date.now()-aiStart
+        });
+      }
     }
     finishStage('registration');
     logger.info('perspective','Registration performance summary',{
