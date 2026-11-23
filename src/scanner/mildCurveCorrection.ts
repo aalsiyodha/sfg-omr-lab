@@ -122,7 +122,8 @@ export function assignTimingRows(candidates:TimingCandidate[],side:Side,dpi:numb
   let prior:Drift|null=null;
   for(let row=0;row<n;row++){
     const targetY=startY+row*spacing;
-    const predX=targetX+(prior?.dx??0),predY=targetY+(prior?.dy??0);
+    const predX:number=targetX+(prior?.dx??0);
+    const predY:number=targetY+(prior?.dy??0);
     const since=prior?row-prior.row:1;
     const allowedY=prior?Math.min(24,12+since*5):maxY;
     const allowedX=prior?Math.min(maxX,10+since*5):maxX;
@@ -134,13 +135,13 @@ export function assignTimingRows(candidates:TimingCandidate[],side:Side,dpi:numb
          Math.abs(p.y-predY)>allowedY||
          Math.abs(p.x-predX)>allowedX)continue;
       const nominal=mmToPx(2.2,dpi)*mmToPx(1.6,dpi);
-      const score=1.6*Math.abs(p.y-predY)+.7*Math.abs(p.x-predX)+
+      const score:number=1.6*Math.abs(p.y-predY)+.7*Math.abs(p.x-predX)+
         3*Math.abs(Math.log(Math.max(1,p.area)/nominal));
       if(!best||score<best.score)best={i,score,dx,dy};
     }
     if(best){
       used.add(best.i);
-      const found={row,dx:best.dx,dy:best.dy};
+      const found:Drift={row,dx:best.dx,dy:best.dy};
       out.push(found);prior=found;
     }
   }
