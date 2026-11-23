@@ -243,6 +243,13 @@ export async function runFullScan(
   onProgress?: (p: ScanProgress) => void
 ): Promise<{ result: ScanResult; images: IntermediateImages }> {
   const start = Date.now();
+  const stageTimes: Record<string, number> = {};
+  let stageStart = start;
+  const finishStage = (name: string) => {
+    const now = Date.now();
+    stageTimes[name] = now - stageStart;
+    stageStart = now;
+  };
   const images: IntermediateImages = {};
   logger.clear();
   logger.info('loading', 'Starting scan pipeline', { fileSize: file.size });
@@ -250,6 +257,7 @@ export async function runFullScan(
   if (!checkOpenCV()) throw new Error('OpenCV.js is not loaded. Please wait for OpenCV to initialize.');
 
   const loaded = await loadImageFromFile(file);
+  finishStage('imageDecode');
   images.original = loaded.dataUrl;
   const validation = validateImage(loaded);
   if (!validation.valid) throw new Error(validation.errors.join('\n'));
@@ -257,6 +265,7 @@ export async function runFullScan(
   onProgress?.({ stage: 'Preparing grayscale and threshold images…', percent: 15 });
 
   const preprocessed = preprocessImage(loaded.canvas);
+  finishStage('preprocessing');
   let selected: AcceptedAlignment | null = null;
   try {
     images.grayscale = preprocessed.grayDataUrl;
@@ -313,6 +322,7 @@ export async function runFullScan(
       cleanupMats(alternate);
     }
 
+    finishStage('markerDiscovery');
     logger.info('markerDetection', `${hypotheses.length} reference hypotheses available`,
       { cornerCandidates: hypotheses.filter(h => h.kind === 'corner').length,
         midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length,
@@ -485,6 +495,7 @@ export async function runFullScan(
       logger.info('perspective','Outer-page rescue timing',{
         durationMs:Date.now()-boundaryStart,verified:Boolean(selected)});
     }
+    finishStage('registration');
     logger.info('perspective','Registration performance summary',{
       durationMs:Date.now()-registrationStarted,warpAttempts,
       boundaryAttempted,curveAttempts:1-curveBudget.remaining,
@@ -527,6 +538,7 @@ export async function runFullScan(
         images.markerOverlay=generateMidpointOverlay(loaded.canvas,chosen.hypothesis.markers);
 
       grayCalibration = measureGrayCalibration(chosen.gray, dpi);
+      finishStage('calibrationAndOverlay');
       const inkCeiling = grayStripInkCeiling(grayCalibration);
       logger.info('bubbleDetection', 'Grayscale reference strip calibration', {
         status:grayCalibration.status,
@@ -538,6 +550,7 @@ export async function runFullScan(
       onProgress?.({ stage: 'Refining printed bubble-grid alignment…', percent: 67 });
       const gridStart=Date.now();
       const grid = estimateGridAlignment(chosen.gray,dpi);
+      finishStage('gridAlignment');
       logger.info('perspective','Independent printed-ring grid offsets',
         {grid, durationMs:Date.now()-gridStart});
       onProgress?.({ stage: 'Reading Test ID and answer bubbles…', percent: 72 });
@@ -558,6 +571,7 @@ export async function runFullScan(
             {offset:{dx:rescue.dx,dy:rescue.dy},strength:rescue.strength});
         }
       }
+      finishStage('testIdDetection');
       testId = detectedId.testId;
       logger.info('testIdDetection', `Test ID: ${testId}`, detectedId);
       // Compare original and seven-tone readings under exactly the same
@@ -567,6 +581,7 @@ export async function runFullScan(
       const rawInkThreshold=computeAdaptiveDarkThreshold(chosen.gray);
       const rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
         q=>offsetForQuestion(grid,q),rawInkThreshold);
+      finishStage('rawBubbleDetection');
       const tone=applySevenToneCorrection(chosen.gray,grayCalibration);
       logger.info('bubbleDetection','Seven-tone image correction',{
         applied:tone.applied,topBottomDelta:tone.topBottomDelta,
@@ -599,16 +614,25 @@ export async function runFullScan(
       } finally {
         cleanupMats(tone.corrected);
       }
+      finishStage('toneCorrectionAndConsensus');
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
       images.bubbleOverlay = generateBubbleOverlay(
         chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi, idOffset
       );
+      finishStage('bubbleOverlay');
     } else {
       logger.error('perspective',
         'No trustworthy registration: corner, midpoint and ArUco attempts failed independent QR/timing validation.');
     }
 
+    finishStage('resultPreparation');
+    logger.info('performance', 'Scan stage timings (milliseconds)', {
+      stages: stageTimes,
+      measuredMs: Object.values(stageTimes).reduce((sum, ms) => sum + ms, 0),
+      elapsedMs: Date.now() - start,
+      note: 'Timings are sequential wall-clock stages; OpenCV startup before scanning is not included.'
+    });
     const partial: ScanResult = {
       studentId, testId, answers, qrRaw, qrValid, markerCount,
       perspectiveCorrected: corrected, alignmentVerified, alignmentMatched,
