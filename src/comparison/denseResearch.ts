@@ -4,6 +4,7 @@
  * User-initiated selection only; photographs never leave the browser.
  */
 import type {EngineDefinition,EngineResult} from './engines';
+import {evaluateResearchCanvas} from './landmarkGrid';
 const BASE=import.meta.env.BASE_URL;
 const URL_UVDOC=BASE+'ai-model/uvdoc/UVDoc_grid.onnx';
 const URL_UVDOC_DATA=BASE+'ai-model/uvdoc/UVDoc_grid.onnx.data';
@@ -89,13 +90,16 @@ function visualizeMask(im:HTMLCanvasElement,probabilities:Float32Array|number[],
   const cx=low.getContext('2d');
   if(!cx)throw Error('Mask canvas unavailable');
   const img=cx.createImageData(w,h);
-  let positive=0;
+  let positive=0,minX=w,maxX=-1,minY=h,maxY=-1;
   for(let i=0;i<n;i++){
     const v=channels===1?Number(probabilities[i]):
       Number(probabilities[n+i])-Number(probabilities[i]);
     const p=v>=0?1/(1+Math.exp(-v)):Math.exp(v)/(1+Math.exp(v));
     const active=p>=.5;
-    if(active)positive++;
+    if(active){positive++;const x=i%w,y=Math.floor(i/w);
+      minX=Math.min(minX,x);maxX=Math.max(maxX,x);
+      minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+    }
     img.data[i*4]=active?20:220;img.data[i*4+1]=active?210:30;
     img.data[i*4+2]=active?90:30;img.data[i*4+3]=140;
   }
@@ -104,7 +108,16 @@ function visualizeMask(im:HTMLCanvasElement,probabilities:Float32Array|number[],
   canvas.width=im.width;canvas.height=im.height;
   const ctx=canvas.getContext('2d');if(!ctx)throw Error('Output canvas unavailable');
   ctx.drawImage(im,0,0);ctx.drawImage(low,0,0,im.width,im.height);
-  return {image:canvas.toDataURL('image/png'),fraction:positive/n,dims:[...dims]};
+  // A mask bounding rectangle is only a weak geometric hypothesis.
+  let candidate:HTMLCanvasElement|null=null;
+  if(positive/n>.15&&positive/n<.93&&maxX-minX>w*.43&&maxY-minY>h*.45){
+    const bx=minX/w*im.width,by=minY/h*im.height;
+    const bw=(maxX-minX+1)/w*im.width,bh=(maxY-minY+1)/h*im.height;
+    candidate=document.createElement('canvas');candidate.width=840;candidate.height=1188;
+    candidate.getContext('2d')?.drawImage(im,bx,by,bw,bh,0,0,840,1188);
+  }
+  return {image:canvas.toDataURL('image/png'),fraction:positive/n,dims:[...dims],
+    bounds:maxX>=0?{minX,minY,maxX,maxY}:null,candidate};
 }
 export async function runDenseResearch(def:EngineDefinition,file:File):Promise<EngineResult>{
   const start=performance.now(),traces:EngineResult['traces']=[];
@@ -119,7 +132,7 @@ export async function runDenseResearch(def:EngineDefinition,file:File):Promise<E
     }
     const session=await ort.InferenceSession.create(model,opts);
     const canvas=await source(file,1600);
-    const w=isUv?496:512,h=isUv?720:512;
+    const w=isUv?496:384,h=isUv?720:384;
     const input=chw(canvas,w,h,isUv?'uvdoc':'imagenet');
     const result=await session.run({[session.inputNames[0]]:
       new ort.Tensor('float32',input,[1,3,h,w])});
@@ -154,16 +167,35 @@ export async function runDenseResearch(def:EngineDefinition,file:File):Promise<E
       traces.push({stage:'dense',message:'UVDoc grid coverage',data:{
         inBoundsFraction:+(inBounds/(out.width*out.height)).toFixed(4),
         note:'Unwarped image is NOT a verified A4 OMR grid; evaluate printed landmarks independently'}});
-      return {...fail(def,start,'UNVERIFIED UVDoc deformation grid; inspect exported unwarped image',traces),
+      const readout=evaluateResearchCanvas(out);
+      traces.push({stage:'dense',message:'UVDoc to independent OMR geometry trial',
+        data:{qrValid:readout.qrValid,left:readout.left,right:readout.right,
+          grayscale:readout.grayscale,experimentalRows:readout.answers.length,
+          candidateMarks:readout.answers.filter(a=>a.answer).length,
+          scoringAllowed:false}});
+      return {...fail(def,start,'UVDoc unwarp plus research-only timing/bubble evaluation; NEVER grade',traces),
         outcome:'detected',researchImage:out.toDataURL('image/png'),
+        qrValid:readout.qrValid,timing:readout.left+readout.right,
+        timingLeft:readout.left,timingRight:readout.right,
+        answers:readout.answers,calibration:readout.grayscale.usable?'ok':'unverified',
         elapsedMs:Math.round(performance.now()-start),imageSpace:{width:canvas.width,height:canvas.height}};
     }
     const mask=visualizeMask(canvas,output.data,output.dims);
     traces.push({stage:'dense',message:'DeepLab mask coverage',data:{
       documentFraction:+mask.fraction.toFixed(4),outputDimensions:mask.dims,
+      bounds:mask.bounds,rectangleProposed:Boolean(mask.candidate),
       note:'Mask is not a verified paper outline; external model has unconfirmed upstream license'}});
-    return {...fail(def,start,'UNVERIFIED external DeepLab document segmentation; inspect mask',traces),
+    const readout=mask.candidate?evaluateResearchCanvas(mask.candidate):null;
+    traces.push({stage:'dense',message:'DeepLab mask bounding-rectangle OMR trial',
+      data:{candidateAvailable:Boolean(mask.candidate),
+        qrValid:readout?.qrValid??false,left:readout?.left??0,
+        right:readout?.right??0,experimentalRows:readout?.answers.length??0,
+        scoringAllowed:false,warning:'Axis-aligned bounding rectangle, not a trusted perspective warp'}});
+    return {...fail(def,start,'DeepLab mask and weak rectangle hypothesis; experimental only, NEVER grade',traces),
       outcome:'detected',researchImage:mask.image,
+      qrValid:readout?.qrValid??null,timing:readout?readout.left+readout.right:null,
+      timingLeft:readout?.left??null,timingRight:readout?.right??null,
+      answers:readout?.answers??[],calibration:readout?.grayscale.usable?'ok':'unverified',
       elapsedMs:Math.round(performance.now()-start),
       imageSpace:{width:canvas.width,height:canvas.height}};
   }catch(error){

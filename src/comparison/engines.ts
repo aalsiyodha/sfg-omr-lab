@@ -2,7 +2,7 @@ import type { ScanResult } from '../types';
 import { recoverPageWithScanic } from '../scanner/scanicPageRescue';
 import { recoverPageWithAI } from '../scanner/aiPageRescue';
 import { runBubbleAi } from './bubbleAi';
-import { runLandmarkGrid } from './landmarkGrid';
+import { runLandmarkGrid,evaluateResearchCanvas } from './landmarkGrid';
 import { runDenseResearch } from './denseResearch';
 
 export type EngineId='current'|'v2345'|'v226'|'v224'|'scanic'|'lcnet'|'fastvit'|'bubblecnn'|'landmark'|'sa24'|'uvdoc'|'deeplab';
@@ -20,11 +20,11 @@ export interface EngineDefinition{
   version:string;assetPath?:string;sizeNote?:string;
 }
 export const ENGINES:EngineDefinition[]=[
-  {id:'current',name:'Current v2.4.613',kind:'scanner',version:'2.4.613',details:'Complete scanner with QR-less provisional policy',assetPath:''},
+  {id:'current',name:'Current v2.4.615',kind:'scanner',version:'2.4.615',details:'Complete scanner with QR-less provisional policy',assetPath:''},
   {id:'v2345',name:'OpenCV v2.3.45',kind:'scanner',version:'2.3.45',details:'Independent archived hybrid registration',assetPath:'v2.3.45/'},
   {id:'v226',name:'OpenCV v2.2.6 Lite',kind:'scanner',version:'2.2.6-lite.2',details:'Historical lightweight optical engine',assetPath:'versions/v2.2.6/'},
   {id:'v224',name:'OpenCV v2.2.4',kind:'scanner',version:'2.2.4',details:'Earlier strict geometry scanner',assetPath:'versions/v2.2.4/'},
-  {id:'landmark',name:'Optical Local-Grid v1',kind:'landmark',version:'2.4.613-exp5',details:'Non-AI 4-anchor hybrid registration + independent left/right timing tracks and row-wise bubble sampling. Research-only, never grades.'},
+  {id:'landmark',name:'Optical Local-Grid v2',kind:'landmark',version:'2.4.615-exp6',details:'Non-AI 4-anchor registration with left/right timing, held-out coherence validation, QR observation and bubble sampling. Research-only, never grades.'},
   {id:'scanic',name:'Scanic DocCornerNet',kind:'detector',version:'1.8.0 / model 0.2.0',details:'SimCC page-corner predictions; not a bubble scanner',sizeNote:'~1.9 MB model'},
   {id:'lcnet',name:'DocAligner LCNet-100',kind:'detector',version:'Quadscan 1.0.0',details:'Lightweight heatmap corner detector',sizeNote:'~4.8 MB model'},
   {id:'fastvit',name:'DocAligner FastViT-T8',kind:'detector',version:'Quadscan 1.0.0',details:'Larger 13 MB corner detector; download on selection',sizeNote:'~13 MB model'},
@@ -193,10 +193,23 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
     // AI boundary is NOT independently validated. Export a warped image only
     // to the research-only bubble model, never to official scanner grading.
     const alignedImage=def.id==='scanic' && result ? result.canvas.toDataURL('image/png') : undefined;
+    const readout=result?evaluateResearchCanvas(result.canvas):null;
+    if(readout)traces.push({stage:'research',message:'AI geometry to optical timing, QR and bubble trial',data:{
+      qrFound:readout.qrFound,qrValid:readout.qrValid,qrRaw:readout.qrRaw,
+      timingLeft:readout.left,timingRight:readout.right,
+      grayReference:readout.grayscale,experimentalRows:readout.answers.length,
+      candidateMarks:readout.answers.filter(a=>a.answer).length,
+      scoringAllowed:false,notGroundTruth:true}});
     return {...empty(def,result?'Page-corner candidate predicted':'No acceptable page-corner candidate',
       Math.round(performance.now()-started)),outcome:result?'detected':'rejected',
       confidence,corners,traces,alignedImage,imageSpace:{width:canvas.width,height:canvas.height},
-      reason:result?'Page-corner hypothesis only; no bubble scanning or timing verification':
+      researchImage:result?.canvas.toDataURL('image/png'),
+      qrValid:readout?.qrValid??null,alignmentVerified:false,
+      timing:readout?readout.left+readout.right:null,
+      timingLeft:readout?.left??null,timingRight:readout?.right??null,
+      calibration:readout?.grayscale.usable?'ok':'unverified',
+      answers:readout?.answers??[],
+      reason:result?'AI page candidate; independent experimental QR/timing/bubble readout (not verified, never grade)':
         'Model returned no accepted geometry (inspect per-view diagnostics)'};
   }catch(error){
     const message=String(error);
@@ -210,13 +223,35 @@ async function runDetector(def:EngineDefinition,file:File):Promise<EngineResult>
 export async function runEngine(def:EngineDefinition,file:File,previous:EngineResult[]=[]):Promise<EngineResult>{
   const t=performance.now();
   try{
-    return def.kind==='scanner'?await runIframe(def,file):
+    const result=def.kind==='scanner'?await runIframe(def,file):
       def.kind==='landmark'?await runLandmarkGrid(def,file,previous):
       def.id==='uvdoc'||def.id==='deeplab'?await runDenseResearch(def,file):
       def.kind==='bubble'?await runBubbleAi(def,
         previous.find(x=>x.id==='current'&&Boolean(x.alignedImage))??
         previous.find(x=>x.id==='scanic'&&Boolean(x.alignedImage))):
       await runDetector(def,file);
+    // The same independently aligned optical scanner provides an exploratory
+    // reference for all AI geometry models. It is NOT human ground truth.
+    const reference=previous.find(x=>x.kind==='scanner'&&x.alignmentVerified===true
+      &&x.qrValid===true&&x.answers.length===50);
+    if(reference&&result.kind==='detector'){
+      let matches=0,wrong=0,extra=0,missed=0,unknown=0;
+      for(let q=1;q<=50;q++){
+        const a=result.answers.find(x=>x.q===q);
+        const b=reference.answers.find(x=>x.q===q);
+        if(!a||!b){unknown++;continue;}
+        if(a.answer){
+          if(b.status==='detected'){
+            if(a.answer===b.answer)matches++;else wrong++;
+          }else extra++;
+        }else if(b.status==='detected')missed++;
+        else unknown++;
+      }
+      result.traces.push({stage:'research',message:'AI-warp 50-row optical reference comparison',
+        data:{reference:reference.id,matches,wrong,extra,missed,unknown,
+          notGroundTruth:true,scoringAllowed:false}});
+    }
+    return result;
   }catch(error){return empty(def,String(error),Math.round(performance.now()-t));}
 }
 export async function imageSha256(file:File):Promise<string>{

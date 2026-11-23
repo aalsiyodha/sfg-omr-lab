@@ -125,7 +125,7 @@ export default function ComparePage(){
    <div className="card shadow-sm mb-3">
      <div className="card-body">
        <h2 className="h5">2. Select comparison engines</h2>
-       <p className="small text-secondary">Full scanners read bubbles. Optical Local-Grid proposes unverified rows. UVDoc predicts a dense unwarping grid; DeepLab predicts a document mask. Experimental results never grade.</p>
+       <p className="small text-secondary">Full scanners read bubbles. Optical Local-Grid v2 and AI-corrected page candidates undergo independent QR, timing and bubble experiments; DeepLab mask extraction is also tested. All such results remain research-only.</p>
        <div className="row g-2">
          {ENGINES.map(engine=><div className="col-md-6" key={engine.id}>
            <label className="compare-engine-choice d-flex gap-2 align-items-start p-3 border rounded h-100">
@@ -135,7 +135,7 @@ export default function ComparePage(){
              <span>
                <strong className="d-block">{engine.name}</strong>
                <small className="text-secondary d-block">{engine.details}</small>
-               <small className="text-secondary">{engine.kind==='scanner'?'Full scanner':engine.kind==='detector'?'AI geometry only':engine.kind==='landmark'?'Experimental non-AI local alignment':'Experimental AI bubble classifier'} · {engine.version}</small>
+               <small className="text-secondary">{engine.kind==='scanner'?'Full scanner':engine.kind==='detector'?'AI geometry + experimental OMR checks':engine.kind==='landmark'?'Experimental non-AI local alignment':'Experimental AI bubble classifier'} · {engine.version}</small>
                {engine.sizeNote&&<small className="d-block text-secondary">{engine.sizeNote}</small>}
              </span>
            </label>
@@ -172,21 +172,21 @@ export default function ComparePage(){
            <tbody>{ordered.map(e=>{
              const r=resultById(e.id);
              return <tr key={e.id}>
-               <td><strong>{e.name}</strong></td><td>{e.kind==='scanner'?'Scanner':e.kind==='detector'?'AI corners':e.kind==='landmark'?'Local grid':'Bubble AI'}</td>
+               <td><strong>{e.name}</strong></td><td>{e.kind==='scanner'?'Scanner':e.kind==='detector'?'AI research':e.kind==='landmark'?'Local grid':'Bubble AI'}</td>
                <td>{r?word(r.outcome):'Not run'}</td><td>{r?(r.elapsedMs/1000).toFixed(2)+'s':'—'}</td>
                <td>{r?.timing===null||!r?'—':r.timing+'/50'}</td>
-               <td>{r?(e.kind==='detector'?'—':e.kind==='bubble'||e.kind==='landmark'?r.answers.length+' experimental':' '+r.answers.length+'/50'):'—'}</td>
+               <td>{r?(e.kind==='scanner'?r.answers.length+'/50':r.answers.length+' experimental'):'—'}</td>
                <td>{r?.confidence!=null?r.confidence.toFixed(4):'—'}</td>
              </tr>})}</tbody>
          </table></div>
-         <p className="small text-secondary">UVDoc and DeepLab outputs are research-only, not validated OMR registration or scoring sources. DeepLab model weights are fetched externally when selected because upstream redistribution licensing is unconfirmed.</p>
+         <p className="small text-secondary">UVDoc and DeepLab outputs now receive research timing/QR/bubble evaluations when a candidate page is available, never verified scoring. DeepLab model weights are fetched externally when selected because upstream redistribution licensing is unconfirmed.</p>
          {results.filter(r=>Boolean(r.researchImage)).map(r=><div key={r.id} className="border rounded p-3 mb-3">
            <h3 className="h6">{r.name} — research visualization</h3>
            <img src={r.researchImage} alt={r.id==='uvdoc'?'Unverified UVDoc unwarped image':'Unverified DeepLab document mask overlay'}
              style={{width:'100%',maxWidth:650,objectFit:'contain',display:'block'}}/>
            <a className="btn btn-sm btn-outline-secondary mt-2" href={r.researchImage}
              download={'sfg-omr-'+r.id+'-research.png'}>Download research PNG</a>
-           <p className="small text-secondary mt-2 mb-0">Not QR-verified; do not grade from this image.</p>
+           <p className="small text-secondary mt-2 mb-0">Not independently verified for scoring; inspect experimental QR/timing/bubble evidence in diagnostics.</p>
          </div>)}
          {results.map(r=><details key={r.id} className="border rounded p-2 mb-2">
            <summary><strong>{r.name}</strong> · {word(r.outcome)}</summary>
