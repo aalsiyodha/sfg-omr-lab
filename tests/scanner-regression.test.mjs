@@ -784,6 +784,32 @@ test('v2.1.2: fast ring alignment estimates a printed-ring translation',()=>{
     JSON.stringify(estimate));
 });
 
+test('v2.5 Local-Grid: direct grayscale fast path matches accessor geometry exactly',()=>{
+  const {estimateGridOffset}=loadTS('src/scanner/gridAlignment.ts',{
+    '../config/omrLayout':{
+      getBubbleCentre:()=>({xMm:0,yMm:0}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),
+      mmToPx:(mm,d)=>mm*d/25.4
+    }
+  });
+  const dpi=150,w=420,h=420,raw=new Uint8Array(w*h).fill(226);
+  const anchors=[];
+  for(let row=0;row<3;row++)for(let col=0;col<4;col++){
+    const x=62+col*80,y=74+row*100;
+    anchors.push({x,y});
+    for(let dy=-13;dy<=13;dy++)for(let dx=-13;dx<=13;dx++){
+      const d=Math.hypot(dx,dy);
+      if(d>=9.0&&d<=10.9)raw[(y-3+dy)*w+x+4+dx]=44;
+    }
+  }
+  const oldStyle={rows:h,cols:w,ucharPtr:(y,x)=>[raw[y*w+x]]};
+  const fastStyle={...oldStyle,data:raw};
+  const slow=estimateGridOffset(oldStyle,dpi,anchors);
+  const fast=estimateGridOffset(fastStyle,dpi,anchors);
+  assert.deepEqual(fast,slow,'fast optical sampling must not change the chosen offset');
+  assert.equal(fast.applied,true);
+});
+
 test('v2.1.2: multiple overlay highlights true A+B but not third crossed D',()=>{
   const {highlightedMultipleOptions}=loadTS('src/scanner/overlayGenerator.ts',{
     '../config/omrLayout':{
