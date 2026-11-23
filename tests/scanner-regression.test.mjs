@@ -1929,3 +1929,23 @@ test('v2.5.1: proof audit is feature-gated and uses one optical geometry',()=>{
   assert.match(scan,/v2\.5\.1 selective DecisionScan audit/);
   assert.match(scan,/chooseGeometryAction/);
 });
+
+test('v2.5.1: 15 counterfactual probes preserve stable solid ink and reject instability',()=>{
+  const {inspectLocalBubble}=loadTS('src/scanner/localVisualProof.ts');
+  const w=120,h=120,dpi=150,raw=new Uint8Array(w*h).fill(235),cx=60,cy=60;
+  const filled=new Uint8Array(raw);
+  for(let y=53;y<=67;y++)for(let x=53;x<=67;x++)
+    if((x-cx)**2+(y-cy)**2<=49)filled[y*w+x]=25;
+  const mat=(data)=>({rows:h,cols:w,data,ucharPtr:(y,x)=>[data[y*w+x]]});
+  const proof=inspectLocalBubble(mat(filled),cx,cy,dpi,160);
+  assert.equal(proof.available,true);
+  assert.equal(proof.samples,15);
+  assert.equal(proof.stable,true);
+  assert.ok(proof.minFill>=65,JSON.stringify(proof));
+  const fast=inspectLocalBubble(mat(filled),cx,cy,dpi,160);
+  const fallback=inspectLocalBubble({
+    rows:h,cols:w,ucharPtr:(y,x)=>[filled[y*w+x]]
+  },cx,cy,dpi,160);
+  assert.deepEqual(fast,fallback);
+  assert.equal(inspectLocalBubble(mat(raw),cx,cy,dpi,160).centerFill,0);
+});
