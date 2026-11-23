@@ -8,6 +8,7 @@ import { verifyTimingMarks } from './alignmentValidator';
 import { canStopRegistrationSearch } from './litePolicy';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
+import { correctPerspectiveFromQrAruco } from './qrArucoRegistration';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import { correctMildPageWarp, countHeldOutTimingMarks } from './mildCurveCorrection';
@@ -41,7 +42,7 @@ type Hypothesis =
   | { kind: 'corner'; name: string; markers: MarkerDetectionResult }
   | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
   | { kind: 'aruco'; name: string; markers: ArucoRegistration }
-  | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration };
+  | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> };
 interface AcceptedAlignment {
   hypothesis: Hypothesis;
   perspective: PerspectiveResult;
@@ -77,7 +78,9 @@ function evaluateHypothesis(
       : hypothesis.kind === 'midpoint'
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
       : hypothesis.kind === 'hybrid'
-      ? correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco)
+      ? hypothesis.qrLocated
+         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco)
+         : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco)
       : correctPerspectiveFromArucos(source,hypothesis.markers);
     if (!persp.success || !persp.corrected) return null;
     const canvas = document.createElement('canvas');
@@ -486,6 +489,26 @@ export async function runFullScan(
         corners:located.corners,raw:located.raw,attempts:located.attempts,
         error:located.error,durationMs:Date.now()-qrLocatorStart
       });
+      // New v2.3.46 failure-only cross-family registration. It combines
+      // independently located QR corners with two decoded bottom ArUco IDs.
+      // evaluateHypothesis still enforces QR identity and both timing tracks.
+      if(located.valid){
+        for(const source of [{name:'adaptive',aruco:arucoAdaptive},
+          {name:'Otsu',aruco:arucoOtsu}]){
+          if(!source.aruco.points[2]||!source.aruco.points[3])continue;
+          const proposal:Hypothesis={
+            kind:'hybrid',name:'hybrid/qr-aruco-'+source.name,
+            corners:primary,aruco:source.aruco,qrLocated:located
+          };
+          warpAttempts++;
+          const evaluated=evaluateHypothesis(loaded.canvas,proposal,dpi,curveBudget);
+          logger.info('perspective','v2.3.46 QR-ArUco rescue result',{
+            method:proposal.name,qrLocated:true,verified:Boolean(evaluated),
+            timing:evaluated?.check.matched??0
+          });
+          if(evaluated){selected=evaluated;break;}
+        }
+      }
     }
 
     // Last-chance local rescue for strong tilt or missing distorted fiducials.

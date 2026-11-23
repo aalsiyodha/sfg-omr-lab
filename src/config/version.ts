@@ -1,7 +1,9 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
 declare const __APP_BUILD_META__: { version:string; source:'vercel'|'local-dev'|'local-build'; environment:string; sha:string; buildId:string; builtAt:string; dirty:boolean };
-export const APP_VERSION = version === '2.3.45'
+export const APP_VERSION = version === '2.3.46'
+  ? 'v2.3.46 · QR + ArUco Rescue Experiment'
+  : version === '2.3.45'
   ? 'v2.3.45 · Hybrid Recovery'
   : version === '2.3.44'
   ? 'v2.3.44 · Unredacted Diagnostics'
@@ -34,7 +36,7 @@ export const APP_VERSION = version === '2.3.45'
   : version.startsWith('2.1.3-hybrid') ? 'v2.1.3 Hybrid Experiment' : `v${version}`;
 export const APP_BUILD_ID=__APP_BUILD_ID__;
 export const APP_RELEASE_LABEL=APP_BUILD_ID==='local' ? APP_VERSION : `${APP_VERSION} · ${APP_BUILD_ID}`;
-export const APP_BUILD_NAME=`SFG OMR Lab ${APP_VERSION} (Lite 2.2.6 retest)`;
+export const APP_BUILD_NAME=`SFG OMR Lab ${APP_VERSION}`;
 
 /** Build identity is compiled into each bundle, not inferred from stale cache or package version. */
 export const APP_BUILD_META = __APP_BUILD_META__;
