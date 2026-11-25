@@ -2062,3 +2062,21 @@ test('scan page: actual checkboxes wire all supported modes and autostart',()=>{
   assert.match(engine,/options\?\.proofscan/);
   assert.match(engine,/User-selected scan controls/);
 });
+
+test('v2.5.2: reports explicit experiment states and measured registration costs',()=>{
+ const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const report=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+ assert.match(scanner,/markerProfile\.cornerDetectionMs/);
+ assert.match(scanner,/markerProfile\.cornerVerificationMs/);
+ assert.match(scanner,/fallbackDiscoveryTriggered/);
+ assert.match(scanner,/fallbackDiscoveryMs/);
+ assert.match(scanner,/const verifiedMesh=proofMeshEnabled/);
+ assert.match(scanner,/const latent=proofModelEnabled\?fitMaskedLatentPredictor/);
+ assert.match(scanner,/const learnedProposals=proofModelEnabled\?answers\.flatMap/);
+ assert.match(scanner,/const proofs=proofEnabled\?answers\.map/);
+ assert.match(scanner,/const localVisualProofs=proofEnabled\?answers\.flatMap/);
+ assert.match(report,/Opt-in engine decisions and execution evidence:/);
+ assert.match(report,/not logged \(not proof of execution\)/);
+ assert.match(report,/experimentSummary\(scanResult,true\)/);
+ assert.match(report,/experimentSummary\(scanResult\)/);
+});
