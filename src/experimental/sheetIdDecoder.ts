@@ -53,16 +53,34 @@ const boxCheck=(gray:Gray,xmm:number,dpi:number,dxMm:number,dyMm:number):Probe=>
  return {passed:edges.every(v=>v>=.66)&&white>=160,
    score:edges.reduce((a,b)=>a+b,0)/4,edges,white};
 };
+/** Paper shear and thin printing can move the LEFT and RIGHT reference boxes
+ * slightly differently after a four-corner homography. Verify each box in its
+ * own bounded local region; never translate the entire code because of one box.
+ */
+function locateBox(gray:Gray,xMm:number,dpi:number,dx:number,dy:number){
+ let best=boxCheck(gray,xMm,dpi,dx,dy);
+ if(best.passed)return {...best,shift:{dx:0,dy:0}};
+ const steps=[-1.5,-1,-.5,0,.5,1,1.5];
+ let shift={dx:0,dy:0};
+ for(const x of steps)for(const y of steps){
+  if(x===0&&y===0)continue;
+  const item=boxCheck(gray,xMm,dpi,dx+x,dy+y);
+  if(item.passed)return {...item,shift:{dx:x,dy:y}};
+  if(item.score>best.score){best=item;shift={dx:x,dy:y};}
+ }
+ return {...best,shift};
+}
 export interface FooterEvidence {
  valid:boolean;count:SheetQuestionCount|null;word:number;bits:string;
  confidence:number;leftBox:boolean;rightBox:boolean;reason:string;
  offsetMm:{dx:number;dy:number};
  candidatesChecked:number;leftEdgeScores:number[];rightEdgeScores:number[];
+ leftBoxShiftMm:{dx:number;dy:number};rightBoxShiftMm:{dx:number;dy:number};
 }
 function inspect(gray:Gray,dpi:number,dx:number,dy:number):FooterEvidence{
  const f=SHEET_FOOTER,scale=dpi/25.4;
- const left=boxCheck(gray,f.leftBoxXmm,dpi,dx,dy);
- const right=boxCheck(gray,f.rightBoxXmm,dpi,dx,dy);
+ const left=locateBox(gray,f.leftBoxXmm,dpi,dx,dy);
+ const right=locateBox(gray,f.rightBoxXmm,dpi,dx,dy);
  const means=Array.from({length:f.bitCount},(_,i)=>average(gray,
   (f.firstXmm+i*f.spacingMm+dx)*scale,(f.yMm+dy)*scale,.56*scale));
  // Restrict decoding to decisively separated centre samples; never decide
@@ -82,7 +100,8 @@ function inspect(gray:Gray,dpi:number,dx:number,dy:number):FooterEvidence{
     !left.passed||!right.passed?'Footer end-box geometry failed':
     !readable?'Footer contrast insufficient':'Footer codeword mismatch',
   offsetMm:{dx,dy},candidatesChecked:1,
-  leftEdgeScores:left.edges,rightEdgeScores:right.edges};
+  leftEdgeScores:left.edges,rightEdgeScores:right.edges,
+  leftBoxShiftMm:left.shift,rightBoxShiftMm:right.shift};
 }
 export function decodeSheetFooter(gray:Gray,dpi:number):FooterEvidence{
  let best=inspect(gray,dpi,0,0);
