@@ -9,7 +9,7 @@ permissions:
   pages: write
   id-token: write
 concurrency:
-  group: github-pages
+  group: sheetid-pages-v3
   cancel-in-progress: true
 jobs:
   build:
