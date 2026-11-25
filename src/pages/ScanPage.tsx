@@ -210,6 +210,14 @@ export default function ScanPage({ appState }: Props) {
     link.remove();
   };
 
+  const saveReviewCrops=()=>{
+    if(!intermediateImages.reviewCrops)return;
+    const a=document.createElement('a');
+    a.href=intermediateImages.reviewCrops;
+    a.download='sfg-omr-suspicious-bubble-crops.png';
+    document.body.appendChild(a);a.click();a.remove();
+  };
+
   const handleSubmit = () => {
     if (!scanResult || !practice.activeTest) {
       setSubmitError('No active practice test. Please generate a practice test first.');
@@ -468,8 +476,14 @@ export default function ScanPage({ appState }: Props) {
               <>
                 <div className="minimal-tab-tools">
                   <span>Green: filled · Red: multiple · Amber: review</span>
-                  <button className="minimal-text-button" onClick={downloadOverlay}
-                    disabled={!intermediateImages.bubbleOverlay}>Save overlay</button>
+                  <div className="minimal-actions">
+                    <button className="minimal-text-button" onClick={downloadOverlay}
+                      disabled={!intermediateImages.bubbleOverlay}>Save overlay</button>
+                    {intermediateImages.reviewCrops&&
+                      <button className="minimal-text-button" onClick={saveReviewCrops}>
+                        Download suspicious bubble crops
+                      </button>}
+                  </div>
                 </div>
                 {intermediateImages.bubbleOverlay
                   ? <img className="minimal-inspection-image" src={intermediateImages.bubbleOverlay}
