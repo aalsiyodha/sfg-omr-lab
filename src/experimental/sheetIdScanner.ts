@@ -4,12 +4,13 @@ import { detectMarkers } from '../scanner/markerDetector';
 import { proposeSheetCorners } from './sheetIdCornerCandidates';
 import type { MarkerDetectionResult } from '../types';
 import { correctPerspective } from '../scanner/perspectiveCorrection';
-import { verifyTimingMarks } from '../scanner/alignmentValidator';
+import { measureTimingTrack, type TimingTrack } from './sheetIdTiming';
 import { measureGrayCalibration, grayStripInkCeiling } from '../scanner/grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from '../scanner/gridAlignment';
 import { detectAllAnswers, detectTestId } from '../scanner/bubbleDetector';
 import { decodeSheetFooter, type FooterEvidence } from './sheetIdDecoder';
 import { getSettings } from '../config/scannerSettings';
+import { OMR_LAYOUT } from '../config/omrLayout';
 import type { QuestionResult } from '../types';
 declare const cv:any;
 
@@ -21,6 +22,7 @@ export interface SheetIdScanReport {
   sheet:FooterEvidence|null;
   registration:'corner/adaptive'|'corner/footer-rescue'|null;
   cornerAttempts:Array<{method:string;centres:number[][];footerBits:string;leftBox:boolean;rightBox:boolean;timing:number|null;reason:string}>;
+  timingGeometry:{maxShiftPx:number;rows:Array<{row:number;left:{dx:number;dy:number}|null;right:{dx:number;dy:number}|null}>}|null;
   rotated180:boolean;
   timing:{matched:number;left:number;right:number}|null;
   testId:number|null;
@@ -36,15 +38,16 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
  let persp:ReturnType<typeof correctPerspective>|null=null;
  let gray:any=null;
  let sheet:FooterEvidence|null=null;
- let timing:ReturnType<typeof verifyTimingMarks>|null=null;
+ let timing:TimingTrack|null=null;
  let rotated180=false;
  const cornerAttempts:SheetIdScanReport['cornerAttempts']=[];
  let registration:SheetIdScanReport['registration']=null;
  const empty=(reason:string):SheetIdScanReport=>({
   elapsedMs:Math.round(performance.now()-start),stages,status:'rejected',
   reason,sheet,registration,rotated180,cornerAttempts,timing:timing?
-  {matched:timing.matched,left:timing.leftMatched,right:timing.rightMatched}:null,
-  testId:null,answers:[],detected:0,blank:0,multiple:0,uncertain:0,overlayUrl:null
+  {matched:timing.matched,left:timing.left,right:timing.right}:null,
+  testId:null,answers:[],detected:0,blank:0,multiple:0,uncertain:0,overlayUrl:null,
+  timingGeometry:timing?{maxShiftPx:timing.maxShiftPx,rows:timing.rows}:null
  });
  try{
   if(!checkOpenCV())return empty('OpenCV not ready');
@@ -78,7 +81,7 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
   for(const h of hypotheses){
    let candidate:ReturnType<typeof correctPerspective>|null=null;
    let candidateGray:any=null;
-   let candidateTiming:ReturnType<typeof verifyTimingMarks>|null=null;
+   let candidateTiming:TimingTrack|null=null;
    let candidateSheet:FooterEvidence|null=null;
    let candidateRotated=false;
    let accepted=false;
@@ -103,9 +106,8 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
       }
     }
     if(!candidateSheet.valid||candidateSheet.count!==50)continue;
-    candidateTiming=verifyTimingMarks(candidateGray,dpi);
-    if(candidateTiming.matched<48||
-      candidateTiming.leftMatched<23||candidateTiming.rightMatched<23)continue;
+    candidateTiming=measureTimingTrack(candidateGray,dpi);
+    if(!candidateTiming.valid)continue;
     // All three checks are independent: four-corner warp, two hollow boxes
     // with exact codeword, and 25 timing locations on EACH side.
     persp=candidate;candidate=null;
@@ -124,7 +126,7 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
       timing:candidateTiming?.matched??null,
       reason:accepted?'Verified QR-free sheet geometry':
         failureError??(candidateSheet?.valid?
-          'Footer valid; timing below 48/50 or 23 per side':
+          'Footer valid; timing geometry failed: '+candidateTiming?.reason:
           candidateSheet?.reason??'Warp could not be verified')});
     cleanupMats(candidateGray,candidate?.corrected,candidate?.transform);
    }
@@ -143,7 +145,15 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
   stage('localGrid');
   const tid=detectTestId(gray,dpi,inkCeiling,grid.testId);
   stage('testId');
-  const answers=detectAllAnswers(gray,dpi,inkCeiling,q=>offsetForQuestion(grid,q));
+  const answers=detectAllAnswers(gray,dpi,inkCeiling,q=>{
+    const xMm=q<=25?OMR_LAYOUT.answers.col1.bubbleStartX:
+      OMR_LAYOUT.answers.col2.bubbleStartX;
+    // Use measured printed side timing markers as geometry anchors rather
+    // than forcing the answer grid to follow an imperfect global homography.
+    // The existing bubble-shape classifier is otherwise unchanged.
+    const marker=timing.offsetForQuestion(q,xMm);
+    return marker;
+  });
   stage('answers');
   // No student identity on this template: this prototype never submits/scorers.
   const canvas=document.createElement('canvas');
@@ -156,7 +166,8 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
    status:tid.testId===null?'rejected':'verified',
    reason:tid.testId===null?'Test ID bubbles ambiguous or blank':'Footer, 4 corners and both timing tracks verified',
    sheet,registration,rotated180,cornerAttempts,
-   timing:{matched:timing.matched,left:timing.leftMatched,right:timing.rightMatched},
+   timingGeometry:{maxShiftPx:timing.maxShiftPx,rows:timing.rows},
+   timing:{matched:timing.matched,left:timing.left,right:timing.right},
    testId:tid.testId,answers,overlayUrl,
    detected:answers.filter(a=>a.status==='detected').length,
    blank:answers.filter(a=>a.status==='blank').length,
