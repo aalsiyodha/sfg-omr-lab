@@ -4,6 +4,7 @@ import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
 import { detectCoarseToFineCorners } from './coarseToFineCorners';
 import { fitRobustSheetWarp, type FusionEvidence } from './robustSheetHomography';
+import {discoverUpperPairs} from './partialMarkerRescue';
 import { measureOpenCv5Simd } from './opencv5SimdLab';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
@@ -816,6 +817,53 @@ export async function runFullScan(
           left:accepted.check.leftMatched,right:accepted.check.rightMatched});
         break;
       }
+    }
+
+    // EXPERIMENT 4: two independently decoded bottom ArUco IDs suffice to
+    // propose alternative top corner squares. On clean images this never runs.
+    if(!selected && ((arucoAdaptive.points[2]&&arucoAdaptive.points[3]) ||
+       (arucoOtsu.points[2]&&arucoOtsu.points[3]))){
+      const start=performance.now();
+      const rescueOtsu=new cv.Mat();
+      try{
+        cv.threshold(preprocessed.gray,rescueOtsu,0,255,cv.THRESH_BINARY_INV|cv.THRESH_OTSU);
+        const sources=[
+          {name:'adaptive',binary:preprocessed.thresholded,aruco:arucoAdaptive},
+          {name:'Otsu',binary:rescueOtsu,aruco:arucoOtsu}
+        ];
+        const candidates=sources.flatMap(source=>{
+          const discovered=discoverUpperPairs(source.binary,source.aruco,source.name,8);
+          logger.info('markerDetection','v2.5.4 partial-ArUco upper-corner discovery',{
+            source:source.name,...discovered.evidence,
+            proposals:discovered.candidates.map(p=>({
+              topLeft:p.topLeft,topRight:p.topRight,rankScore:p.score
+            }))
+          });
+          return discovered.candidates.map(p=>({...p,aruco:source.aruco}));
+        }).sort((a,b)=>a.score-b.score);
+        const visited=new Set<string>();
+        let evaluated=0;
+        for(const p of candidates){
+          if(evaluated>=12)break;
+          const fingerprint=JSON.stringify([p.topLeft,p.topRight,p.aruco.points[2],p.aruco.points[3]]);
+          if(visited.has(fingerprint))continue;
+          visited.add(fingerprint);evaluated++;
+          const hypothesis:Hypothesis={kind:'hybrid',
+            name:'partial-aruco/'+p.source+'/upper-'+evaluated,
+            corners:p.markers,aruco:p.aruco};
+          warpAttempts++;
+          const attempt=traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget);
+          if(attempt){selected=attempt;break;}
+        }
+        logger.info('perspective','v2.5.4 partial-ArUco recovery summary',{
+          proposed:candidates.length,evaluated,verified:Boolean(selected),
+          selected:selected?.hypothesis.name??null,
+          durationMs:Math.round(performance.now()-start),
+          note:'All candidates require SFGOMR1 identity and independent dual timing acceptance'
+        });
+      }catch(error){
+        logger.warning('perspective','v2.5.4 partial-ArUco recovery exception',{reason:String(error)});
+      }finally{rescueOtsu.delete();}
     }
 
     // Geometric QR finder search on the ORIGINAL photo is independent of
