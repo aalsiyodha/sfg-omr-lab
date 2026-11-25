@@ -81,6 +81,7 @@ export function buildDualScanReport(
     'File='+filename+' | SHA-256='+fmt(fileSha256),
     'Enhanced ROI optimization='+JSON.stringify(enhancedOptions)+
     ' | Baseline: fastQrRoi=true; coarseToFine=false; robustFusion=false; SIMD=false; AI OFF',
+    'SIMD NOTE: Both A/B passes use the existing OpenCV.js scoring runtime. The optional OpenCV 5 SIMD probe is OFF in the A/B test and must be run separately.',
     'WARNING: Order alternates across consecutive comparisons in one page session. A single pair cannot establish a speed gain.',
     'WARNING: Answer agreement is not ground truth; inspect the actual sheet for correctness.',
     '',
@@ -100,6 +101,14 @@ export function buildDualScanReport(
       ' delta='+((stagesB?.[key]??0)-(stagesA?.[key]??0))),
     '',
     'PER-REGISTRATION CANDIDATE TRACE:',
+    'FALLBACK GEOMETRY EVIDENCE (per-pass):',
+    ...['Baseline','Enhanced'].flatMap((label,i)=>{
+      const result=i===0?baseline:enhanced;
+      return [label+' coarse='+JSON.stringify(findLog(result,'v2.5.3 coarse-to-fine corner evidence')?.data??null),
+        label+' fullResolutionRetry='+JSON.stringify(findLog(result,'v2.5.3 full-resolution corner retry')?.data??null),
+        label+' RANSAC='+JSON.stringify(result.stageLogs.filter(l=>l.message==='v2.5.3 robust homography evidence').map(l=>l.data))];
+    }),
+    '',
     ...['Baseline','Enhanced'].flatMap((label,i)=>{
       const result=i===0?baseline:enhanced;
       const trace=result.stageLogs.filter(l=>l.message==='v2.5.2 detailed registration candidate');
@@ -110,6 +119,10 @@ export function buildDualScanReport(
     'ENHANCED EXPERIMENT EVIDENCE:',
     ...[
       'User-selected scan controls',
+      'v2.5.3 coarse-to-fine corner evidence',
+      'v2.5.3 full-resolution corner retry',
+      'v2.5.3 robust homography evidence',
+      'v2.5.3 OpenCV 5 SIMD separate runtime probe',
       'v2.5.2 withheld-print-validated local mesh',
       'v2.5.2 masked latent template predictor',
       'v2.5.2 synthetic-trained closed-set head',
