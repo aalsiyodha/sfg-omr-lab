@@ -1,7 +1,9 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
 declare const __APP_BUILD_META__: { version:string; source:'vercel'|'local-dev'|'local-build'; environment:string; sha:string; buildId:string; builtAt:string; dirty:boolean };
-export const APP_VERSION = version === '2.2-sheetid.2'
+export const APP_VERSION = version === '2.2-sheetid.3'
+  ? 'v2.2 SheetID 3 · Multi-Corner + Footer Rescue'
+  : version === '2.2-sheetid.2'
   ? 'v2.2 SheetID 2 · Footer Geometry Fix · GitHub Pages'
   : version === '2.5.2-experimental.3'
   ? 'v2.5.2 Experimental 3 · Adaptive Registration + A/B Crops'
