@@ -351,7 +351,13 @@ export async function runFullScan(
     const registrationStarted=Date.now();
     const hypotheses: Hypothesis[] = [];
     let fastWarpAttempts=0;
+    const markerProfile={cornerDetectionMs:0,cornerVerificationMs:0,
+      fallbackDiscoveryMs:0,registrationProbeMs:0,
+      fallbackDiscoveryTriggered:false,fastPathVerified:false,
+      hypothesesEvaluated:0};
+    const cornerStart=Date.now();
     const primary=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
+    markerProfile.cornerDetectionMs=Date.now()-cornerStart;
     const dpi=getSettings().scanDpi;
     const curveBudget={remaining:1};
     let arucoAdaptive:ArucoRegistration={found:false,count:0,points:{}};
@@ -368,9 +374,12 @@ export async function runFullScan(
         validGeometry:primary.validGeometry});
       fastWarpAttempts++;
       const candidate=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+      markerProfile.cornerVerificationMs=Date.now()-t;
+      markerProfile.hypothesesEvaluated++;
       if(candidate)selected=candidate;
       if(candidate&&canStopUnifiedRegistration(candidate.qr.valid,candidate.check.matched,
         candidate.check.leftMatched,candidate.check.rightMatched)){
+        markerProfile.fastPathVerified=true;
         logger.info('perspective','Verified corner-first fast path: skipped ArUco/Otsu/midpoint discovery',{
           durationMs:Date.now()-t,timing:candidate.check.matched,
           left:candidate.check.leftMatched,right:candidate.check.rightMatched,qrValid:candidate.qr.valid});
@@ -378,6 +387,8 @@ export async function runFullScan(
     }
     if(!selected||!canStopUnifiedRegistration(selected.qr.valid,selected.check.matched,
       selected.check.leftMatched,selected.check.rightMatched)){
+    markerProfile.fallbackDiscoveryTriggered=true;
+    const fallbackDiscoveryStart=Date.now();
     // Recovery-only independent marker families.
     arucoAdaptive=detectArucoMarkers(preprocessed.gray,preprocessed.thresholded);
     const arucoMidpointPrediction=predictMidpointsFromArucos(arucoAdaptive);
@@ -428,8 +439,16 @@ export async function runFullScan(
       cleanupMats(alternate);
     }
 
+      markerProfile.fallbackDiscoveryMs=Date.now()-fallbackDiscoveryStart;
     }
     finishStage('markerDiscovery');
+    logger.info('markerDetection','Registration engine budget and measured work',{
+      ...markerProfile,
+      phaseAccounting:'markerDiscovery stage includes corner registration verification, not only marker finding',
+      skippedFamilies:markerProfile.fastPathVerified?
+        ['ArUco adaptive','Otsu','midpoint','boundary','AI'] : [],
+      note:'Never skip identity (QR) and both 25-row timing tracks'
+    });
     logger.info('markerDetection', `${hypotheses.length} reference hypotheses available`,
       { cornerCandidates: hypotheses.filter(h => h.kind === 'corner').length,
         midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length,
@@ -462,7 +481,10 @@ export async function runFullScan(
         continue;
       }
       warpAttempts++;
+      markerProfile.hypothesesEvaluated++;
+      const probeStart=Date.now();
       const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi, curveBudget);
+      markerProfile.registrationProbeMs+=Date.now()-probeStart;
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
@@ -959,22 +981,26 @@ export async function runFullScan(
         activeGridOffset,rawInkThreshold);
       const excludedInkQuestions=new Set(rawAnswers.filter(row=>
         row.measurements.some(m=>m.fillPercent>=15)).map(row=>row.question));
-      const verifiedMesh=validateLocalMesh(chosen.gray,dpi,grid,excludedInkQuestions);
-      const adoptedMesh=proofMeshEnabled&&verifiedMesh.accepted;
+      const meshStart=Date.now();
+      const verifiedMesh=proofMeshEnabled
+        ?validateLocalMesh(chosen.gray,dpi,grid,excludedInkQuestions):null;
+      const meshMs=Date.now()-meshStart;
+      const adoptedMesh=proofMeshEnabled&&verifiedMesh?.accepted===true;
       if(adoptedMesh){
-        activeGridOffset=(q:number)=>verifiedMesh.predicted[q]??offsetForQuestion(grid,q);
+        activeGridOffset=(q:number)=>verifiedMesh?.predicted[q]??offsetForQuestion(grid,q);
         rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
           activeGridOffset,rawInkThreshold);
       }
       logger.info('perspective','v2.5.2 withheld-print-validated local mesh',{
-        requested:proofMeshEnabled,accepted:verifiedMesh.accepted,
-        adopted:adoptedMesh,
-        heldOutCount:verifiedMesh.heldOutCount,
-        referenceScore:verifiedMesh.referenceScore,
-        candidateScore:verifiedMesh.candidateScore,
-        relativeGain:verifiedMesh.relativeGain,
-        maxDisplacementPx:verifiedMesh.maxDisplacementPx,
-        reason:verifiedMesh.reason,
+        requested:proofMeshEnabled,ran:verifiedMesh!==null,
+        accepted:verifiedMesh?.accepted??false,adopted:adoptedMesh,
+        heldOutCount:verifiedMesh?.heldOutCount??null,
+        referenceScore:verifiedMesh?.referenceScore??null,
+        candidateScore:verifiedMesh?.candidateScore??null,
+        relativeGain:verifiedMesh?.relativeGain??null,
+        maxDisplacementPx:verifiedMesh?.maxDisplacementPx??null,
+        reason:verifiedMesh?.reason??'Checkbox disabled; mesh evaluation skipped',
+        durationMs:meshMs,
         note:'Candidate based only on printed rings; cannot override QR identity'
       });
       finishStage('rawBubbleDetection');
@@ -1019,13 +1045,17 @@ export async function runFullScan(
         proofscan:proofEnabled,proofmodel:proofModelEnabled,proofmesh:proofMeshEnabled,
         source:options?'website checkboxes':'URL query parameters'
       });
-      const proofs=answers.map(row=>auditBubbleDecision(row,
-        activeGridOffset(row.question),rawAnswers.find(raw=>raw.question===row.question)));
-      const latent=fitMaskedLatentPredictor(answers);
+      const experimentalModelStart=Date.now();
+      const proofs=proofEnabled?answers.map(row=>auditBubbleDecision(row,
+        activeGridOffset(row.question),rawAnswers.find(raw=>raw.question===row.question))):[];
+      const latent=proofModelEnabled?fitMaskedLatentPredictor(answers):null;
       logger.info('bubbleDetection','v2.5.2 masked latent template predictor',{
-        ...latent,note:'Self-supervised predictor trained on current-sheet blank features; not full JEPA, never auto-grades'
+        enabled:proofModelEnabled,ran:latent!==null,
+        ...(latent??{}),
+        reason:latent===null?'Model checkbox disabled; skipped':'Online blank-region prediction',
+        note:'Self-supervised predictor trained on current-sheet blank features; not full JEPA, never auto-grades'
       });
-      const learnedProposals=answers.flatMap(row=>{
+      const learnedProposals=proofModelEnabled?answers.flatMap(row=>{
         const m=[...row.measurements].sort((a,b)=>b.fillPercent-a.fillPercent)[0];
         if(!m||m.fillPercent<18||row.status==='multiple')return [];
         const prediction=predictSyntheticDecision(m);
@@ -1033,19 +1063,21 @@ export async function runFullScan(
           opticalStatus:row.status,modelLabel:prediction.label,
           margin:Number(prediction.margin.toFixed(3)),
           scoreSolid:Number(prediction.scores.solid.toFixed(3))}];
-      });
+      }):[];
       const modelReview=new Set(learnedProposals.filter(p=>
         p.opticalStatus==='detected'&&p.modelLabel!=='solid'&&
         p.margin>=0.20&&p.scoreSolid<0.30).map(p=>p.question));
       logger.info('bubbleDetection','v2.5.2 synthetic-trained closed-set head',{
-        enabled:proofModelEnabled,model:SYNTHETIC_MODEL_INFO,
+        enabled:proofModelEnabled,ran:proofModelEnabled,
+        model:SYNTHETIC_MODEL_INFO,durationMs:Date.now()-experimentalModelStart,
         proposals:learnedProposals,acceptedReviewCandidates:[...modelReview],
         note:'Uncalibrated synthetic-only model; no automatic promotion of rejected ink'
       });
       const reviewProofs=proofs.filter(p=>p.action==='review');
       // Only ambiguous or previously accepted ink gets the 15 tiny
       // local counterfactuals; blank 0%-ink rows do no extra work.
-      const localVisualProofs=answers.flatMap(row=>{
+      const localProofStart=Date.now();
+      const localVisualProofs=proofEnabled?answers.flatMap(row=>{
         const top=[...row.measurements].sort((a,b)=>b.fillPercent-a.fillPercent)[0];
         if(!top||top.fillPercent<35||row.status==='multiple')return [];
         if(top.sampleXPx===undefined||top.sampleYPx===undefined||
@@ -1054,7 +1086,7 @@ export async function runFullScan(
           top.sampleYPx,dpi,top.inkThreshold);
         return proof.available?[{question:row.question,option:top.option,
           status:row.status,fill:top.fillPercent,...proof}]:[];
-      });
+      }):[];
       // Counterfactual failure only demotes an already accepted answer in
       // explicit experimental mode. Deliberate partial marks remain blank.
       const unstableAccepted=new Set(localVisualProofs.filter(p=>
@@ -1076,13 +1108,15 @@ export async function runFullScan(
         mode:proofEnabled?'conservative review':'shadow or trained-head selective review',
         evaluated:proofs.length,reviewCount:reviewProofs.length,
         localCounterfactualCount:localVisualProofs.length,
+        localCounterfactualDurationMs:Date.now()-localProofStart,
+        opticalAuditRan:proofEnabled,
         unstableAccepted:[...unstableAccepted],
         localVisualProofs,
         reviewCandidates:reviewProofs.map(p=>({
           question:p.question,option:p.option,markClass:p.markClass,
           reason:p.reason,evidence:p.evidence
         })),
-        note:'No trained model or calibrated probabilities; only suspicious accepted marks can be demoted, never auto-promoted'
+        note:'Synthetic model is trained but uncalibrated; only suspicious accepted marks can be demoted, never auto-promoted'
       });
       finishStage('toneCorrectionAndConsensus');
       logger.info('bubbleDetection',
