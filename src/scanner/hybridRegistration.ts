@@ -45,7 +45,8 @@ export function hybridAnchorEvidence(corners:MarkerDetectionResult,aruco:ArucoRe
     imagePoints,templateMm};
 }
 export function correctPerspectiveFromHybrid(
-  source:HTMLCanvasElement,corners:MarkerDetectionResult,aruco:ArucoRegistration
+  source:HTMLCanvasElement,corners:MarkerDetectionResult,aruco:ArucoRegistration,
+  serializePreview = true
 ):PerspectiveResult {
   const evidence=hybridAnchorEvidence(corners,aruco);
   if(!evidence.usable)return {corrected:null,correctedDataUrl:'',transform:null,
@@ -65,7 +66,7 @@ export function correctPerspectiveFromHybrid(
     cv.warpPerspective(src,corrected,transform,new cv.Size(w,h));
     const canvas=document.createElement('canvas');
     canvas.width=w;canvas.height=h;cv.imshow(canvas,corrected);
-    return {corrected,correctedDataUrl:canvas.toDataURL('image/png'),transform,success:true};
+    return {corrected,correctedDataUrl:serializePreview ? canvas.toDataURL('image/png') : '',transform,success:true};
   }catch(error){
     corrected?.delete?.();transform?.delete?.();
     return {corrected:null,correctedDataUrl:'',transform:null,success:false,error:String(error)};
