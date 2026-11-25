@@ -22,9 +22,74 @@
       window.opencvReady = false;
       window.opencvError = null;
     </script>
-    <script async src="https://docs.opencv.org/4.8.0/opencv.js"
-      onload="window.opencvReady = true; window.dispatchEvent(new Event('opencv-ready'));"
-      onerror="window.opencvError = 'Failed to load OpenCV.js'; window.dispatchEvent(new Event('opencv-error'));">
+    <script>
+      // Experimental runtime selection. Only this branch offers the alternate.
+      // Reload the whole page to switch runtimes; never load two cv builds together.
+      (function () {
+        const params = new URLSearchParams(window.location.search);
+        const experimental = params.get('cvEngine') === 'ttop32-4.12';
+        const url = experimental
+          ? 'https://cdn.jsdelivr.net/npm/opencv-js-wasm@4.12.0/opencv.js'
+          : 'https://docs.opencv.org/4.8.0/opencv.js';
+        window.omrCvEngine = experimental ? 'ttop32-4.12' : 'official-4.8';
+        window.omrCvSource = url;
+        window.omrCvInitMs = null;
+        const started = performance.now();
+        let settled = false;
+        const fail = (reason) => {
+          if (settled) return;
+          settled = true;
+          clearInterval(poller);
+          clearTimeout(watchdog);
+          window.opencvError = reason;
+          window.dispatchEvent(new Event('opencv-error'));
+        };
+        const probe = () => {
+          if (settled) return;
+          let cv = window.cv;
+          // OpenCV.js builds can yield a Module object, a cv object, or a Promise.
+          if ((!cv || typeof cv.Mat !== 'function') &&
+              window.Module && typeof window.Module.Mat === 'function') {
+            cv = window.Module;
+            window.cv = cv;
+          }
+          if (!cv || typeof cv.Mat !== 'function') return;
+          try {
+            const mat = new cv.Mat(1, 1, cv.CV_8UC1);
+            mat.delete();
+          } catch (_) { return; }
+          settled = true;
+          clearInterval(poller);
+          clearTimeout(watchdog);
+          window.omrCvInitMs = Math.round(performance.now() - started);
+          window.opencvReady = true;
+          window.dispatchEvent(new Event('opencv-ready'));
+        };
+        // Set up before script injection so synchronous callbacks are captured.
+        window.Module = {
+          onRuntimeInitialized: probe,
+          onAbort: (reason) => fail('OpenCV WASM aborted: ' + String(reason))
+        };
+        const poller = setInterval(probe, 80);
+        const watchdog = setTimeout(
+          () => fail('OpenCV runtime did not initialize within 45 seconds'), 45000
+        );
+        const script = document.createElement('script');
+        script.async = true;
+        script.src = url;
+        script.onload = () => {
+          const candidate = window.cv;
+          if (candidate && typeof candidate.then === 'function') {
+            candidate.then((instance) => {
+              if (instance && typeof instance.Mat === 'function') window.cv = instance;
+              probe();
+            }).catch(err => fail('OpenCV Promise rejected: ' + String(err)));
+          }
+          probe();
+        };
+        script.onerror = () => fail('Could not download OpenCV runtime: ' + url);
+        document.head.appendChild(script);
+      }());
     </script>
   </head>
   <body>
