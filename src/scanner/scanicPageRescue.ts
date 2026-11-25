@@ -17,13 +17,14 @@ type ScanicModule={scanDocument:(canvas:HTMLCanvasElement,options:{
 type Candidate={corners:Point[];score:number;canvas:HTMLCanvasElement;variant:string};
 let modulePromise:Promise<ScanicModule>|null=null;
 const base=import.meta.env.BASE_URL;
-const moduleUrl=base+'ai-runtime/scanic.js';
+const moduleUrl='npm:scanic@1.8.0 (lazy Vite chunk)';
 const assetBase=base+'ai-model/scanic/';
 const clk=()=>performance.now();
 async function loadModelRuntime(trace:Trace):Promise<ScanicModule>{
   const t=clk(),cached=Boolean(modulePromise);
-  trace('scanic-runtime-load-start',{url:moduleUrl,cacheHit:cached});
-  if(!modulePromise)modulePromise=import(/* @vite-ignore */ moduleUrl) as Promise<ScanicModule>;
+  trace('scanic-runtime-load-start',{url:moduleUrl,cacheHit:cached,
+    reason:'Bundled npm module avoids missing GitHub Pages ai-runtime/scanic.js'});
+  if(!modulePromise)modulePromise=import('scanic') as unknown as Promise<ScanicModule>;
   try{
     const runtime=await modulePromise;
     if(typeof runtime.scanDocument!=='function')throw Error('scanic ESM export missing scanDocument');
