@@ -102,3 +102,26 @@
 .v26-panel{box-shadow:0 12px 40px rgba(32,56,90,.04)}
 .v26-primary:focus-visible,.v26-secondary:focus-visible{outline:3px solid #9cc1e8;outline-offset:3px}
 @media(max-width:680px){.v26-intro{padding:25px 5px 31px}.v26-intro h1{font-size:43px}.v26-hero-trust{gap:10px 13px}.v26-hero-trust span{font-size:11px}.v26-guide{padding:21px 2px}.v26-guide-grid{grid-template-columns:1fr}.v26-guide-item{min-height:0;padding:19px}.v26-guide-number{margin-bottom:9px}}
+
+/* Matching dark treatment for the public scanner */
+html[data-theme="dark"] .v26-page{--v26-ink:#f1f6fc;--v26-muted:#a9bbcc;--v26-line:#33465a;--v26-surface:#1b2938;--v26-primary:#5479aa;color:#edf4fb}
+html[data-theme="dark"] .v26-intro h1 span{color:#9aabc0}
+html[data-theme="dark"] .v26-version{border-color:#4b6077;color:#bfd0e4}
+html[data-theme="dark"] .v26-eyebrow,html[data-theme="dark"] .v26-step{color:#91aecd}
+html[data-theme="dark"] .v26-hero-trust span{color:#b7c8d9}
+html[data-theme="dark"] .v26-drop,html[data-theme="dark"] .v26-photo,html[data-theme="dark"] .v26-metrics>div{background:#202f40;border-color:#405267}
+html[data-theme="dark"] .v26-drop-icon,html[data-theme="dark"] .v26-guide-item,html[data-theme="dark"] .v26-secondary{background:#25364a;border-color:#3c536c;color:#e6eff9}
+html[data-theme="dark"] .v26-guide-head h2,html[data-theme="dark"] .v26-guide-item h3{color:#f1f6fc}
+html[data-theme="dark"] .v26-guide-item p,html[data-theme="dark"] .v26-muted,html[data-theme="dark"] .v26-footer{color:#aebfd3}
+html[data-theme="dark"] .v26-guide-item,html[data-theme="dark"] .v26-help{border-color:#405268}
+html[data-theme="dark"] .v26-help{background:#203c3d}
+html[data-theme="dark"] .v26-help strong{color:#d6f1e9}
+html[data-theme="dark"] .v26-help p{color:#b1d0c7}
+html[data-theme="dark"] .v26-table th{background:#26384c;color:#b9cadd}
+html[data-theme="dark"] .v26-table td,html[data-theme="dark"] .v26-tabs,html[data-theme="dark"] .v26-table th{border-color:#41536a}
+html[data-theme="dark"] .v26-choices button,html[data-theme="dark"] .v26-toolbar button{background:#2a3c51;border-color:#486078;color:#e2eaf5}
+html[data-theme="dark"] .v26-choices button.chosen,html[data-theme="dark"] .v26-toolbar button.is-active{background:#5279a6}
+html[data-theme="dark"] .v26-diagnostics textarea{background:#213247;color:#ddeaf9;border-color:#4d6278}
+html[data-theme="dark"] .v26-score{background:#203248;border-color:#45617a}
+html[data-theme="dark"] .v26-status,html[data-theme="dark"] .v26-selected-info h3{color:#edf4fc}
+html[data-theme="dark"] .v26-notice{background:#403625;color:#f2d8ad}

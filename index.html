@@ -7,8 +7,14 @@
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      document.documentElement.setAttribute('data-theme', 'light');
-      document.documentElement.setAttribute('data-bs-theme', 'light');
+      // Apply the saved theme before React paints to avoid a light-mode flash.
+      try {
+        const saved = localStorage.getItem('sfg-omr-theme');
+        const theme = saved === 'dark' || saved === 'light'
+          ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch { /* Theme defaults to the light stylesheet */ }
     </script>
     <title>SFG OMR Lab — Scan and Review Answer Sheets</title>
     <script>

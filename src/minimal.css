@@ -68,3 +68,10 @@ html[data-theme="dark"] .minimal-status.is-bad{background:#3b2323;color:#ffb4b4}
 .v26-nav-status-dot{height:7px;width:7px;border-radius:100%;background:#319878}
 .minimal-app-main{max-width:1100px!important;padding-top:13px!important}
 @media(max-width:660px){.minimal-nav{height:63px;padding:0 16px}.minimal-nav-links{gap:3px}.minimal-nav-links a{font-size:12px;padding:8px}.v26-nav-status{display:none}}
+
+html[data-theme="dark"] .minimal-nav{background:#1a2634;box-shadow:none}
+html[data-theme="dark"] .minimal-nav-brand{color:#f3f7fc}
+html[data-theme="dark"] .minimal-nav-links a{color:#a8bacf}
+html[data-theme="dark"] .minimal-nav-links a.active,html[data-theme="dark"] .minimal-nav-links a:hover{background:#293d52;color:#f5f8fc}
+html[data-theme="dark"] .v26-nav-status{border-color:#44576c;color:#acbdcf}
+html[data-theme="dark"] .minimal-theme-switch{color:#c4d7eb}
