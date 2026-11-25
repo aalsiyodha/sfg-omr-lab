@@ -51,6 +51,20 @@ type Hypothesis =
   | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
   | { kind: 'aruco'; name: string; markers: ArucoRegistration }
   | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> };
+/** Deduplicate only EXACT reference coordinates on the SAME source image.
+ * No near-match tolerance: a subpixel difference can affect printed rings.
+ * All QR and timing gates are still enforced for the first occurrence.
+ */
+function geometryFingerprint(h:Hypothesis):string|null {
+  if(h.kind==='hybrid')return null;
+  if(h.kind==='corner')return JSON.stringify(['corner',h.markers.topLeft,
+    h.markers.topRight,h.markers.bottomLeft,h.markers.bottomRight]);
+  if(h.kind==='midpoint')return JSON.stringify(['midpoint',h.markers.top,
+    h.markers.right,h.markers.bottom,h.markers.left]);
+  return JSON.stringify(['aruco',Object.entries(h.markers.points)
+    .sort(([a],[b])=>a.localeCompare(b))]);
+}
+
 interface AcceptedAlignment {
   hypothesis: Hypothesis;
   perspective: PerspectiveResult;
@@ -351,6 +365,7 @@ export async function runFullScan(
     const registrationStarted=Date.now();
     const hypotheses: Hypothesis[] = [];
     let fastWarpAttempts=0;
+    const usedGeometries=new Set<string>();
     const markerProfile={cornerDetectionMs:0,cornerVerificationMs:0,
       fallbackDiscoveryMs:0,registrationProbeMs:0,
       fallbackDiscoveryTriggered:false,fastPathVerified:false,
@@ -390,6 +405,8 @@ export async function runFullScan(
     // verification BEFORE expensive ArUco, Otsu and midpoint discovery.
     if(primary.found){
       const hypothesis:Hypothesis={kind:'corner',name:'corner/adaptive',markers:primary};
+      const fingerprint=geometryFingerprint(hypothesis);
+      if(fingerprint)usedGeometries.add(fingerprint);
       const t=Date.now();
       logger.info('markerDetection','corner/adaptive: candidate coordinates',{
         topLeft:primary.topLeft,topRight:primary.topRight,
@@ -486,6 +503,14 @@ export async function runFullScan(
     for (const hypothesis of hypotheses) {
       if(selected&&canStopUnifiedRegistration(selected.qr.valid,selected.check.matched,
         selected.check.leftMatched,selected.check.rightMatched))break;
+      const fingerprint=geometryFingerprint(hypothesis);
+      if(fingerprint&&usedGeometries.has(fingerprint)){
+        logger.info('markerDetection','v2.5.2 duplicate exact marker geometry skipped',{
+          candidate:hypothesis.name,reason:'Identical coordinates already verified on original photo'
+        });
+        continue;
+      }
+      if(fingerprint)usedGeometries.add(fingerprint);
       logger.info('markerDetection', `${hypothesis.name}: candidate coordinates`,
         hypothesis.kind === 'corner'
           ? { topLeft:hypothesis.markers.topLeft, topRight:hypothesis.markers.topRight, bottomLeft:hypothesis.markers.bottomLeft,
