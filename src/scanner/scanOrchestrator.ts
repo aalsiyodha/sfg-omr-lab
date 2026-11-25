@@ -429,7 +429,7 @@ export async function runFullScan(
 
   if(options?.simdProbe){
     const simd=await measureOpenCv5Simd(loaded.canvas);
-    logger.info('preprocessing','v2.5.3 OpenCV 5 SIMD separate runtime probe',simd);
+    logger.info('preprocessing','v2.5.3 OpenCV 5 SIMD separate runtime probe',{...simd});
   }
   const preprocessed = preprocessImage(loaded.canvas);
   finishStage('preprocessing');
