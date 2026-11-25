@@ -13,7 +13,8 @@ declare const cv:any;
 type Point={x:number;y:number};
 type LocatedQR=ReturnType<typeof locateQRInPhoto>;
 export function correctPerspectiveFromQrAruco(
-  source:HTMLCanvasElement,qr:LocatedQR,aruco:ArucoRegistration
+  source:HTMLCanvasElement,qr:LocatedQR,aruco:ArucoRegistration,
+  serializePreview = true
 ):PerspectiveResult{
   const fail=(error:string):PerspectiveResult=>({
     corrected:null,correctedDataUrl:'',transform:null,success:false,error
@@ -52,7 +53,7 @@ export function correctPerspectiveFromQrAruco(
     const canvas=document.createElement('canvas');
     canvas.width=w;canvas.height=h;
     cv.imshow(canvas,corrected);
-    return {corrected,correctedDataUrl:canvas.toDataURL('image/png'),transform,success:true};
+    return {corrected,correctedDataUrl:serializePreview ? canvas.toDataURL('image/png') : '',transform,success:true};
   }catch(error){
     corrected?.delete?.();transform?.delete?.();
     return fail(String(error));
