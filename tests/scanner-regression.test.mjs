@@ -2184,8 +2184,8 @@ test('isolated Sheet ID prototype prints and checks 25+25 timing, footer and Tes
  assert.match(pdf,/getTestIdBubbleCentre\(type,d\)/);
  assert.match(pdf,/square\(f.leftBoxXmm/);
  assert.match(scanner,/decodeSheetFooter\(candidateGray,dpi\)/);
- assert.match(scanner,/candidateTiming\.matched<48\|\|/);
- assert.match(scanner,/candidateTiming\.leftMatched<23\|\|candidateTiming\.rightMatched<23/);
+ assert.match(scanner,/candidateTiming=measureTimingTrack\(candidateGray,dpi\)/);
+ assert.match(scanner,/if\(!candidateTiming\.valid\)continue/);
  assert.match(scanner,/detectTestId\(gray,dpi/);
  assert.match(scanner,/detectAllAnswers\(gray,dpi/);
  assert.doesNotMatch(scanner,/decodeQR/);
@@ -2232,4 +2232,14 @@ test('Sheet ID decoder reads thin hollow outlines, exact code, and rejects a dam
  dot(59,274,.75,255);
  const broken=decodeSheetFooter(gray,dpi);
  assert.equal(broken.valid,false,JSON.stringify(broken));
+});
+
+test('Sheet ID timing correction requires independently confirmed per-row left/right boxes',()=>{
+ const source=readFileSync('src/experimental/sheetIdTiming.ts','utf8');
+ const scanner=readFileSync('src/experimental/sheetIdScanner.ts','utf8');
+ assert.match(source,/const valid=matched>=48&&left>=23&&right>=23/);
+ assert.match(source,/coherent\('left'\)&&coherent\('right'\)/);
+ assert.match(source,/offsetForQuestion:/);
+ assert.match(scanner,/timing\.offsetForQuestion\(q,xMm\)/);
+ assert.match(scanner,/if\(!candidateTiming\.valid\)continue/);
 });
