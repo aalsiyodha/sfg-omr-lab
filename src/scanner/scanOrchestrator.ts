@@ -4,6 +4,7 @@ import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
 import { detectCoarseToFineCorners } from './coarseToFineCorners';
 import { fitRobustSheetWarp, type FusionEvidence } from './robustSheetHomography';
+import {discoverUpperPairs} from './partialMarkerRescue';
 import { measureOpenCv5Simd } from './opencv5SimdLab';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
@@ -156,6 +157,29 @@ function evaluateHypothesis(
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
+    // Only Experimental 4's failure-only partial-ArUco candidates receive
+    // this cheap preflight. A real verified 48+/50 timing lattice cannot
+    // fail these deliberately permissive preliminary bounds.
+    if(hypothesis.name.startsWith('partial-aruco/')){
+      let preflight:any=null;
+      try{
+        preflight=new cv.Mat();
+        cv.cvtColor(persp.corrected,preflight,cv.COLOR_RGBA2GRAY);
+        const t=verifyTimingMarks(preflight,dpi);
+        const possible=t.matched>=16&&t.leftMatched>=5&&t.rightMatched>=5;
+        logger.info('perspective','v2.5.4 partial-ArUco timing preflight',{
+          method:hypothesis.name,matched:t.matched,
+          left:t.leftMatched,right:t.rightMatched,passed:possible,
+          note:'Cheap rejection only; QR + full dual timing remain mandatory for acceptance'
+        });
+        if(!possible){
+          if(evidence){evidence.phase='timing';evidence.timing=t.matched;
+            evidence.left=t.leftMatched;evidence.right=t.rightMatched;
+            evidence.reason='Partial ArUco candidate rejected by permissive preliminary timing';}
+          return null;
+        }
+      }finally{cleanupMats(preflight);}
+    }
     const qrStart=performance.now();
     if(evidence){evidence.phase='qr';evidence.reason='QR not yet independently verified';}
     const canvas = document.createElement('canvas');
@@ -577,14 +601,18 @@ export async function runFullScan(
     // corner quadrilateral can be geometrically plausible (Test 4 v1.6).
     const mid = detectMidpointMarkers(preprocessed.thresholded, loaded.width, loaded.height);
     if (mid.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/adaptive', markers: mid });
-    logger.info('markerDetection','v2.5.3 RANSAC fusion eligibility',{
-      enabled:options?.robustFusion!==false,arucoCount:arucoAdaptive.count,
+    const partialArucoCount=Object.keys(arucoAdaptive.points).length;
+    const fusionAnchors=(primary.found?4:0)+(mid.found?4:0)+partialArucoCount;
+    const fusionFamilies=(primary.found?1:0)+(mid.found?1:0)+(partialArucoCount?1:0);
+    const fusionEligible=options?.robustFusion!==false&&fusionAnchors>=6&&fusionFamilies>=2;
+    logger.info('markerDetection','v2.5.4 RANSAC fusion eligibility',{
+      enabled:options?.robustFusion!==false,arucoCount:partialArucoCount,
       arucoFound:arucoAdaptive.found,midpointCount:mid.count,
       midpointFound:mid.found,cornerCount:primary.count,
-      eligible:options?.robustFusion!==false&&arucoAdaptive.found&&mid.found,
-      note:'RANSAC is a fallback; a verified QR/timing scan exits first'});
-    if(options?.robustFusion!==false&&arucoAdaptive.found&&mid.found){
-      hypotheses.push({kind:'fusion',name:'fusion/ransac-corner-midpoint-aruco',
+      anchors:fusionAnchors,families:fusionFamilies,eligible:fusionEligible,
+      note:'Partial independently decoded ArUco IDs permitted; QR and timing remain mandatory'});
+    if(fusionEligible){
+      hypotheses.push({kind:'fusion',name:'fusion/ransac-partial-aruco',
         corners:primary,midpoint:mid,aruco:arucoAdaptive});
     }
     if(arucoMidpointPrediction){
@@ -816,6 +844,53 @@ export async function runFullScan(
           left:accepted.check.leftMatched,right:accepted.check.rightMatched});
         break;
       }
+    }
+
+    // EXPERIMENT 4: two independently decoded bottom ArUco IDs suffice to
+    // propose alternative top corner squares. On clean images this never runs.
+    if(!selected && ((arucoAdaptive.points[2]&&arucoAdaptive.points[3]) ||
+       (arucoOtsu.points[2]&&arucoOtsu.points[3]))){
+      const start=performance.now();
+      const rescueOtsu=new cv.Mat();
+      try{
+        cv.threshold(preprocessed.gray,rescueOtsu,0,255,cv.THRESH_BINARY_INV|cv.THRESH_OTSU);
+        const sources=[
+          {name:'adaptive',binary:preprocessed.thresholded,aruco:arucoAdaptive},
+          {name:'Otsu',binary:rescueOtsu,aruco:arucoOtsu}
+        ];
+        const candidates=sources.flatMap(source=>{
+          const discovered=discoverUpperPairs(source.binary,source.aruco,source.name,8);
+          logger.info('markerDetection','v2.5.4 partial-ArUco upper-corner discovery',{
+            source:source.name,...discovered.evidence,
+            proposals:discovered.candidates.map(p=>({
+              topLeft:p.topLeft,topRight:p.topRight,rankScore:p.score
+            }))
+          });
+          return discovered.candidates.map(p=>({...p,aruco:source.aruco}));
+        }).sort((a,b)=>a.score-b.score);
+        const visited=new Set<string>();
+        let evaluated=0;
+        for(const p of candidates){
+          if(evaluated>=12)break;
+          const fingerprint=JSON.stringify([p.topLeft,p.topRight,p.aruco.points[2],p.aruco.points[3]]);
+          if(visited.has(fingerprint))continue;
+          visited.add(fingerprint);evaluated++;
+          const hypothesis:Hypothesis={kind:'hybrid',
+            name:'partial-aruco/'+p.source+'/upper-'+evaluated,
+            corners:p.markers,aruco:p.aruco};
+          warpAttempts++;
+          const attempt=traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget);
+          if(attempt){selected=attempt;break;}
+        }
+        logger.info('perspective','v2.5.4 partial-ArUco recovery summary',{
+          proposed:candidates.length,evaluated,verified:Boolean(selected),
+          selected:selected?.hypothesis.name??null,
+          durationMs:Math.round(performance.now()-start),
+          note:'All candidates require SFGOMR1 identity and independent dual timing acceptance'
+        });
+      }catch(error){
+        logger.warning('perspective','v2.5.4 partial-ArUco recovery exception',{reason:String(error)});
+      }finally{rescueOtsu.delete();}
     }
 
     // Geometric QR finder search on the ORIGINAL photo is independent of

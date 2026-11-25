@@ -2178,7 +2178,7 @@ test('v2.5.3 QR ROI A/B retains exact QR and independent timing safety gates',()
  assert.match(hook,/const first=await runPass\(firstPass,1\)/);
  assert.match(hook,/const second=await runPass\(firstPass==='baseline'\?'enhanced':'baseline',2\)/);
  assert.match(page,/One upload: compare v2\.5\.3 baseline vs geometric lab/);
- assert.match(comparison,/OPTIMIZED ROI BASELINE vs SIMD GEOMETRY LAB A\/B/);
+ assert.match(comparison,/ROI BASELINE vs PARTIAL-GEOMETRY RESCUE A\/B/);
 });
 test('v2.5.3 avoids redundant PNG encoding during registration only when fast QR ROI enabled',()=>{
  for(const file of [
@@ -2231,4 +2231,27 @@ test('geometry lab diagnostics report each fallback and genuine SIMD comparison'
  assert.match(simd,/legacyGrayMs/);
  assert.match(simd,/maxSampleDifference/);
  assert.match(simd,/cv\.cvtColor\(legacySrc,legacyGray,cv\.COLOR_RGBA2GRAY\)/);
+});
+
+test('v2.5.4 difficult-image rescue is fallback-only, bounded and QR/timing-verified',()=>{
+ const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const geometry=readFileSync('src/scanner/partialMarkerRescue.ts','utf8');
+ const fusion=readFileSync('src/scanner/robustSheetHomography.ts','utf8');
+ const comparison=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
+ const ai=readFileSync('src/scanner/scanicPageRescue.ts','utf8');
+ assert.match(scan,/if\(!selected && \(\(arucoAdaptive\.points\[2\]/);
+ assert.match(scan,/const attempt=traceRegistration\(loaded\.canvas,hypothesis,dpi,curveBudget\)/);
+ assert.match(scan,/if\(evaluated>=12\)break/);
+ assert.match(scan,/v2\.5\.4 partial-ArUco timing preflight/);
+ assert.match(scan,/t\.matched>=16&&t\.leftMatched>=5&&t\.rightMatched>=5/);
+ assert.match(scan,/v2\.5\.4 partial-ArUco recovery summary/);
+ assert.match(scan,/v2\.5\.4 RANSAC fusion eligibility/);
+ assert.match(geometry,/hybridAnchorEvidence\(markers,arucos\)/);
+ assert.match(geometry,/Bottom ArUco IDs 2 and 3 not both decoded/);
+ assert.match(geometry,/for\(const tl of left\)for\(const tr of right\)/);
+ assert.match(fusion,/if\(aruco\)\{/);
+ assert.match(comparison,/INCONCLUSIVE — one or both scans failed identity verification/);
+ assert.match(comparison,/partial-ArUco upper-corner discovery/);
+ assert.match(ai,/import\('scanic'\)/);
+ assert.doesNotMatch(ai,/import\(\/\* @vite-ignore \*\/ moduleUrl\)/);
 });

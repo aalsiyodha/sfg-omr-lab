@@ -45,7 +45,7 @@ export function fitRobustSheetWarp(
    for(const side of ['top','right','bottom','left'] as const)
      add(midpoint[side],MIDPOINTS_MM[side],side,'midpoint');
  }
- if(aruco?.found){
+ if(aruco){
    for(const m of ARUCO_MARKERS_MM)add(aruco.points[m.id],{x:m.x,y:m.y},
      'aruco-'+m.id,'aruco');
  }
@@ -79,6 +79,8 @@ export function fitRobustSheetWarp(
    const families=[...new Set(accepted.map(a=>a.family))];
    const sorted=errors.filter(Number.isFinite).sort((a,b)=>a-b);
    const median=sorted.length?sorted[Math.floor(sorted.length/2)]:Infinity;
+   // An overfit model must not gain trust merely from two ArUco IDs.
+   // Require at least two marker families and five independent inliers.
    if(accepted.length<5||families.length<2||median>5){
      report('RANSAC inlier count, family agreement, or median reprojection error failed',{
        inliers:accepted.length,families,medianErrorPx:median,

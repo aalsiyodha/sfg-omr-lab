@@ -1,0 +1,132 @@
+name: Deploy v2.5.4 partial marker rescue, preserve originals, and source ZIP
+on:
+  push:
+    branches:
+      - experiment/v2.5.4-partial-geometry-rescue
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: rescue-lab-pages-v1
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: production
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.2-sheetid-timing-prototype
+          path: sheetid
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.5.3-accuracy-speed
+          path: baseline
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.5.3-simd-geometry-lab
+          path: geometry
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.5.4-partial-geometry-rescue
+          path: rescue
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            production/package-lock.json
+            sheetid/package-lock.json
+            baseline/package-lock.json
+            geometry/package-lock.json
+            rescue/package-lock.json
+      - name: Build original production
+        working-directory: production
+        run: |
+          npm ci
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true npm run build
+      - name: Build preserved SheetID
+        working-directory: sheetid
+        run: |
+          npm ci
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/sheetid-test/' npm run build
+      - name: Build preserved v2.5.3 baseline
+        working-directory: baseline
+        run: |
+          npm ci
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/opt-lab/' npm run build
+      - name: Build preserved Geometry Lab
+        working-directory: geometry
+        run: |
+          npm ci
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/simd-lab/' npm run build
+      - name: Resolve pinned Scanic dependencies and test new experiment
+        working-directory: rescue
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci
+          npm run typecheck
+          npm run test:scanner
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/rescue-lab/' npm run build
+          test -d node_modules/scanic-ml/dist
+      - name: Publish resolved reproducible dependency lockfile to experimental branch
+        working-directory: rescue
+        run: |
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add package-lock.json
+            git commit -m "chore(v2.5.4): lock installed Scanic and model package versions"
+            git push origin HEAD:experiment/v2.5.4-partial-geometry-rescue
+          fi
+      - name: Compose isolated Pages paths and local AI assets
+        run: |
+          mkdir -p production/dist/{sheetid-test,opt-lab,simd-lab,rescue-lab,downloads}
+          cp -a sheetid/dist/. production/dist/sheetid-test/
+          cp -a baseline/dist/. production/dist/opt-lab/
+          cp -a geometry/dist/. production/dist/simd-lab/
+          cp -a rescue/dist/. production/dist/rescue-lab/
+          mkdir -p production/dist/rescue-lab/ai-model/scanic
+          cp -a rescue/node_modules/scanic-ml/dist/. production/dist/rescue-lab/ai-model/scanic/
+          test -f production/dist/rescue-lab/index.html
+      - name: Create trimmed reproducible source ZIP without dependencies
+        run: |
+          mkdir -p trimmed-source
+          rsync -a --exclude='.git' --exclude='node_modules' --exclude='dist' \
+            --exclude='*.pdf' --exclude='.env*' --exclude='coverage' rescue/ trimmed-source/
+          cat > trimmed-source/RESCUE-LAB-README.txt <<'EOF'
+          SFG OMR LAB v2.5.4 Experimental 4 — trimmed source archive
+          Contains application source, tests and lockfile. No node_modules or build.
+          npm ci
+          npm run check
+          npm run dev
+          Vite GitHub Pages base can be configured with GITHUB_PAGES_BASE.
+          Partial landmark/AI fallbacks never bypass QR and timing verification.
+          Main, opt-lab and simd-lab are not modified.
+          EOF
+          (cd trimmed-source && zip -q -r ../sfg-omr-v2.5.4-experimental4-trimmed.zip .)
+          cp sfg-omr-v2.5.4-experimental4-trimmed.zip production/dist/downloads/
+          unzip -tq sfg-omr-v2.5.4-experimental4-trimmed.zip
+          du -h sfg-omr-v2.5.4-experimental4-trimmed.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sfg-omr-v2.5.4-experimental4-trimmed-source
+          path: sfg-omr-v2.5.4-experimental4-trimmed.zip
+          retention-days: 30
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: production/dist
+  deploy:
+    environment:
+      name: v2.5.4-partial-geometry-rescue
+      url: https://aalsiyodha.github.io/sfg-omr-lab/rescue-lab/#/scan
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/deploy-pages@v4
