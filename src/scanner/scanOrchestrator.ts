@@ -869,11 +869,11 @@ export async function runFullScan(
             const candidate=traceRegistration(rough.canvas,hypothesis,dpi,curveBudget);
             if(!candidate)continue;
             const score=registrationScore({
-              kind:candidate.hypothesis.kind==='hybrid'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
+              kind:candidate.hypothesis.kind==='hybrid'||candidate.hypothesis.kind==='fusion'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
               leftMatched:candidate.check.leftMatched,rightMatched:candidate.check.rightMatched,
               qrVerified:candidate.qr.valid});
             const previous=selected?registrationScore({
-              kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
+              kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
               leftMatched:selected.check.leftMatched,rightMatched:selected.check.rightMatched,
               qrVerified:selected.qr.valid}):-Infinity;
             if(score>previous){
