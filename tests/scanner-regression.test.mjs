@@ -2045,3 +2045,20 @@ test('v2.5.1 model, masked latent and held-out mesh are wired with safe flags',(
   assert.match(scan,/get\('proofmodel'\)==='1'/);
   assert.match(scan,/proofModelEnabled&&modelReview\.has/);
 });
+
+test('scan page: actual checkboxes wire all supported modes and autostart',()=>{
+  const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+  const hook=readFileSync('src/hooks/useScanResult.ts','utf8');
+  const engine=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.match(page,/Start scanning immediately after upload/);
+  assert.match(page,/Extra optical proof checks/);
+  assert.match(page,/Experimental decision model/);
+  assert.match(page,/Validated local mesh correction/);
+  assert.match(page,/startedFileRef\.current === capturedFile/);
+  assert.match(page,/void scan\(capturedFile, \{ proofscan, proofmodel, proofmesh \}\)/);
+  assert.match(hook,/runFullScan\(file, setProgress, options\)/);
+  assert.match(engine,/options\?\.proofmesh/);
+  assert.match(engine,/options\?\.proofmodel/);
+  assert.match(engine,/options\?\.proofscan/);
+  assert.match(engine,/User-selected scan controls/);
+});

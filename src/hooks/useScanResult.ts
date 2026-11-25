@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { ScanResult, AnswerOption, IntermediateImages } from '../types';
-import { runFullScan, type ScanProgress } from '../scanner/scanOrchestrator';
+import { runFullScan, type ScanProgress, type ScanModeOptions } from '../scanner/scanOrchestrator';
 
 export function useScanResult() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -9,12 +9,12 @@ export function useScanResult() {
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const scan = useCallback(async (file: File) => {
+  const scan = useCallback(async (file: File, options?: ScanModeOptions) => {
     setScanning(true);
     setError(null);
     setScanResult(null);
     try {
-      const { result, images } = await runFullScan(file, setProgress);
+      const { result, images } = await runFullScan(file, setProgress, options);
       setScanResult(result);
       setIntermediateImages(images);
     } catch (e: any) {

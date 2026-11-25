@@ -308,9 +308,15 @@ function evaluateHypothesis(
   }
 }
 
+export interface ScanModeOptions {
+  proofscan?: boolean;
+  proofmodel?: boolean;
+  proofmesh?: boolean;
+}
 export async function runFullScan(
   file: File,
-  onProgress?: (p: ScanProgress) => void
+  onProgress?: (p: ScanProgress) => void,
+  options?: ScanModeOptions
 ): Promise<{ result: ScanResult; images: IntermediateImages }> {
   const start = Date.now();
   const stageTimes: Record<string, number> = {};
@@ -946,8 +952,8 @@ export async function runFullScan(
       const rawInkThreshold=computeAdaptiveDarkThreshold(chosen.gray);
       const experimentalParams=typeof window!=='undefined'
         ?new URLSearchParams(window.location.search):new URLSearchParams();
-      const proofMeshEnabled=experimentalParams.get('proofmesh')==='1';
-      const proofModelEnabled=experimentalParams.get('proofmodel')==='1';
+      const proofMeshEnabled=options?.proofmesh ?? experimentalParams.get('proofmesh')==='1';
+      const proofModelEnabled=options?.proofmodel ?? experimentalParams.get('proofmodel')==='1';
       let activeGridOffset=(q:number)=>offsetForQuestion(grid,q);
       let rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
         activeGridOffset,rawInkThreshold);
@@ -1007,7 +1013,12 @@ export async function runFullScan(
       // Decision-model-inspired SELECTIVE proof audit. The baseline scanner
       // remains unchanged unless ?proofscan=1 is explicitly enabled.
       // No external model/API, no duplicate full-page warp or crop inference.
-      const proofEnabled = experimentalParams.get('proofscan')==='1';
+      const proofEnabled = options?.proofscan ?? experimentalParams.get('proofscan')==='1';
+      logger.info('bubbleDetection','User-selected scan controls',{
+        geometry:'QR + corner + timing verification mandatory',
+        proofscan:proofEnabled,proofmodel:proofModelEnabled,proofmesh:proofMeshEnabled,
+        source:options?'website checkboxes':'URL query parameters'
+      });
       const proofs=answers.map(row=>auditBubbleDecision(row,
         activeGridOffset(row.question),rawAnswers.find(raw=>raw.question===row.question)));
       const latent=fitMaskedLatentPredictor(answers);
