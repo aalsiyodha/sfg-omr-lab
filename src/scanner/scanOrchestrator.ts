@@ -2,6 +2,9 @@ import type { ScanResult, IntermediateImages, QuestionResult, MarkerDetectionRes
 import { loadImageFromFile, validateImage } from './imageLoader';
 import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
+import { detectCoarseToFineCorners } from './coarseToFineCorners';
+import { fitRobustSheetWarp, type FusionEvidence } from './robustSheetHomography';
+import { measureOpenCv5Simd } from './opencv5SimdLab';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
@@ -52,13 +55,14 @@ type Hypothesis =
   | { kind: 'corner'; name: string; markers: MarkerDetectionResult }
   | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
   | { kind: 'aruco'; name: string; markers: ArucoRegistration }
-  | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> };
+  | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> }
+  | { kind: 'fusion'; name: string; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
 /** Deduplicate only EXACT reference coordinates on the SAME source image.
  * No near-match tolerance: a subpixel difference can affect printed rings.
  * All QR and timing gates are still enforced for the first occurrence.
  */
 function geometryFingerprint(h:Hypothesis):string|null {
-  if(h.kind==='hybrid')return null;
+  if(h.kind==='hybrid'||h.kind==='fusion')return null;
   if(h.kind==='corner')return JSON.stringify(['corner',h.markers.topLeft,
     h.markers.topRight,h.markers.bottomLeft,h.markers.bottomRight]);
   if(h.kind==='midpoint')return JSON.stringify(['midpoint',h.markers.top,
@@ -117,6 +121,7 @@ type RegistrationProbe = {
   reason:string;qrValid:boolean;
   timing:number;left:number;right:number;
   warpMs?:number;qrMs?:number;previewMs?:number;
+  fusionEvidence?:FusionEvidence;
 };
 function evaluateHypothesis(
   source: HTMLCanvasElement,
@@ -141,6 +146,13 @@ function evaluateHypothesis(
       ? hypothesis.qrLocated
          ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
          : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,!fastQrRoi)
+      : hypothesis.kind === 'fusion'
+      ? fitRobustSheetWarp(source,hypothesis.corners,hypothesis.midpoint,
+          hypothesis.aruco,dpi,(fusion)=>{
+          if(evidence)evidence.fusionEvidence=fusion;
+          logger.info('perspective','v2.5.3 robust homography evidence',{...fusion});
+        })?.perspective ?? {corrected:null,correctedDataUrl:'',
+            transform:null,success:false,error:'RANSAC failed independent marker agreement'}
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
@@ -388,6 +400,9 @@ export interface ScanModeOptions {
   proofmodel?: boolean;
   proofmesh?: boolean;
   fastQrRoi?: boolean;
+  coarseToFine?: boolean;
+  robustFusion?: boolean;
+  simdProbe?: boolean;
 }
 export async function runFullScan(
   file: File,
@@ -416,6 +431,10 @@ export async function runFullScan(
   logger.info('loading', `Image loaded: ${loaded.width}×${loaded.height}px`, { validation });
   onProgress?.({ stage: 'Preparing grayscale and threshold images…', percent: 15 });
 
+  if(options?.simdProbe){
+    const simd=await measureOpenCv5Simd(loaded.canvas);
+    logger.info('preprocessing','v2.5.3 OpenCV 5 SIMD separate runtime probe',{...simd});
+  }
   const preprocessed = preprocessImage(loaded.canvas);
   finishStage('preprocessing');
   let selected: AcceptedAlignment | null = null;
@@ -433,8 +452,18 @@ export async function runFullScan(
       fallbackDiscoveryTriggered:false,fastPathVerified:false,
       hypothesesEvaluated:0};
     const cornerStart=Date.now();
-    const primary=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
+    const coarse=options?.coarseToFine!==false
+      ?detectCoarseToFineCorners(preprocessed.thresholded,loaded.width,loaded.height)
+      :null;
+    const primary=coarse?.markers.found?coarse.markers
+      :detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
     markerProfile.cornerDetectionMs=Date.now()-cornerStart;
+    logger.info('markerDetection','v2.5.3 coarse-to-fine corner evidence',{
+      enabled:options?.coarseToFine!==false,coarse:coarse?.stats??null,
+      source:coarse?.markers.found?'coarse-refined':'legacy/full-resolution',
+      originalPixels:loaded.width*loaded.height,
+      coarsePixels:coarse?coarse.stats.coarseWidth*coarse.stats.coarseHeight:null,
+      legacyRescueAvailable:true});
     logger.info('perspective','v2.5.3 registration optimization mode',{fastQrRoi:options?.fastQrRoi!==false,
       method:options?.fastQrRoi===false?'v3 legacy full-page PNG and QR scan':'ROI-only QR + deferred preview PNG',
       gates:'QR identity and 25+25 timing unchanged'});
@@ -448,6 +477,7 @@ export async function runFullScan(
       qrValid:boolean;timing:number;left:number;right:number;
       accepted:boolean;provisional:boolean;
       warpMs?:number;qrMs?:number;previewMs?:number;
+      fusionEvidence?:FusionEvidence;
     }[]=[];
     const traceRegistration=(
       source:HTMLCanvasElement,hypothesis:Hypothesis,dpi:number,
@@ -466,7 +496,8 @@ export async function runFullScan(
         left:result?.check.leftMatched??evidence.left,
         right:result?.check.rightMatched??evidence.right,
         accepted:Boolean(result),provisional:Boolean(result?.provisional),
-        warpMs:evidence.warpMs,qrMs:evidence.qrMs,previewMs:evidence.previewMs
+        warpMs:evidence.warpMs,qrMs:evidence.qrMs,previewMs:evidence.previewMs,
+        fusionEvidence:evidence.fusionEvidence
       };
       registrationAttempts.push(item);
       logger.info('perspective','v2.5.2 detailed registration candidate',item);
@@ -497,6 +528,39 @@ export async function runFullScan(
           left:candidate.check.leftMatched,right:candidate.check.rightMatched,qrValid:candidate.qr.valid});
       }else if(!candidate)hypotheses.push(hypothesis);
     }
+    // Fail back to the established full-resolution corner selection when the
+    // coarse estimate fails QR verification; never silently discard valid sheets.
+    if(coarse?.markers.found&&(!selected||!canStopUnifiedRegistration(
+      selected.qr.valid,selected.check.matched,
+      selected.check.leftMatched,selected.check.rightMatched))){
+      const legacy=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
+      if(legacy.found){
+        const alternative:Hypothesis={kind:'corner',name:'corner/full-resolution-fallback',markers:legacy};
+        const fingerprint=geometryFingerprint(alternative);
+        if(fingerprint&&!usedGeometries.has(fingerprint)){
+          usedGeometries.add(fingerprint);fastWarpAttempts++;
+          markerProfile.hypothesesEvaluated++;
+          const fallback=traceRegistration(loaded.canvas,alternative,dpi,curveBudget);
+          const previousScore=selected?registrationScore({kind:'corner',
+            timingMatched:selected.check.matched,leftMatched:selected.check.leftMatched,
+            rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid}):-Infinity;
+          const newScore=fallback?registrationScore({kind:'corner',
+            timingMatched:fallback.check.matched,leftMatched:fallback.check.leftMatched,
+            rightMatched:fallback.check.rightMatched,qrVerified:fallback.qr.valid}):-Infinity;
+          const adopt=Boolean(fallback&&newScore>previousScore);
+          logger.info('markerDetection','v2.5.3 full-resolution corner retry',{
+            previous:'coarse-refined',result:fallback?'verified':'unverified',
+            adopted:adopt,priorTiming:selected?.check.matched??null,
+            candidateTiming:fallback?.check.matched??null,
+            sameSource:false});
+          if(adopt&&fallback){
+            if(selected)disposeAlignment(selected);
+            selected=fallback;
+          }else if(fallback)disposeAlignment(fallback);
+          else hypotheses.push(alternative);
+        }
+      }
+    }
     if(!selected||!canStopUnifiedRegistration(selected.qr.valid,selected.check.matched,
       selected.check.leftMatched,selected.check.rightMatched)){
     markerProfile.fallbackDiscoveryTriggered=true;
@@ -513,6 +577,16 @@ export async function runFullScan(
     // corner quadrilateral can be geometrically plausible (Test 4 v1.6).
     const mid = detectMidpointMarkers(preprocessed.thresholded, loaded.width, loaded.height);
     if (mid.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/adaptive', markers: mid });
+    logger.info('markerDetection','v2.5.3 RANSAC fusion eligibility',{
+      enabled:options?.robustFusion!==false,arucoCount:arucoAdaptive.count,
+      arucoFound:arucoAdaptive.found,midpointCount:mid.count,
+      midpointFound:mid.found,cornerCount:primary.count,
+      eligible:options?.robustFusion!==false&&arucoAdaptive.found&&mid.found,
+      note:'RANSAC is a fallback; a verified QR/timing scan exits first'});
+    if(options?.robustFusion!==false&&arucoAdaptive.found&&mid.found){
+      hypotheses.push({kind:'fusion',name:'fusion/ransac-corner-midpoint-aruco',
+        corners:primary,midpoint:mid,aruco:arucoAdaptive});
+    }
     if(arucoMidpointPrediction){
       const guided=detectMidpointMarkers(preprocessed.thresholded,loaded.width,loaded.height,arucoMidpointPrediction);
       logger.info('markerDetection','ArUco-guided midpoint square selection',{
@@ -599,12 +673,12 @@ export async function runFullScan(
           ? { top:hypothesis.markers.top, right:hypothesis.markers.right, bottom:hypothesis.markers.bottom, left:hypothesis.markers.left }
           : hypothesis.kind === 'aruco'
           ? { ids:Object.keys(hypothesis.markers.points),points:hypothesis.markers.points }
-          : {hybrid:true,anchors:hypothesis.aruco.points});
+          : {fusion:hypothesis.kind==='fusion',anchors:hypothesis.aruco.points});
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
       if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name,
-        hypothesis.kind==='hybrid'?'corner':hypothesis.kind)) {
+        hypothesis.kind==='hybrid'||hypothesis.kind==='fusion'?'corner':hypothesis.kind)) {
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
@@ -617,7 +691,7 @@ export async function runFullScan(
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
       const rank = (a: AcceptedAlignment) => registrationScore({
-        kind: a.hypothesis.kind==='hybrid'?'corner':a.hypothesis.kind, timingMatched: a.check.matched,
+        kind: a.hypothesis.kind==='hybrid'||a.hypothesis.kind==='fusion'?'corner':a.hypothesis.kind, timingMatched: a.check.matched,
         leftMatched: a.check.leftMatched, rightMatched: a.check.rightMatched,
         qrVerified: a.qr.valid,
       });
@@ -669,7 +743,7 @@ export async function runFullScan(
           rightMatched:attempt.check.rightMatched,
           qrVerified:attempt.qr.valid});
         const prior=selected?registrationScore({
-          kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
+          kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
           leftMatched:selected.check.leftMatched,
           rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid,
         }): -Infinity;
@@ -828,11 +902,11 @@ export async function runFullScan(
             const candidate=traceRegistration(rough.canvas,hypothesis,dpi,curveBudget);
             if(!candidate)continue;
             const score=registrationScore({
-              kind:candidate.hypothesis.kind==='hybrid'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
+              kind:candidate.hypothesis.kind==='hybrid'||candidate.hypothesis.kind==='fusion'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
               leftMatched:candidate.check.leftMatched,rightMatched:candidate.check.rightMatched,
               qrVerified:candidate.qr.valid});
             const previous=selected?registrationScore({
-              kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
+              kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
               leftMatched:selected.check.leftMatched,rightMatched:selected.check.rightMatched,
               qrVerified:selected.qr.valid}):-Infinity;
             if(score>previous){

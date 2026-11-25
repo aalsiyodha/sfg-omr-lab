@@ -54,8 +54,11 @@ export default function ScanPage({ appState }: Props) {
   const [proofmodel, setProofmodel] = useState(false);
   const [proofmesh, setProofmesh] = useState(false);
   const [fastQrRoi,setFastQrRoi]=useState(true);
+  const [coarseToFine,setCoarseToFine]=useState(true);
+  const [robustFusion,setRobustFusion]=useState(true);
+  const [simdProbe,setSimdProbe]=useState(false);
   const startedFileRef = useRef<File | null>(null);
-  const selectedModes: ScanModeOptions = { proofscan, proofmodel, proofmesh, fastQrRoi };
+  const selectedModes: ScanModeOptions = {proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe};
 
 
   const stopCamera = useCallback(() => {
@@ -166,8 +169,8 @@ export default function ScanPage({ appState }: Props) {
     if (!autoStart || !capturedFile || opencv !== 'ready' || isScanning ||
         startedFileRef.current === capturedFile) return;
     startedFileRef.current = capturedFile;
-    void scan(capturedFile, { proofscan, proofmodel, proofmesh,fastQrRoi }, dualCompare);
-  }, [autoStart, capturedFile, opencv, isScanning, scan, proofscan, proofmodel, proofmesh, fastQrRoi, dualCompare]);
+    void scan(capturedFile, {proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe}, dualCompare);
+  }, [autoStart, capturedFile, opencv, isScanning, scan,proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,dualCompare]);
 
   const handleReset = () => {
     reset();
@@ -341,10 +344,9 @@ export default function ScanPage({ appState }: Props) {
             <label className="d-flex align-items-start gap-2 mb-2">
               <input type="checkbox" className="form-check-input mt-1" checked={dualCompare}
                 onChange={e=>setDualCompare(e.target.checked)}/>
-              <span><strong>One upload: compare original v3 vs v2.5.3 ROI optimization</strong>
+              <span><strong>One upload: compare v2.5.3 baseline vs geometric lab</strong>
                 <small className="d-block text-secondary">
-                  Two sequential scans of the identical file with all optional AI disabled. Only the QR region-rendering optimization differs; compare answers, verification and timings.
-                  Run order alternates. Requires approximately twice the processing work.
+                  Two sequential scans with QR ROI unchanged. Compare original marker registration against coarse-to-fine and RANSAC fusion, alternating run order. OpenCV 5 SIMD is tested separately.
                 </small>
               </span>
             </label>
@@ -358,6 +360,27 @@ export default function ScanPage({ appState }: Props) {
                 </small>
               </span>
             </label>
+            <div className="geometry-lab-options" aria-label="Geometric acceleration controls">
+              <div className="geometry-lab-heading">GEOMETRY LAB <span>Experimental · independently verified</span></div>
+              <label className="geometry-lab-choice">
+                <input type="checkbox" checked={coarseToFine} disabled={dualCompare}
+                  onChange={e=>setCoarseToFine(e.target.checked)}/>
+                <span><strong>Coarse-to-fine corners</strong>
+                  <small>Low-resolution discovery, then precise full-resolution markers</small></span>
+              </label>
+              <label className="geometry-lab-choice">
+                <input type="checkbox" checked={robustFusion} disabled={dualCompare}
+                  onChange={e=>setRobustFusion(e.target.checked)}/>
+                <span><strong>Robust multimarker geometry</strong>
+                  <small>RANSAC fusion after failure; QR and 50 timing checks remain mandatory</small></span>
+              </label>
+              <label className="geometry-lab-choice">
+                <input type="checkbox" checked={simdProbe} disabled={dualCompare}
+                  onChange={e=>setSimdProbe(e.target.checked)}/>
+                <span><strong>OpenCV 5 SIMD runtime probe</strong>
+                  <small>Loads optional WASM once, runs real grayscale, reports speed; exam scoring remains on verified OpenCV.js</small></span>
+              </label>
+            </div>
             <label className="d-flex align-items-start gap-2">
               <input type="checkbox" className="form-check-input mt-1" checked={proofscan}
                 disabled={dualCompare}

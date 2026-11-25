@@ -2,7 +2,7 @@
  * unique ArUco markers justify trying that independently verifiable warp
  * before generic midpoint hypotheses. Other rescue families remain available.
  */
-export type FallbackKind='corner'|'midpoint'|'aruco'|'hybrid';
+export type FallbackKind='corner'|'midpoint'|'aruco'|'hybrid'|'fusion';
 export type FallbackCandidate={kind:FallbackKind;name:string};
 export function orderFallbackCandidates<T extends FallbackCandidate>(
   candidates:readonly T[], evidence:{cornerFailed:boolean;arucoCount:number;arucoFound:boolean}
