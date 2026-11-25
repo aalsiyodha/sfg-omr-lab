@@ -2208,7 +2208,7 @@ test('v2.5.3.2 geometry lab requires full-resolution refinement and independent 
  assert.match(fused,/accepted\.length<5\|\|families\.length<2/);
  assert.match(scan,/verifyTimingMarks\(gray, dpi\)/);
  assert.match(simd,/initOpenCV\(\{wasmUrl:wasm\.default\}\)/);
- assert.match(simd,/cv\.cvtColor\(src,gray,cv\.COLOR_RGBA2GRAY\)/);
+ assert.match(simd,/simd\.cvtColor\(src,gray,simd\.COLOR_RGBA2GRAY\)/);
  assert.match(page,/OpenCV 5 SIMD runtime probe/);
 });
 
