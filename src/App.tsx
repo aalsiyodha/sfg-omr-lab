@@ -16,19 +16,10 @@ export type AppState = {
 
 export default function App() {
   const [opencvStatus, setOpencvStatus] = useState<'loading'|'ready'|'error'>('loading');
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    try {
-      const stored = window.localStorage.getItem('sfg-omr-theme');
-      if (stored === 'light' || stored === 'dark') return stored;
-    } catch { /* storage may be blocked */ }
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  });
   useEffect(() => {
-    document.documentElement.setAttribute('data-bs-theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
-    try { window.localStorage.setItem('sfg-omr-theme', theme); }
-    catch { /* private browsing: use in-memory preference */ }
-  }, [theme]);
+    document.documentElement.setAttribute('data-theme','light');
+    document.documentElement.setAttribute('data-bs-theme','light');
+  }, []);
   const practice = usePracticeTest();
   const scanning = useScanResult();
 
@@ -48,17 +39,12 @@ export default function App() {
       <div className="min-vh-100 d-flex flex-column">
         <nav className="minimal-nav" aria-label="Main navigation">
           <NavLink to="/scan" className="minimal-nav-brand">
-            <i className="bi bi-upc-scan me-2"/>SFG<span>OMR</span>
+            <span className="v26-brand-mark"><i className="bi bi-upc-scan"/></span>SFG<span>OMR</span>
           </NavLink>
           <div className="minimal-nav-links">
-            <NavLink to="/scan">Scan</NavLink>
-            <NavLink to="/practice">Practice</NavLink>
-            <NavLink to="/diagnostics">Diagnostics</NavLink>
-            <button type="button" className="minimal-theme-switch"
-              aria-label={theme==='dark'?'Use light appearance':'Use dark appearance'}
-              onClick={()=>setTheme(t=>t==='dark'?'light':'dark')}>
-              <i className={theme==='dark'?'bi bi-sun':'bi bi-moon'}/>
-            </button>
+            <NavLink to="/scan">Scanner</NavLink>
+            <NavLink to="/practice">Practice test</NavLink>
+            <span className="v26-nav-status"><span className="v26-nav-status-dot"/> On-device processing</span>
           </div>
         </nav>
         <main className="container-fluid py-4 flex-grow-1 minimal-app-main" style={{ maxWidth: 1100 }}>

@@ -101,13 +101,18 @@ export default function V26ScanPage({ appState }: Props) {
   return <div className="v26-page">
     <header className="v26-intro">
       <div className="v26-eyebrow"><span className="v26-indicator"/> SFG OMR LAB <span className="v26-version">V2.6</span></div>
-      <h1>Scan a sheet.<br/><span>Review with confidence.</span></h1>
-      <p>Upload a clear OMR photograph. Analysis starts immediately on your device.
-        Nothing is submitted for scoring without verified QR identity and sheet alignment.</p>
+      <h1>OMR scanning,<br/><span>made simple.</span></h1>
+      <p>Upload or photograph an answer sheet. We'll verify its QR identity and alignment,
+        read the responses and highlight anything needing review.</p>
+      <div className="v26-hero-trust">
+        <span><i className="bi bi-shield-check"/> QR-verified</span>
+        <span><i className="bi bi-laptop"/> Runs in your browser</span>
+        <span><i className="bi bi-hand-index-thumb"/> Review uncertain marks</span>
+      </div>
     </header>
     <section className="v26-panel" aria-label="Image scanner">
       <div className="v26-section-head">
-        <div><span className="v26-step">01 / UPLOAD</span><h2>Your answer sheet</h2></div>
+        <div><span className="v26-step">GET STARTED</span><h2>Upload an answer sheet</h2></div>
         {file && <button className="v26-minor" type="button" disabled={scanning} onClick={newScan}>Start over</button>}
       </div>
       <input ref={fileInput} type="file" hidden accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp"
@@ -118,8 +123,8 @@ export default function V26ScanPage({ appState }: Props) {
         onDragOver={e=>e.preventDefault()}
         onDrop={e=>{e.preventDefault();chooseFile(e.dataTransfer.files[0]);}}>
         <div className="v26-drop-icon"><i className="bi bi-file-earmark-image"/></div>
-        <h3>Drop your sheet here</h3>
-        <p>JPG, PNG or WebP · Up to 25 MB · Entire sheet and QR visible</p>
+        <h3>Drop an image here, or select a file</h3>
+        <p>JPG, PNG, WebP · Up to 25 MB · All corners and QR code visible</p>
         <div className="v26-actions">
           <button type="button" className="v26-primary" onClick={()=>fileInput.current?.click()}>
             <i className="bi bi-upload"/> Choose image</button>
@@ -129,7 +134,7 @@ export default function V26ScanPage({ appState }: Props) {
       </div> : <div className="v26-selected">
         <div className="v26-photo">{preview && <img src={preview} alt="Selected OMR sheet preview"/>}</div>
         <div className="v26-selected-info">
-          <span className="v26-step">IMAGE READY</span>
+          <span className="v26-step">SELECTED IMAGE</span>
           <h3 title={file.name}>{file.name}</h3>
           <p>{(file.size/1024/1024).toFixed(2)} MB · Local processing</p>
           <div className="v26-status" role="status" aria-live="polite">
@@ -145,7 +150,7 @@ export default function V26ScanPage({ appState }: Props) {
             <i className="bi bi-upc-scan"/> {scanResult?'View scan results':'Scan this image'}
             <i className="bi bi-arrow-right"/>
           </button>
-          <p className="v26-hint">{scanResult?'Analysis complete — open the results above':
+          <p className="v26-hint">{scanResult?'Analysis complete — open your results':
             'Analysis runs automatically after upload. You can open the result with this button.'}</p>
         </div>
       </div>}
@@ -155,7 +160,7 @@ export default function V26ScanPage({ appState }: Props) {
     </section>
     {reveal && file && <section className="v26-panel v26-results" aria-label="Scan results">
       <div className="v26-section-head">
-        <div><span className="v26-step">02 / VERIFY & REVIEW</span><h2>Scan results</h2></div>
+        <div><span className="v26-step">REVIEW</span><h2>Your scan results</h2></div>
         <span className={'v26-pill '+(verified?'is-good':'')}>{scanResult?status:'Processing'}</span>
       </div>
       {!scanResult ? <div className="v26-wait"><div className="v26-spinner"/> {error||progress?.stage||'Reading image and checking registration…'}</div> : <>
@@ -214,6 +219,21 @@ export default function V26ScanPage({ appState }: Props) {
         </div>}
       </>}
     </section>}
+    <section className="v26-guide" id="how-it-works" aria-label="How scanning works">
+      <div className="v26-guide-head"><span className="v26-step">HOW IT WORKS</span>
+        <h2>Three steps to reviewed answers.</h2></div>
+      <div className="v26-guide-grid">
+        <div className="v26-guide-item"><span className="v26-guide-number">01</span><i className="bi bi-camera v26-guide-icon"/>
+          <h3>Capture a clear image</h3><p>Place your sheet flat in even light. Keep the QR and all four corners in view.</p></div>
+        <div className="v26-guide-item"><span className="v26-guide-number">02</span><i className="bi bi-cpu v26-guide-icon"/>
+          <h3>Let the scanner work</h3><p>Analysis begins on upload. The browser verifies sheet geometry before reading responses.</p></div>
+        <div className="v26-guide-item"><span className="v26-guide-number">03</span><i className="bi bi-check2-square v26-guide-icon"/>
+          <h3>Review flagged marks</h3><p>Confirm unclear answers before scoring. Unverified sheets are never graded automatically.</p></div>
+      </div>
+    </section>
+    <section className="v26-help"><i className="bi bi-lightbulb"/><div><strong>Tips for a successful scan</strong>
+      <p>Use a sharp, well-lit photograph. Avoid glare, deep shadows and cropped edges. Review incomplete or multiple marks.</p>
+    </div></section>
     <footer className="v26-footer"><span>OMR Lab · v{APP_BUILD_META.version}</span>
       <span>Local image processing · Strict verification before scoring</span></footer>
   </div>;

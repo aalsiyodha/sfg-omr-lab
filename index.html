@@ -2,21 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="theme-color" content="#064e3b" />
-    <meta name="description" content="SFG OMR LAB v2.4.618 — local scanning and universal multi-model comparison." />
+    <meta name="theme-color" content="#f8fafc" />
+    <meta name="description" content="SFG OMR Lab — scan answer sheets in your browser. Verify QR identity, review marked answers and score practice tests." />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Apply the saved theme before React paints to avoid a light-mode flash.
-      try {
-        const saved = localStorage.getItem('sfg-omr-theme');
-        const theme = saved === 'dark' || saved === 'light'
-          ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-        document.documentElement.setAttribute('data-bs-theme', theme);
-        document.documentElement.setAttribute('data-theme', theme);
-      } catch { /* Theme defaults to the light stylesheet */ }
+      document.documentElement.setAttribute('data-theme', 'light');
+      document.documentElement.setAttribute('data-bs-theme', 'light');
     </script>
-    <title>SFG OMR LAB — v2.4.618 Fast Scanner</title>
+    <title>SFG OMR Lab — Scan and Review Answer Sheets</title>
     <script>
       // OpenCV.js loading state
       window.opencvReady = false;
