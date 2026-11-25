@@ -2158,3 +2158,88 @@ test('v2.5.2 experimental v3 alternates baseline/enhanced order and collects dia
  assert.match(page,/Download suspicious bubble crops/);
  assert.match(scanner,/makeReviewCropSheet\(chosen\.canvas,answers\)/);
 });
+
+test('isolated Sheet ID prototype has four distinct exactly decodable layouts',()=>{
+ const {SHEET_ID_CODES,footerBits,decodeFooterWord,hamming}=loadTS('src/experimental/sheetIdProtocol.ts');
+ const keys=[50,100,120,200];
+ assert.equal(new Set(keys.map(k=>SHEET_ID_CODES[k])).size,4);
+ for(const count of keys){
+  const word=SHEET_ID_CODES[count];
+  assert.equal(footerBits(count).reduce((v,b)=>(v<<1)|b,0),word);
+  assert.deepEqual(decodeFooterWord(word),{count,distance:0,exact:true});
+  for(let bit=0;bit<16;bit++){
+   const damaged=decodeFooterWord(word^(1<<bit));
+   assert.equal(damaged.count,null,'Single corrupted bit must fail closed');
+  }
+ }
+ assert.ok(hamming(SHEET_ID_CODES[50],SHEET_ID_CODES[100])>=4);
+});
+test('isolated Sheet ID prototype prints and checks 25+25 timing, footer and Test ID',()=>{
+ const pdf=readFileSync('src/experimental/sheetIdPdf.ts','utf8');
+ const scanner=readFileSync('src/experimental/sheetIdScanner.ts','utf8');
+ const app=readFileSync('src/App.tsx','utf8');
+ assert.match(pdf,/row<25/);
+ assert.match(pdf,/\[13\.3,196\.7\]/);
+ assert.match(pdf,/footerBits\(count\)/);
+ assert.match(pdf,/getTestIdBubbleCentre\(type,d\)/);
+ assert.match(pdf,/square\(f.leftBoxXmm/);
+ assert.match(scanner,/decodeSheetFooter\(candidateGray,dpi\)/);
+ assert.match(scanner,/candidateTiming=measureTimingTrack\(candidateGray,dpi\)/);
+ assert.match(scanner,/if\(!candidateTiming\.valid\)continue/);
+ assert.match(scanner,/detectTestId\(gray,dpi/);
+ assert.match(scanner,/detectAllAnswers\(gray,dpi/);
+ assert.doesNotMatch(scanner,/decodeQR/);
+ assert.match(app,/path="\/sheetid"/);
+});
+
+test('Sheet ID decoder reads thin hollow outlines, exact code, and rejects a damaged code',()=>{
+ const protocol=loadTS('src/experimental/sheetIdProtocol.ts');
+ const {decodeSheetFooter}=loadTS('src/experimental/sheetIdDecoder.ts',{
+  './sheetIdProtocol':protocol,
+  '../config/omrLayout':{mmToPx:(mm,dpi)=>mm*dpi/25.4}
+ });
+ const dpi=150,W=1241,H=1754,scale=dpi/25.4;
+ const data=new Uint8Array(W*H).fill(255);
+ const dot=(x,y,rad,v=0)=>{
+  const cx=Math.round(x*scale),cy=Math.round(y*scale),r=Math.max(1,rad*scale);
+  for(let yy=Math.floor(cy-r);yy<=Math.ceil(cy+r);yy++)
+   for(let xx=Math.floor(cx-r);xx<=Math.ceil(cx+r);xx++)
+    if(xx>=0&&yy>=0&&xx<W&&yy<H&&Math.hypot(xx-cx,yy-cy)<=r)data[yy*W+xx]=v;
+ };
+ const border=(x,y)=>{
+  const d=4.8;
+  for(let t=0;t<=d;t+=.05){
+   dot(x+t,y,.12);dot(x+t,y+d,.12);
+   dot(x,y+t,.12);dot(x+d,y+t,.12);
+  }
+ };
+ border(49.5,271.6);border(117.2,271.6);
+ const code=protocol.footerBits(50);
+ for(let i=0;i<16;i++){
+  const x=59+i*3.45,y=274;
+  for(let a=0;a<360;a+=3){
+   const rad=a*Math.PI/180;
+   dot(x+1.25*Math.cos(rad),y+1.25*Math.sin(rad),.09);
+  }
+  if(code[i])dot(x,y,.75);
+ }
+ const gray={rows:H,cols:W,data,ucharPtr:(y,x)=>[data[y*W+x]]};
+ const valid=decodeSheetFooter(gray,dpi);
+ assert.equal(valid.valid,true,JSON.stringify(valid));
+ assert.equal(valid.count,50);
+ data[Math.round(274*scale)*W+Math.round(59*scale)]=255;
+ // Replace whole first filled centre rather than a single pixel.
+ dot(59,274,.75,255);
+ const broken=decodeSheetFooter(gray,dpi);
+ assert.equal(broken.valid,false,JSON.stringify(broken));
+});
+
+test('Sheet ID timing correction requires independently confirmed per-row left/right boxes',()=>{
+ const source=readFileSync('src/experimental/sheetIdTiming.ts','utf8');
+ const scanner=readFileSync('src/experimental/sheetIdScanner.ts','utf8');
+ assert.match(source,/const valid=matched>=48&&left>=23&&right>=23/);
+ assert.match(source,/coherent\('left'\)&&coherent\('right'\)/);
+ assert.match(source,/offsetForQuestion:/);
+ assert.match(scanner,/verifiedTiming\.offsetForQuestion\(q,xMm\)/);
+ assert.match(scanner,/if\(!candidateTiming\.valid\)continue/);
+});

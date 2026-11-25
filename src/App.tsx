@@ -4,6 +4,7 @@ import PracticeTestPage from './pages/PracticeTestPage';
 import ScanPage from './pages/ScanPage';
 import ResultsPage from './pages/ResultsPage';
 import DiagnosticsPage from './pages/DiagnosticsPage';
+import SheetIdExperimentPage from './experimental/SheetIdExperimentPage';
 import { usePracticeTest } from './hooks/usePracticeTest';
 import { useScanResult } from './hooks/useScanResult';
 
@@ -54,6 +55,7 @@ export default function App() {
             <NavLink to="/scan">Scan</NavLink>
             <NavLink to="/practice">Practice</NavLink>
             <NavLink to="/diagnostics">Tools</NavLink>
+            <NavLink to="/sheetid">Sheet ID Test</NavLink>
             <button type="button" className="minimal-theme-switch"
               aria-label={theme==='dark'?'Use light appearance':'Use dark appearance'}
               onClick={()=>setTheme(t=>t==='dark'?'light':'dark')}>
@@ -68,6 +70,7 @@ export default function App() {
             <Route path="/scan" element={<ScanPage appState={appState} />} />
             <Route path="/results" element={<ResultsPage appState={appState} />} />
             <Route path="/diagnostics" element={<DiagnosticsPage appState={appState} />} />
+            <Route path="/sheetid" element={<SheetIdExperimentPage />} />
           </Routes>
         </main>
 
