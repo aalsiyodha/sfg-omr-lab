@@ -157,6 +157,29 @@ function evaluateHypothesis(
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
+    // Only Experimental 4's failure-only partial-ArUco candidates receive
+    // this cheap preflight. A real verified 48+/50 timing lattice cannot
+    // fail these deliberately permissive preliminary bounds.
+    if(hypothesis.name.startsWith('partial-aruco/')){
+      let preflight:any=null;
+      try{
+        preflight=new cv.Mat();
+        cv.cvtColor(persp.corrected,preflight,cv.COLOR_RGBA2GRAY);
+        const t=verifyTimingMarks(preflight,dpi);
+        const possible=t.matched>=16&&t.leftMatched>=5&&t.rightMatched>=5;
+        logger.info('perspective','v2.5.4 partial-ArUco timing preflight',{
+          method:hypothesis.name,matched:t.matched,
+          left:t.leftMatched,right:t.rightMatched,passed:possible,
+          note:'Cheap rejection only; QR + full dual timing remain mandatory for acceptance'
+        });
+        if(!possible){
+          if(evidence){evidence.phase='timing';evidence.timing=t.matched;
+            evidence.left=t.leftMatched;evidence.right=t.rightMatched;
+            evidence.reason='Partial ArUco candidate rejected by permissive preliminary timing';}
+          return null;
+        }
+      }finally{cleanupMats(preflight);}
+    }
     const qrStart=performance.now();
     if(evidence){evidence.phase='qr';evidence.reason='QR not yet independently verified';}
     const canvas = document.createElement('canvas');
