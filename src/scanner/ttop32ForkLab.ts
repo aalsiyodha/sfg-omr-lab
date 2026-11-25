@@ -8,6 +8,7 @@
  * The iframe measures actual RGBA->gray, binary threshold and identity
  * perspective warp on the same uploaded pixels. Never grades OMR answers.
  */
+declare const cv:any;
 export interface ForkBench {
   engine:'ttop32/opencv-js-wasm@4.12.0';
   available:boolean;
@@ -20,6 +21,12 @@ export interface ForkBench {
   sampleHash:number|null;
   width:number;
   height:number;
+  legacyGrayMs?:number|null;
+  legacyThresholdMs?:number|null;
+  legacyIdentityWarpMs?:number|null;
+  legacySampleHash?:number|null;
+  sampleParity?:boolean|null;
+  warpError?:string|null;
   error?:string;
 }
 interface ForkReply {
@@ -103,15 +110,16 @@ function boot(){
           for(let i=0;i<data.length;i+=step){
             hash=Math.imul(hash^data[i],16777619)>>>0;sum+=data[i];n++;
           }
-          let warpMs=null;
-          if(typeof cv.warpPerspective==='function'&&
-            typeof cv.matFromArray==='function'){
+          let warpMs=null,warpError=null;
+          try{
+            if(typeof cv.warpPerspective!=='function'||
+              typeof cv.matFromArray!=='function')throw new Error('Warp API missing in fork build');
             transform=cv.matFromArray(3,3,cv.CV_64FC1,[1,0,0,0,1,0,0,0,1]);
             warped=new cv.Mat();t=performance.now();
             cv.warpPerspective(gray,warped,transform,new cv.Size(width,height));
             warpMs=performance.now()-t;
-          }
-          send('result',{readMs,rgbaToGrayMs:Math.round(grayMs*100)/100,
+          }catch(e){warpError=String(e);}
+          send('result',{readMs,warpError,rgbaToGrayMs:Math.round(grayMs*100)/100,
             thresholdMs:Math.round(thresholdMs*100)/100,
             identityWarpMs:warpMs===null?null:Math.round(warpMs*100)/100,
             sampleHash:hash,sampleMean:Math.round(sum/Math.max(n,1)*100)/100,
@@ -134,7 +142,9 @@ export async function measureTtop32Fork(canvas:HTMLCanvasElement):Promise<ForkBe
     rgbaToGrayMs:null,thresholdMs:null,identityWarpMs:null,sampleMean:null,
     sampleHash:null,width:canvas.width,height:canvas.height};
   try{
-    const {frame,nonce,coldStartMs}=await boot();
+    const bootStart=performance.now();
+    const {frame,nonce}=await boot();
+    const coldStartMs=Math.round(performance.now()-bootStart);
     const ctx=canvas.getContext('2d',{willReadFrequently:true});
     if(!ctx)throw new Error('Canvas 2D pixel access unavailable');
     const started=performance.now();
@@ -155,7 +165,8 @@ export async function measureTtop32Fork(canvas:HTMLCanvasElement):Promise<ForkBe
           rgbaToGrayMs:Number(p.rgbaToGrayMs),
           thresholdMs:Number(p.thresholdMs),
           identityWarpMs:p.identityWarpMs==null?null:Number(p.identityWarpMs),
-          sampleMean:Number(p.sampleMean),sampleHash:Number(p.sampleHash)});
+          sampleMean:Number(p.sampleMean),sampleHash:Number(p.sampleHash),
+          warpError:p.warpError?String(p.warpError):null});
       };
       const timer=window.setTimeout(()=>{
         if(done)return;done=true;cleanup();reject(new Error('Fork operation timed out after 15 seconds'));
@@ -164,6 +175,35 @@ export async function measureTtop32Fork(canvas:HTMLCanvasElement):Promise<ForkBe
       frame.contentWindow?.postMessage({scope:'sfg-ttop32-bench',nonce,event:'run',
         width:canvas.width,height:canvas.height,pixels:payload},'*',[payload]);
     });
+    // Same-pixel legacy reference, measured separately and never used
+    // to change optical results. All timing values are warm operation times.
+    let original:any=null,gray:any=null,mask:any=null,warped:any=null,M:any=null;
+    try{
+      original=cv.imread(canvas);gray=new cv.Mat();
+      let t=performance.now();
+      cv.cvtColor(original,gray,cv.COLOR_RGBA2GRAY);
+      result.legacyGrayMs=Math.round((performance.now()-t)*100)/100;
+      mask=new cv.Mat();t=performance.now();
+      cv.threshold(gray,mask,128,255,cv.THRESH_BINARY);
+      result.legacyThresholdMs=Math.round((performance.now()-t)*100)/100;
+      let hash=2166136261>>>0;
+      const vals=gray.data;
+      const stride=Math.max(1,Math.floor(vals.length/512));
+      for(let i=0;i<vals.length;i+=stride)
+        hash=Math.imul(hash^vals[i],16777619)>>>0;
+      result.legacySampleHash=hash;
+      result.sampleParity=hash===result.sampleHash;
+      try{
+        M=cv.matFromArray(3,3,cv.CV_64FC1,[1,0,0,0,1,0,0,0,1]);
+        warped=new cv.Mat();t=performance.now();
+        cv.warpPerspective(gray,warped,M,new cv.Size(canvas.width,canvas.height));
+        result.legacyIdentityWarpMs=Math.round((performance.now()-t)*100)/100;
+      }catch{/* Some legacy builds do not expose every geometry API. */}
+    }catch{/* Reference comparison unavailable; fork's raw times remain valid. */}
+    finally{
+      for(const mat of [original,gray,mask,warped,M])
+        try{mat?.delete?.();}catch{}
+    }
     return result;
   }catch(e){
     return {...base,error:String(e)};
