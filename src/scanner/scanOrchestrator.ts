@@ -463,7 +463,7 @@ export async function runFullScan(
   }
   if(options?.ttopProbe){
     const fork=await measureTtop32Fork(loaded.canvas);
-    logger.info('preprocessing','v2.5.5 ttop32 OpenCV 4.8.1 WASM isolated runtime benchmark',{...fork,
+    logger.info('preprocessing','v2.5.5 ttop32 OpenCV 4.12.0 WASM isolated runtime benchmark',{...fork,
       scoringRuntimeUnchanged:true,qrTimingGatesUnchanged:true});
   }
   const preprocessed = preprocessImage(loaded.canvas);
