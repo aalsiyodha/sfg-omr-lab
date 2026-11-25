@@ -9,7 +9,7 @@
  * perspective warp on the same uploaded pixels. Never grades OMR answers.
  */
 export interface ForkBench {
-  engine:'ttop32/opencv-js-wasm@4.8.1';
+  engine:'ttop32/opencv-js-wasm@4.12.0';
   available:boolean;
   coldStartMs:number;
   imageTransferMs:number;
@@ -36,7 +36,7 @@ function boot(){
   pending=new Promise((resolve,reject)=>{
     const nonce='omr'+Math.random().toString(36).slice(2);
     const frame=document.createElement('iframe');
-    frame.hidden=true;frame.style.display='none';frame.title='Isolated OpenCV 4.8.1 WASM benchmark';
+    frame.hidden=true;frame.style.display='none';frame.title='Isolated OpenCV 4.12.0 WASM benchmark';
     // Dedicated origin-separated realm: same parent controls message source,
     // and the fork NEVER writes to the parent document's global cv/Module.
     frame.setAttribute('sandbox','allow-scripts');
@@ -129,7 +129,7 @@ function boot(){
   return pending;
 }
 export async function measureTtop32Fork(canvas:HTMLCanvasElement):Promise<ForkBench>{
-  const base:ForkBench={engine:'ttop32/opencv-js-wasm@4.8.1',
+  const base:ForkBench={engine:'ttop32/opencv-js-wasm@4.12.0',
     available:false,coldStartMs:0,imageTransferMs:0,
     rgbaToGrayMs:null,thresholdMs:null,identityWarpMs:null,sampleMean:null,
     sampleHash:null,width:canvas.width,height:canvas.height};
