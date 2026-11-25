@@ -2087,10 +2087,10 @@ test('v2.5.2 experiment v2 runs baseline and enhanced sequentially and reports d
   const report=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
   const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
   assert.match(hook,/if\(compare\)/);
-  assert.match(hook,/const baseline=await runFullScan/);
-  assert.match(hook,/const enhanced=await runFullScan/);
-  assert.ok(hook.indexOf('const baseline=await runFullScan')<
-    hook.indexOf('const enhanced=await runFullScan'));
+  assert.match(hook,/const first=await runPass\(firstPass,1\)/);
+  assert.match(hook,/const second=await runPass\(firstPass==='baseline'\?'enhanced':'baseline',2\)/);
+  assert.ok(hook.indexOf('const first=await runPass')<
+    hook.indexOf('const second=await runPass'));
   assert.match(page,/One upload: compare baseline vs all enhancements/);
   assert.match(page,/Copy differences report/);
   assert.match(page,/buildDualScanReport/);
