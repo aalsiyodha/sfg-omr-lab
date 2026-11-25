@@ -47,7 +47,7 @@ export function decodeSheetFooter(gray:Gray,dpi:number):FooterEvidence{
  // A fixed 135 luma classifier is intentionally conservative: no guesses
  // if the image's black/white centers are not well separated.
  const bitValues=black.map(v=>v<135?1:0);
- const word=bitValues.reduce((acc,bit)=>((acc<<1)|bit),0);
+ const word=bitValues.reduce<number>((acc,bit)=>((acc<<1)|bit),0);
  const decoded=decodeFooterWord(word);
  const dark=black.filter((_,i)=>bitValues[i]===1);
  const white=black.filter((_,i)=>bitValues[i]===0);
