@@ -140,4 +140,5 @@ export interface IntermediateImages {
   markerOverlay?: string;
   perspectiveCorrected?: string;
   bubbleOverlay?: string;
+  reviewCrops?: string;
 }
