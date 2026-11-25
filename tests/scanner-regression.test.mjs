@@ -2242,6 +2242,8 @@ test('v2.5.4 difficult-image rescue is fallback-only, bounded and QR/timing-veri
  assert.match(scan,/if\(!selected && \(\(arucoAdaptive\.points\[2\]/);
  assert.match(scan,/const attempt=traceRegistration\(loaded\.canvas,hypothesis,dpi,curveBudget\)/);
  assert.match(scan,/if\(evaluated>=12\)break/);
+ assert.match(scan,/v2\.5\.4 partial-ArUco timing preflight/);
+ assert.match(scan,/t\.matched>=16&&t\.leftMatched>=5&&t\.rightMatched>=5/);
  assert.match(scan,/v2\.5\.4 partial-ArUco recovery summary/);
  assert.match(scan,/v2\.5\.4 RANSAC fusion eligibility/);
  assert.match(geometry,/hybridAnchorEvidence\(markers,arucos\)/);
