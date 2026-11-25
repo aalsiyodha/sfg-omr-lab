@@ -2055,7 +2055,7 @@ test('scan page: actual checkboxes wire all supported modes and autostart',()=>{
   assert.match(page,/Experimental decision model/);
   assert.match(page,/Validated local mesh correction/);
   assert.match(page,/startedFileRef\.current === capturedFile/);
-  assert.match(page,/void scan\(capturedFile, \{ proofscan, proofmodel, proofmesh \}\)/);
+  assert.match(page,/void scan\(capturedFile, \{ proofscan, proofmodel, proofmesh \}, dualCompare\)/);
   assert.match(hook,/runFullScan\(file, setProgress, options\)/);
   assert.match(engine,/options\?\.proofmesh/);
   assert.match(engine,/options\?\.proofmodel/);
