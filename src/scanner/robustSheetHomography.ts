@@ -14,7 +14,7 @@ type Pt={x:number;y:number};
 type Anchor={source:Pt;dest:Pt;family:'corner'|'midpoint'|'aruco';name:string};
 export interface FusionEvidence {
  available:number;inliers:number;families:string[];medianErrorPx:number;
- maxErrorPx:number;reason:string;
+ maxErrorPx:number;reason:string;acceptedNames?:string[];rejectedNames?:string[];
 }
 export interface FusionResult{perspective:PerspectiveResult; evidence:FusionEvidence}
 export function fitRobustSheetWarp(
@@ -22,8 +22,12 @@ export function fitRobustSheetWarp(
  corner:MarkerDetectionResult,
  midpoint:MidpointRegistration|undefined,
  aruco:ArucoRegistration|undefined,
- dpi:number
+ dpi:number,
+ onEvidence?:(e:FusionEvidence)=>void
 ):FusionResult|null{
+ const report=(reason:string,additional:Partial<FusionEvidence>={})=>onEvidence?.({
+   available:anchors.length,inliers:0,families:[],medianErrorPx:Infinity,maxErrorPx:Infinity,
+   reason,...additional});
  const anchors:Anchor[]=[];
  const add=(source:Pt|null|undefined,dest:Pt,name:string,family:Anchor['family'])=>{
    if(source&&Number.isFinite(source.x)&&Number.isFinite(source.y))
@@ -45,7 +49,12 @@ export function fitRobustSheetWarp(
    for(const m of ARUCO_MARKERS_MM)add(aruco.points[m.id],{x:m.x,y:m.y},
      'aruco-'+m.id,'aruco');
  }
- if(anchors.length<6||new Set(anchors.map(a=>a.family)).size<2)return null;
+ if(anchors.length<6||new Set(anchors.map(a=>a.family)).size<2){
+   report('insufficient independent anchor families or fewer than six points');return null;
+ }
+ if(typeof cv.findHomography!=='function'){
+   report('OpenCV.js build does not expose findHomography; fusion unavailable');return null;
+ }
  let pts:any=null,dst:any=null,h:any=null,source:any=null,corrected:any=null;
  try{
    pts=cv.matFromArray(anchors.length,1,cv.CV_32FC2,
@@ -55,8 +64,9 @@ export function fitRobustSheetWarp(
    // OpenCV USAC variants are not consistently exported in legacy JS;
    // RANSAC is the supported robust outlier-rejecting fallback.
    h=cv.findHomography(pts,dst,cv.RANSAC,7);
-   if(!h||h.empty())return null;
-   const values=h.data64F;
+   if(!h||h.empty()){report('RANSAC returned an empty homography');return null;}
+   const values=h.type()===cv.CV_64F?h.data64F:h.data32F;
+   if(!values||values.length<9){report('Homography matrix has an unsupported element type');return null;}
    const errors=anchors.map(a=>{
      const x=a.source.x,y=a.source.y;
      const den=values[6]*x+values[7]*y+values[8];
@@ -69,18 +79,29 @@ export function fitRobustSheetWarp(
    const families=[...new Set(accepted.map(a=>a.family))];
    const sorted=errors.filter(Number.isFinite).sort((a,b)=>a-b);
    const median=sorted.length?sorted[Math.floor(sorted.length/2)]:Infinity;
-   if(accepted.length<5||families.length<2||median>5)return null;
+   if(accepted.length<5||families.length<2||median>5){
+     report('RANSAC inlier count, family agreement, or median reprojection error failed',{
+       inliers:accepted.length,families,medianErrorPx:median,
+       maxErrorPx:Math.max(...errors.filter(Number.isFinite)),
+       acceptedNames:accepted.map(a=>a.name),
+       rejectedNames:anchors.filter((_,i)=>errors[i]>7).map(a=>a.name)
+     });return null;
+   }
    source=cv.imread(src);corrected=new cv.Mat();
    const W=Math.round(mmToPx(OMR_LAYOUT.page.widthMm,dpi));
    const H=Math.round(mmToPx(OMR_LAYOUT.page.heightMm,dpi));
    cv.warpPerspective(source,corrected,h,new cv.Size(W,H));
    const warp=corrected;corrected=null;
    const transform=h;h=null;
-   return {perspective:{corrected:warp,correctedDataUrl:'',transform,success:true},
-     evidence:{available:anchors.length,inliers:accepted.length,families,
-       medianErrorPx:median,maxErrorPx:Math.max(...errors.filter(Number.isFinite)),
-       reason:'RANSAC inliers from at least two printed marker families'}};
- }catch{
+   const evidence:FusionEvidence={available:anchors.length,inliers:accepted.length,families,
+     medianErrorPx:median,maxErrorPx:Math.max(...errors.filter(Number.isFinite)),
+     reason:'RANSAC inliers from at least two printed marker families',
+     acceptedNames:accepted.map(a=>a.name),
+     rejectedNames:anchors.filter((_,i)=>errors[i]>7).map(a=>a.name)};
+   onEvidence?.(evidence);
+   return {perspective:{corrected:warp,correctedDataUrl:'',transform,success:true},evidence};
+ }catch(error){
+   report('RANSAC runtime exception: '+String(error));
    return null;
  }finally{pts?.delete?.();dst?.delete?.();h?.delete?.();source?.delete?.();
    corrected?.delete?.();}
