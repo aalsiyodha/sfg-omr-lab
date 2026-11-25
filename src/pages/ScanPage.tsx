@@ -288,6 +288,7 @@ export default function ScanPage({ appState }: Props) {
       <header className="minimal-scan-heading">
         <div>
           <span className="minimal-kicker">SFG OMR LAB · v{APP_BUILD_META.version}</span>
+          <div className="small text-secondary">OpenCV: {(window as Window & {omrCvEngine?: string}).omrCvEngine ?? 'unknown'} · Init: {(window as Window & {omrCvInitMs?: number|null}).omrCvInitMs ?? 'pending'} ms</div>
           <h1>Scan a sheet</h1>
         </div>
         <span className="minimal-build" title={APP_DEPLOY_LABEL+' · '+APP_BUILD_META.sha}>{APP_VERSION}</span>
