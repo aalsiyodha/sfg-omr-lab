@@ -82,6 +82,7 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
    let candidateSheet:FooterEvidence|null=null;
    let candidateRotated=false;
    let accepted=false;
+   let failureError:string|null=null;
    const centre=(p:{x:number;y:number}|null)=>p?[p.x,p.y]:[0,0];
    const centres=[h.markers.topLeft,h.markers.topRight,
     h.markers.bottomLeft,h.markers.bottomRight].map(centre);
@@ -114,17 +115,17 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
     chosen=true;accepted=true;
     break;
    }catch(error){
-    cornerAttempts.push({method:h.method,centres,footerBits:candidateSheet?.bits??'',
-      leftBox:candidateSheet?.leftBox??false,rightBox:candidateSheet?.rightBox??false,
-      timing:candidateTiming?.matched??null,reason:String(error)});
+    failureError=String(error);
    }finally{
-    if(!accepted&&cornerAttempts.at(-1)?.centres!==centres)
-      cornerAttempts.push({method:h.method,centres,footerBits:candidateSheet?.bits??'',
-       leftBox:candidateSheet?.leftBox??false,rightBox:candidateSheet?.rightBox??false,
-       timing:candidateTiming?.matched??null,
-       reason:candidateSheet?.valid?
-         'Footer valid; timing below 48/50 or 23 per side':
-         candidateSheet?.reason??'Warp could not be verified'});
+    cornerAttempts.push({method:h.method,centres,
+      footerBits:candidateSheet?.bits??'',
+      leftBox:candidateSheet?.leftBox??false,
+      rightBox:candidateSheet?.rightBox??false,
+      timing:candidateTiming?.matched??null,
+      reason:accepted?'Verified QR-free sheet geometry':
+        failureError??(candidateSheet?.valid?
+          'Footer valid; timing below 48/50 or 23 per side':
+          candidateSheet?.reason??'Warp could not be verified')});
     cleanupMats(candidateGray,candidate?.corrected,candidate?.transform);
    }
   }
