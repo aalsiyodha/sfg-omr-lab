@@ -2,6 +2,7 @@
 import {useEffect,useState} from 'react';
 import type {Choice} from '@/lib/key';
 import {parseKeyCsv,TOTAL_QUESTIONS} from '@/lib/key';
+import OmrEvaluation from '@/components/OmrEvaluation';
 type Test={id:string;title:string;number:number;status:'draft'|'published';key:Choice[]};
 const initial:Test[]=[
  {id:'demo-27',title:'Geography · Practice 27',number:27,status:'published',key:Array.from({length:50},(_,i)=>['A','B','C','D'][i%4] as Choice)},
@@ -104,6 +105,8 @@ export default function DemoWorkspace(){
    {active.status==='draft'&&<div className="editorBottom"><span className="muted">Demo changes save automatically in this browser.</span>
      <button className="button primary" onClick={publish}>Publish answer key <span>↗</span></button></div>}
   </section>}
+  {active&&<OmrEvaluation key={active.id} testNumber={active.number} testTitle={active.title}
+   answerKey={active.key} published={active.status==='published'}/>}
   {message&&<div className="notice" role="status">{message}</div>}
  </div>;
 }

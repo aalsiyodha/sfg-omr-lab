@@ -85,3 +85,32 @@ input:focus{border-color:#90b1d3}
 .analysisTrack>span{display:block;height:100%;border-radius:99px;background:#9eb0c5}
 .analysisTrack>span.correct{background:#208568}
 @media(max-width:720px){.analysisGrid{grid-template-columns:1fr}}
+
+/* v0.2 verified OMR upload and answer-key evaluation */
+.evaluateSection{margin-top:24px}.evaluateSection .sectionHeading h2{margin:7px 0}
+.omrDrop{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;border:2px dashed #a9bfd8;background:#f7fbff;border-radius:14px;padding:30px 16px;text-align:center;cursor:pointer;transition:background .15s}
+.omrDrop:hover{background:#edf5ff}.omrDrop.busy{opacity:.65;cursor:progress}.omrDropIcon{font-size:28px;color:#365b81}.omrDrop strong{font-size:15px;color:#294765}.omrDrop span:last-of-type{font-size:12px;color:#7589a0}
+.omrDrop input[type=file]{margin-top:10px;font-size:12px;max-width:100%}.omrStage{padding:9px 0;font-size:12px;color:#567591}
+.scanSummary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;margin:18px 0 25px}
+.scanSummary>div{background:#f7f9fc;border:1px solid #e6ebf1;border-radius:10px;padding:12px;min-width:0}
+.scanSummary span,.scoreStats span{display:block;color:#8494a8;font-size:11px;margin-bottom:7px}
+.scanSummary strong{font-size:13px;color:#365876;word-break:break-word}
+.reviewHeading{display:flex;justify-content:space-between;gap:15px;align-items:center;border-top:1px solid #e5ecf3;padding-top:17px;margin-top:20px}
+.reviewHeading h3{font-size:17px;margin-bottom:4px}.reviewHeading p{color:#8494a6;font-size:12px;margin:0}
+.reviewRow{display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #e9eff5;padding:11px 0}
+.reviewInfo{display:grid;gap:2px;flex:1;min-width:140px;font-size:12px}
+.reviewInfo span{color:#8090a4;font-size:11px}.reviewDone{color:#188366!important}
+.reviewOptions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.reviewChoice{border:1px solid #d8e2ed;background:#fff;border-radius:7px;padding:7px 9px;min-width:30px;font-size:11px;font-weight:700;color:#52708d}
+.reviewChoice.picked{background:#203d63;color:#fff;border-color:#203d63}
+.omrOverlay{margin-top:16px;background:#f6f9fd;border:1px solid #e5ebf2;border-radius:11px;padding:12px}
+.omrOverlay summary,.omrResults summary{cursor:pointer;font-size:12px;font-weight:750;color:#365b80}
+.omrOverlay img{max-width:100%;max-height:720px;display:block;object-fit:contain;margin:15px auto 0}
+.scoreResult{margin-top:24px;border-top:1px solid #e5ebf3;padding-top:20px}
+.scoreHero{padding:27px;border-radius:13px;background:#17385d;color:#fff;text-align:center}
+.scoreHero>span{font-size:11px;letter-spacing:.11em;opacity:.73}.scoreHero>strong{display:block;font-size:45px;letter-spacing:-.06em;margin:6px 0}
+.scoreHero>strong small{font-size:19px;color:#c8d8ec}.scoreHero p{font-size:12px;color:#b6cbe1;margin:0}
+.scoreStats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:14px 0 24px}
+.scoreStats>div{text-align:center;background:#f7fafc;border:1px solid #e8eef4;border-radius:9px;padding:12px}
+.scoreStats strong{font-size:22px}.omrResults{margin:18px 0}.omrResults .tableScroll{margin-top:13px}
+@media(max-width:730px){.scanSummary{grid-template-columns:repeat(3,minmax(0,1fr))}.reviewRow{flex-wrap:wrap}.reviewInfo{flex:1 1 100%}.reviewOptions{justify-content:flex-start}.scoreStats{grid-template-columns:repeat(3,minmax(0,1fr))}}
