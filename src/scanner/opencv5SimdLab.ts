@@ -4,9 +4,11 @@
  * operation measures its startup and execution without altering OMR decisions.
  * The package requires native WebAssembly SIMD in the browser.
  */
+declare const cv:any;
 export interface SimdProbeResult{
   available:boolean;engine:string;loadMs:number;grayscaleMs:number;
   width:number;height:number;sampleMean:number|null;reason:string;
+  inputExtractionMs?:number;legacyGrayMs?:number;maxSampleDifference?:number;
 }
 let initialized:Promise<typeof import('@banou/opencv-wasm')>|null=null;
 async function loadSimd(){
@@ -26,23 +28,45 @@ export async function measureOpenCv5Simd(canvas:HTMLCanvasElement):Promise<SimdP
    loadMs:0,grayscaleMs:0,width:canvas.width,height:canvas.height,
    sampleMean:null as number|null,reason:''};
  try{
-   const cv=await loadSimd();
+   const simd=await loadSimd();
    const loadMs=Math.round(performance.now()-begin);
    const ctx=canvas.getContext('2d',{willReadFrequently:true});
    if(!ctx)return {...base,loadMs,reason:'Unable to read photo pixels'};
-   const src=cv.matFromImageData(ctx.getImageData(0,0,canvas.width,canvas.height));
-   const gray=new cv.Mat();
+   const pixelsStart=performance.now();
+   const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
+   const inputExtractionMs=Math.round(performance.now()-pixelsStart);
+   const src=simd.matFromImageData(pixels);
+   const gray=new simd.Mat();
    try{
      const operationStart=performance.now();
-     cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+     simd.cvtColor(src,gray,simd.COLOR_RGBA2GRAY);
      const grayscaleMs=Math.round(performance.now()-operationStart);
      const data=gray.data;
      const stride=Math.max(1,Math.floor(data.length/512));
      let n=0,sum=0;
      for(let i=0;i<data.length;i+=stride){sum+=data[i];n++;}
-     return {...base,available:true,loadMs,grayscaleMs,
+     // Compare the same grayscale operation with our existing OpenCV.js,
+     // including actual pixel parity. Conversion costs remain separately timed.
+     let legacySrc:any=null,legacyGray:any=null;
+     let legacyGrayMs: number|undefined,maxSampleDifference:number|undefined;
+     try{
+       legacySrc=cv.imread(canvas);legacyGray=new cv.Mat();
+       const t=performance.now();
+       cv.cvtColor(legacySrc,legacyGray,cv.COLOR_RGBA2GRAY);
+       legacyGrayMs=Math.round(performance.now()-t);
+       const old=legacyGray.data;
+       if(old.length===data.length){
+         let max=0;
+         for(let i=0;i<data.length;i+=stride)
+           max=Math.max(max,Math.abs(data[i]-old[i]));
+         maxSampleDifference=max;
+       }
+     }catch{/* Legacy grayscale is informative only; main scanner remains unchanged. */}
+     finally{legacyGray?.delete?.();legacySrc?.delete?.();}
+     return {...base,available:true,loadMs,grayscaleMs,inputExtractionMs,
+       legacyGrayMs,maxSampleDifference,
        sampleMean:n?Math.round(100*sum/n)/100:null,
-       reason:'Real OpenCV 5 SIMD grayscale completed; legacy scoring engine preserved'};
+       reason:'Real SIMD grayscale compared with legacy OpenCV.js on same pixels; independent scoring unchanged'};
    }finally{gray.delete();src.delete();}
  }catch(error){
    return {...base,loadMs:Math.round(performance.now()-begin),
