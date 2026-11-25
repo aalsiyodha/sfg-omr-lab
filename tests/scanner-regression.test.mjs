@@ -2087,10 +2087,10 @@ test('v2.5.2 experiment v2 runs baseline and enhanced sequentially and reports d
   const report=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
   const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
   assert.match(hook,/if\(compare\)/);
-  assert.match(hook,/const baseline=await runFullScan/);
-  assert.match(hook,/const enhanced=await runFullScan/);
-  assert.ok(hook.indexOf('const baseline=await runFullScan')<
-    hook.indexOf('const enhanced=await runFullScan'));
+  assert.match(hook,/const first=await runPass\(firstPass,1\)/);
+  assert.match(hook,/const second=await runPass\(firstPass==='baseline'\?'enhanced':'baseline',2\)/);
+  assert.ok(hook.indexOf('const first=await runPass')<
+    hook.indexOf('const second=await runPass'));
   assert.match(page,/One upload: compare baseline vs all enhancements/);
   assert.match(page,/Copy differences report/);
   assert.match(page,/buildDualScanReport/);
@@ -2118,4 +2118,43 @@ test('v2.5.2 mesh diagnostically distinguishes missing verified offsets',()=>{
   assert.equal(out.accepted,false);
   assert.equal(out.rejectionBreakdown.noTrustworthyPrediction,50);
   assert.match(out.reason,/No independently trusted grid offsets/);
+});
+
+test('v2.5.2 experimental v3 prioritizes fully identified ArUco without dropping fallback',()=>{
+ const {orderFallbackCandidates}=loadTS('src/scanner/registrationPriority.ts');
+ const candidates=[
+  {kind:'midpoint',name:'midpoint/adaptive'},
+  {kind:'midpoint',name:'midpoint/aruco-guided'},
+  {kind:'aruco',name:'aruco/adaptive'},
+  {kind:'aruco',name:'aruco/Otsu'}
+ ];
+ const planned=orderFallbackCandidates(candidates,{
+  cornerFailed:true,arucoCount:4,arucoFound:true});
+ assert.deepEqual(planned.candidates.map(c=>c.name),
+  ['aruco/adaptive','midpoint/aruco-guided','midpoint/adaptive','aruco/Otsu']);
+ assert.deepEqual(orderFallbackCandidates(candidates,{
+  cornerFailed:true,arucoCount:3,arucoFound:false}).candidates,candidates);
+ assert.deepEqual(orderFallbackCandidates(candidates,{
+  cornerFailed:false,arucoCount:4,arucoFound:true}).candidates,candidates);
+});
+test('v2.5.2 experimental v3 keeps QR and timing hard gates in adaptive registration',()=>{
+ const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ assert.match(scan,/orderFallbackCandidates\(hypotheses/);
+ assert.match(scan,/const result=evaluateHypothesis\(source,hypothesis,dpi,budget,allowProvisional,evidence\)/);
+ assert.match(scan,/QR invalid at both expected corners/);
+ assert.match(scan,/QR valid, timing gate rejected/);
+ assert.match(scan,/for \(const hypothesis of routing\.candidates\)/);
+ assert.match(scan,/selected&&canStopUnifiedRegistration/);
+ assert.match(scan,/proofEnabled&&audit/);
+});
+test('v2.5.2 experimental v3 alternates baseline/enhanced order and collects diagnostic crops',()=>{
+ const hook=readFileSync('src/hooks/useScanResult.ts','utf8');
+ const report=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
+ const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+ const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ assert.match(hook,/compareRound\.current\+\+ % 2/);
+ assert.match(hook,/firstPass==='baseline'\?first:second/);
+ assert.match(report,/Actual first pass=/);
+ assert.match(page,/Download suspicious bubble crops/);
+ assert.match(scanner,/makeReviewCropSheet\(chosen\.canvas,answers\)/);
 });

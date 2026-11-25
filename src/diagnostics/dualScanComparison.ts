@@ -11,6 +11,7 @@ export type DualScanComparison = {
   baseline:ScanResult;
   enhanced:ScanResult;
   enhancedOptions:{proofscan:boolean;proofmodel:boolean;proofmesh:boolean};
+  firstPass:'baseline'|'enhanced';
 };
 function findLog(result:ScanResult,message:string):LogEntry|undefined {
   return result.stageLogs.find(x=>x.message===message);
@@ -74,10 +75,12 @@ export function buildDualScanReport(
   const baselineMs=baseline.processingTimeMs,enhancedMs=enhanced.processingTimeMs;
   const lines=[
     'SFG OMR LAB — SINGLE-UPLOAD TWO-PASS COMPARISON',
-    'Same image; sequential baseline first, enhanced second.',
+    'Same image; sequential A/B with alternating run order.',
+    'Actual first pass='+comparison.firstPass+'; second pass='+
+      (comparison.firstPass==='baseline'?'enhanced':'baseline'),
     'File='+filename+' | SHA-256='+fmt(fileSha256),
     'Experimental options='+JSON.stringify(enhancedOptions),
-    'WARNING: Scan time is subject to cache/warmup/browser scheduling effects. One pair does not establish a speed gain.',
+    'WARNING: Order alternates across consecutive comparisons in one page session. A single pair cannot establish a speed gain.',
     'WARNING: Answer agreement is not ground truth; inspect the actual sheet for correctness.',
     '',
     'BASELINE='+JSON.stringify(a),

@@ -11,6 +11,8 @@ import { auditBubbleDecision, applyDecisionReview } from './decisionProof';
 import { inspectLocalBubble } from './localVisualProof';
 import { summarizePredictedGrid } from './predictiveGrid';
 import { validateLocalMesh } from './validatedMesh';
+import { orderFallbackCandidates } from './registrationPriority';
+import { makeReviewCropSheet } from './reviewCropSheet';
 import { fitMaskedLatentPredictor } from './latentPredictor';
 import { predictSyntheticDecision, SYNTHETIC_MODEL_INFO } from './trainedDecisionHead';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
@@ -86,16 +88,23 @@ function disposeAlignment(alignment: AcceptedAlignment): void {
  * The original sheet has a unique QR and 50 timing marks, so a geometrically
  * plausible but incorrect set of squares must not be trusted (Test 4).
  */
+type RegistrationProbe = {
+  phase:'warp'|'qr'|'timing'|'accepted'|'error';
+  reason:string;qrValid:boolean;
+  timing:number;left:number;right:number;
+};
 function evaluateHypothesis(
   source: HTMLCanvasElement,
   hypothesis: Hypothesis,
   dpi: number,
   curveBudget: { remaining: number },
-  allowQrlessProvisional = false
+  allowQrlessProvisional = false,
+  evidence?: RegistrationProbe
 ): AcceptedAlignment | null {
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
   let keep = false;
+  if(evidence){evidence.phase='warp';evidence.reason='Warp did not produce an image';}
   try {
     persp = hypothesis.kind === 'corner'
       ? correctPerspective(source, hypothesis.markers)
@@ -107,6 +116,7 @@ function evaluateHypothesis(
          : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco)
       : correctPerspectiveFromArucos(source,hypothesis.markers);
     if (!persp.success || !persp.corrected) return null;
+    if(evidence){evidence.phase='qr';evidence.reason='QR not yet independently verified';}
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
     canvas.height = persp.corrected.rows;
@@ -129,6 +139,7 @@ function evaluateHypothesis(
         rotated = true;
       }
     }
+    if(evidence){evidence.qrValid=qr.valid;evidence.reason=qr.valid?'QR valid; checking timing':'QR invalid at both expected corners';}
     if (!qr.valid && allowQrlessProvisional && !rotated) {
       // Independent fallback for READ-ONLY provisional measurements. Never
       // bypass QR for an automatically verified or gradable examination.
@@ -190,6 +201,12 @@ function evaluateHypothesis(
     gray = new cv.Mat();
     cv.cvtColor(persp.corrected, gray, cv.COLOR_RGBA2GRAY);
     let check = verifyTimingMarks(gray, dpi);
+    if(evidence){
+      evidence.phase='timing';evidence.qrValid=true;
+      evidence.timing=check.matched;evidence.left=check.leftMatched;
+      evidence.right=check.rightMatched;
+      evidence.reason=check.passed?'Timing passed, checking final geometry':'Timing failed; retrying verified correction';
+    }
     logger.info('perspective', `${hypothesis.name}: timing marks ${check.matched}/50`,
       { left: check.leftMatched, right: check.rightMatched, rotated });
     // Even a QR-valid ArUco candidate with 45–49 matched timing marks may
@@ -308,12 +325,18 @@ function evaluateHypothesis(
       }
     }
     if (!check.passed) {
+      if(evidence){evidence.phase='timing';evidence.reason='QR valid, timing gate rejected';
+        evidence.timing=check.matched;evidence.left=check.leftMatched;evidence.right=check.rightMatched;}
       logger.warning('perspective', `${hypothesis.name}: rejected, insufficient independent timing-mark alignment`);
       return null;
     }
+    if(evidence){evidence.phase='accepted';evidence.reason='QR valid and timing accepted';
+      evidence.qrValid=qr.valid;evidence.timing=check.matched;
+      evidence.left=check.leftMatched;evidence.right=check.rightMatched;}
     keep = true;
     return { hypothesis, perspective: persp, gray, canvas, qr, check, rotated };
   } catch (error) {
+    if(evidence){evidence.phase='error';evidence.reason=String(error);}
     logger.warning('perspective', `${hypothesis.name}: registration attempt failed`,
       { reason: String(error) });
     return null;
@@ -379,7 +402,7 @@ export async function runFullScan(
     let arucoOtsu:ArucoRegistration=arucoAdaptive;
     let cornerOtsuForHybrid:MarkerDetectionResult=primary;
     const registrationAttempts:{
-      method:string;source:string;durationMs:number;
+      method:string;source:string;durationMs:number;phase:string;reason:string;
       qrValid:boolean;timing:number;left:number;right:number;
       accepted:boolean;provisional:boolean;
     }[]=[];
@@ -388,12 +411,16 @@ export async function runFullScan(
       budget:{remaining:number},allowProvisional=false
     ):AcceptedAlignment|null=>{
       const t=Date.now();
-      const result=evaluateHypothesis(source,hypothesis,dpi,budget,allowProvisional);
+      const evidence:RegistrationProbe={phase:'warp',reason:'Not attempted',
+        qrValid:false,timing:0,left:0,right:0};
+      const result=evaluateHypothesis(source,hypothesis,dpi,budget,allowProvisional,evidence);
       const item={
         method:hypothesis.name,source:source===loaded.canvas?'original':'recovered',
-        durationMs:Date.now()-t,qrValid:result?.qr.valid??false,
-        timing:result?.check.matched??0,left:result?.check.leftMatched??0,
-        right:result?.check.rightMatched??0,
+        durationMs:Date.now()-t,phase:evidence.phase,reason:evidence.reason,
+        qrValid:result?.qr.valid??evidence.qrValid,
+        timing:result?.check.matched??evidence.timing,
+        left:result?.check.leftMatched??evidence.left,
+        right:result?.check.rightMatched??evidence.right,
         accepted:Boolean(result),provisional:Boolean(result?.provisional)
       };
       registrationAttempts.push(item);
@@ -500,7 +527,15 @@ export async function runFullScan(
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
     let warpAttempts=fastWarpAttempts;
     let boundaryAttempted=false;
-    for (const hypothesis of hypotheses) {
+    const routing=orderFallbackCandidates(hypotheses,{
+      cornerFailed:!selected,arucoCount:arucoAdaptive.count,arucoFound:arucoAdaptive.found
+    });
+    logger.info('markerDetection','v2.5.2 adaptive fallback registration order',{
+      strategy:routing.strategy,
+      actualOrder:routing.candidates.map(h=>h.name),
+      markerIds:Object.keys(arucoAdaptive.points)
+    });
+    for (const hypothesis of routing.candidates) {
       if(selected&&canStopUnifiedRegistration(selected.qr.valid,selected.check.matched,
         selected.check.leftMatched,selected.check.rightMatched))break;
       const fingerprint=geometryFingerprint(hypothesis);
@@ -1151,7 +1186,9 @@ export async function runFullScan(
       if(proofEnabled||proofModelEnabled){
         const lookup=new Map(proofs.map(p=>[p.question,p]));
         answers=answers.map(row=>{
-          const reviewed=applyDecisionReview(row,lookup.get(row.question)!,proofEnabled);
+          const audit=lookup.get(row.question);
+          const reviewed=proofEnabled&&audit
+            ?applyDecisionReview(row,audit,true):row;
           return reviewed.status==='detected'&&(
             unstableAccepted.has(row.question)||
             (proofModelEnabled&&modelReview.has(row.question)))
@@ -1180,6 +1217,16 @@ export async function runFullScan(
       images.bubbleOverlay = generateBubbleOverlay(
         chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi, idOffset
       );
+      if(proofEnabled||proofModelEnabled){
+        const contact=makeReviewCropSheet(chosen.canvas,answers);
+        if(contact){
+          images.reviewCrops=contact.dataUrl;
+          logger.info('bubbleDetection','v2.5.2 diagnostic review crops',{
+            count:contact.questions.length,questions:contact.questions,
+            note:'Registered-image crops, not ground truth; no scoring effect'
+          });
+        }
+      }
       finishStage('bubbleOverlay');
     } else {
       logger.error('perspective',
