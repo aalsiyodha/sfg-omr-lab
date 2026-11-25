@@ -2261,7 +2261,7 @@ test('v2.5.5 ttop32 fork is opt-in, realm isolated and cannot alter OMR scoring'
  const orchestrator=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
  const page=readFileSync('src/pages/ScanPage.tsx','utf8');
  const report=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
- assert.match(fork,/ttop32\/opencv-js-wasm@4\.8\.1/);
+ assert.match(fork,/ttop32\/opencv-js-wasm@4\.12\.0/);
  assert.match(fork,/sandbox','allow-scripts'/);
  assert.match(fork,/cv\.cvtColor\(src,gray,cv\.COLOR_RGBA2GRAY\)/);
  assert.match(fork,/cv\.threshold\(gray,binary,128,255,cv\.THRESH_BINARY\)/);
@@ -2271,5 +2271,5 @@ test('v2.5.5 ttop32 fork is opt-in, realm isolated and cannot alter OMR scoring'
  assert.match(orchestrator,/if\(options\?\.ttopProbe\)/);
  assert.match(orchestrator,/scoringRuntimeUnchanged:true/);
  assert.match(page,/checked=\{ttopProbe\}/);
- assert.match(report,/v2\.5\.5 ttop32 OpenCV 4\.8\.1 WASM isolated runtime benchmark/);
+ assert.match(report,/v2\.5\.5 ttop32 OpenCV 4\.12\.0 WASM isolated runtime benchmark/);
 });
