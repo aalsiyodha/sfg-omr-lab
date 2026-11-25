@@ -384,7 +384,7 @@ export default function ScanPage({ appState }: Props) {
               <label className="geometry-lab-choice">
                 <input type="checkbox" checked={ttopProbe} disabled={dualCompare}
                   onChange={e=>setTtopProbe(e.target.checked)}/>
-                <span><strong>ttop32 OpenCV 4.8.1 WASM benchmark</strong>
+                <span><strong>ttop32 OpenCV 4.12.0 WASM benchmark</strong>
                   <small>Isolated embedded-WASM engine; measures grayscale, threshold and warp separately from scanner. Reports cold load and errors. Does not change answers.</small></span>
               </label>
             </div>
