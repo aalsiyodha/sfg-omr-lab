@@ -46,7 +46,7 @@ export function downloadSheetIdPrototype(count:SheetQuestionCount=50){
    const p=getBubbleCentre(question,option as 0|1|2|3);
    bubble(p.xMm,p.yMm,answers.bubbleDiamMm/2);
    pdf.setFontSize(6.7);
-   pdf.text('ABCD'[option],p.xMm+answers.labelOffsetMm,p.yMm+1);
+   pdf.text('ABCD'[option],p.xMm+col.labelOffsetMm,p.yMm+1);
   }
  }
  // Independent 25+25 side timing squares at the existing verified coordinates.
