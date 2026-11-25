@@ -24,6 +24,7 @@ export default function SheetIdExperimentPage(){
   'Registration='+report.registration+' | rotated180='+report.rotated180,
   'Corner hypotheses='+JSON.stringify(report.cornerAttempts),
   'Timing='+JSON.stringify(report.timing),
+  'Timing local offsets='+JSON.stringify(report.timingGeometry),
   'Test ID='+report.testId,
   'Answer counts='+JSON.stringify({
     detected:report.detected,blank:report.blank,
@@ -80,6 +81,7 @@ export default function SheetIdExperimentPage(){
    <p>Elapsed: <strong>{report.elapsedMs} ms</strong> · Test ID: <strong>{report.testId??'unreadable'}</strong>
     · Timing: <strong>{report.timing?.matched??0}/50</strong></p>
    <p>Footer: <code>{report.sheet?.bits??'unreadable'}</code> · Layout: {report.sheet?.count??'unverified'} · Corner hypotheses: {report.cornerAttempts.length}</p>
+   <p>Timing-derived maximum correction: <strong>{report.timingGeometry?.maxShiftPx.toFixed(1)??'unavailable'} px</strong></p>
    <p>Detected {report.detected}, blank {report.blank},
     multiple {report.multiple}, uncertain {report.uncertain}</p>
    {report.overlayUrl&&<img className="img-fluid border mb-3" alt="Perspective-corrected experimental sheet"
