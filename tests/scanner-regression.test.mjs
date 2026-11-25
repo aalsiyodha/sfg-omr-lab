@@ -2211,3 +2211,24 @@ test('v2.5.3.2 geometry lab requires full-resolution refinement and independent 
  assert.match(simd,/cv\.cvtColor\(src,gray,cv\.COLOR_RGBA2GRAY\)/);
  assert.match(page,/OpenCV 5 SIMD runtime probe/);
 });
+
+test('geometry lab diagnostics report each fallback and genuine SIMD comparison',()=>{
+ const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const report=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
+ const fusion=readFileSync('src/scanner/robustSheetHomography.ts','utf8');
+ const simd=readFileSync('src/scanner/opencv5SimdLab.ts','utf8');
+ const coarse=readFileSync('src/scanner/coarseToFineCorners.ts','utf8');
+ assert.match(scan,/evidence\.fusionEvidence=fusion/);
+ assert.match(scan,/v2\.5\.3 robust homography evidence/);
+ assert.match(scan,/v2\.5\.3 full-resolution corner retry/);
+ assert.match(report,/FALLBACK GEOMETRY EVIDENCE/);
+ assert.match(report,/SIMD NOTE: Both A\/B passes use the existing OpenCV\.js scoring runtime/);
+ assert.match(report,/v2\.5\.3 OpenCV 5 SIMD separate runtime probe/);
+ assert.match(fusion,/typeof cv\.findHomography!=='function'/);
+ assert.match(fusion,/rejectedNames:anchors\.filter/);
+ assert.match(fusion,/RANSAC runtime exception/);
+ assert.match(coarse,/Refined marker quadruple failed convexity\/A4 geometry/);
+ assert.match(simd,/legacyGrayMs/);
+ assert.match(simd,/maxSampleDifference/);
+ assert.match(simd,/cv\.cvtColor\(legacySrc,legacyGray,cv\.COLOR_RGBA2GRAY\)/);
+});
