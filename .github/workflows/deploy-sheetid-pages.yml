@@ -59,7 +59,7 @@ jobs:
           path: production/dist
   deploy:
     environment:
-      name: github-pages
+      name: sheetid-pages-preview
       url: https://aalsiyodha.github.io/sfg-omr-lab/sheetid-test/#/sheetid
     runs-on: ubuntu-latest
     needs: build
