@@ -12,6 +12,28 @@ interface LLMReportOptions {
   answerKey?: string[] | null;
 }
 
+/** Explicit summaries of optional engines, including disabled/not-run states.
+ * These logs are evidence of execution, unlike the unrelated AI fallback.
+ */
+const EXPERIMENT_LOGS=[
+  'User-selected scan controls',
+  'Registration engine budget and measured work',
+  'v2.5.2 withheld-print-validated local mesh',
+  'v2.5.2 masked latent template predictor',
+  'v2.5.2 synthetic-trained closed-set head',
+  'v2.5.1 selective DecisionScan audit',
+] as const;
+function experimentSummary(scan:ScanResult):string[]{
+  const logs=scan.stageLogs??[];
+  const result=['Opt-in engine decisions and execution evidence:'];
+  for(const name of EXPERIMENT_LOGS){
+    const hit=logs.find(l=>l.message===name);
+    result.push('  '+name+': '+(hit?JSON.stringify(hit.data??{}):
+      'not logged (not proof of execution)'));
+  }
+  return result;
+}
+
 /**
  * Format a comprehensive, copyable report specifically structured for LLMs (ChatGPT, Claude, etc.)
  * to diagnose scanning offsets, threshold issues, and misdetections.
@@ -51,6 +73,7 @@ export function generateLLMDiagnosticPrompt({
   if (scanResult.warnings?.length) lines.push('Warnings=' + scanResult.warnings.join(' ; '));
   const settings = getSettings();
   lines.push('Scanner settings=' + JSON.stringify(settings));
+  lines.push(...experimentSummary(scanResult));
 
   const statuses = ['detected', 'blank', 'multiple', 'uncertain', 'error'] as const;
   lines.push('Counts=' + statuses.map(s=>s+':'+scanResult.answers.filter(q=>q.status===s).length).join(' '));
@@ -183,6 +206,9 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file, fil
       ' | QR payload=' + (scanResult.qrRaw ?? 'not decoded'),
     'Processing=' + scanResult.processingTimeMs + 'ms | ' + counts,
   ];
+  // Always show experiment states in the COMPACT report too; otherwise a
+  // scanner claiming AI improvements cannot be audited without huge logs.
+  lines.push(...experimentSummary(scanResult));
   if (scanResult.grayCalibration)
     lines.push('Calibration=' + scanResult.grayCalibration.status +
       ' | patches=' + scanResult.grayCalibration.patchMedians.join(',') +
