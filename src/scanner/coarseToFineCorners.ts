@@ -15,6 +15,7 @@ export interface CoarseGeometryResult{
 export function detectCoarseToFineCorners(binary:any,width:number,height:number,targetWidth=720):CoarseGeometryResult{
  const started=performance.now();
  const fallback:MarkerDetectionResult={found:false,count:0,validGeometry:false,
+   topLeft:null,topRight:null,bottomLeft:null,bottomRight:null,
    error:'Coarse-to-fine corner discovery could not verify four independent printed corners'};
  const stats={used:false,coarseWidth:width,coarseHeight:height,
    discoveryMs:0,refinementMs:0,refined:0,reason:''};
