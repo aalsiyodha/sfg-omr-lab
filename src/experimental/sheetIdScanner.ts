@@ -130,7 +130,7 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
    }
   }
   stage('registrationAndFooter');
-  if(!chosen){
+  if(!chosen||!persp||!persp.corrected||!timing||!gray||!sheet){
    // Preserve the best available rejection evidence for diagnostics.
    const last=cornerAttempts.at(-1);
    return empty('No candidate independently verified footer + 48/50 timing. '+
