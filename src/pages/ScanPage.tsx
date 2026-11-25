@@ -150,7 +150,7 @@ export default function ScanPage({ appState }: Props) {
 
   const handleScan = async () => {
     if (!capturedFile || opencv !== 'ready' || isScanning) return;
-    if (startedFileRef.current === capturedFile) return;
+    if (startedFileRef.current === capturedFile && !error) return;
     startedFileRef.current = capturedFile;
     setSubmitError(null);
     await scan(capturedFile, selectedModes);
@@ -353,7 +353,7 @@ export default function ScanPage({ appState }: Props) {
               <div className="minimal-selected-details">
                 <strong className="minimal-filename">{capturedFile.name}</strong>
                 <span className="text-secondary small">{(capturedFile.size/1024/1024).toFixed(2)} MB</span>
-                {(!autoStart || (!isScanning && !scanResult && startedFileRef.current !== capturedFile)) && (
+                {(!autoStart || Boolean(error) || (!isScanning && !scanResult && startedFileRef.current !== capturedFile)) && (
                   <button className="btn btn-dark" onClick={handleScan}
                     disabled={isScanning||opencv!=='ready'}>
                     Scan sheet <i className="bi bi-arrow-right ms-1"/>
