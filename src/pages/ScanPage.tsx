@@ -7,6 +7,7 @@ import { APP_VERSION, APP_BUILD_META, APP_DEPLOY_LABEL } from '../config/version
 import { copyText } from '../utils/copyText';
 import { needsReview, filterReviewAnswers, countRejectedBlankMarks } from '../review/reviewPolicy';
 import type { ScanModeOptions } from '../scanner/scanOrchestrator';
+import { buildDualScanReport } from '../diagnostics/dualScanComparison';
 
 interface Props { appState: AppState; }
 
@@ -15,7 +16,7 @@ type ResultViewTab = 'overlay' | 'markers' | 'table' | 'llm';
 
 export default function ScanPage({ appState }: Props) {
   const { scanning, practice, opencv } = appState;
-  const { scan, scanResult, intermediateImages, scanning: isScanning, progress, error, updateAnswer, reset } = scanning;
+  const { scan, scanResult, comparison, intermediateImages, scanning: isScanning, progress, error, updateAnswer, reset } = scanning;
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nativeCameraInputRef = useRef<HTMLInputElement>(null);
@@ -48,6 +49,7 @@ export default function ScanPage({ appState }: Props) {
   const [copyFailed, setCopyFailed] = useState(false);
   const [showTechnicalReport, setShowTechnicalReport] = useState(false);
   const [autoStart, setAutoStart] = useState(true);
+  const [dualCompare, setDualCompare] = useState(false);
   const [proofscan, setProofscan] = useState(false);
   const [proofmodel, setProofmodel] = useState(false);
   const [proofmesh, setProofmesh] = useState(false);
@@ -153,7 +155,7 @@ export default function ScanPage({ appState }: Props) {
     if (startedFileRef.current === capturedFile && !error) return;
     startedFileRef.current = capturedFile;
     setSubmitError(null);
-    await scan(capturedFile, selectedModes);
+    await scan(capturedFile, selectedModes, dualCompare);
   };
 
   // Start on file selection (or once OpenCV finishes loading), rather than
@@ -163,8 +165,8 @@ export default function ScanPage({ appState }: Props) {
     if (!autoStart || !capturedFile || opencv !== 'ready' || isScanning ||
         startedFileRef.current === capturedFile) return;
     startedFileRef.current = capturedFile;
-    void scan(capturedFile, { proofscan, proofmodel, proofmesh });
-  }, [autoStart, capturedFile, opencv, isScanning, scan, proofscan, proofmodel, proofmesh]);
+    void scan(capturedFile, { proofscan, proofmodel, proofmesh }, dualCompare);
+  }, [autoStart, capturedFile, opencv, isScanning, scan, proofscan, proofmodel, proofmesh, dualCompare]);
 
   const handleReset = () => {
     reset();
@@ -244,14 +246,19 @@ export default function ScanPage({ appState }: Props) {
   const reportCompact = scanResult ? generateBetaFeedbackPrompt({
     scanResult,file:capturedFile,fileSha256,activeTestId:practice.activeTest?.testId
   }) : '';
-  const diagnostic = showTechnicalReport ? reportFull : reportCompact;
+  const diffReport = comparison
+    ?buildDualScanReport(comparison,capturedFile?.name??'unknown',fileSha256)
+    :'';
+  const diagnostic = comparison
+    ?diffReport+(showTechnicalReport?'\n\n=== FULL ENHANCED DIAGNOSTIC ===\n'+reportFull:'')
+    :(showTechnicalReport?reportFull:reportCompact);
   const saveReport = () => {
     if(!scanResult)return;
     const blob=new Blob([diagnostic],{type:'text/plain;charset=utf-8'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;
     a.download='sfg-omr-'+(capturedFile?.name||'scan').replace(/[^a-zA-Z0-9._-]/g,'_')+
-      (showTechnicalReport?'-full':'-compact')+'.txt';
+      (comparison?'-two-pass-diff':showTechnicalReport?'-full':'-compact')+'.txt';
     document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
   };
   const saveMarkerOverlay=()=>{
@@ -323,7 +330,19 @@ export default function ScanPage({ appState }: Props) {
               </span>
             </label>
             <label className="d-flex align-items-start gap-2 mb-2">
+              <input type="checkbox" className="form-check-input mt-1" checked={dualCompare}
+                onChange={e=>setDualCompare(e.target.checked)}/>
+              <span><strong>One upload: compare baseline vs all enhancements</strong>
+                <small className="d-block text-secondary">
+                  Two sequential scans of the identical file. Automatically reports every changed answer,
+                  registration and processing-time difference, plus model decisions.
+                  Takes approximately twice the processing work.
+                </small>
+              </span>
+            </label>
+            <label className="d-flex align-items-start gap-2">
               <input type="checkbox" className="form-check-input mt-1" checked={proofscan}
+                disabled={dualCompare}
                 onChange={e=>setProofscan(e.target.checked)}/>
               <span><strong>Extra optical proof checks</strong>
                 <small className="d-block text-secondary">Review suspicious marks using local geometry, shape and counterfactual checks.</small>
@@ -331,6 +350,7 @@ export default function ScanPage({ appState }: Props) {
             </label>
             <label className="d-flex align-items-start gap-2 mb-2">
               <input type="checkbox" className="form-check-input mt-1" checked={proofmodel}
+                disabled={dualCompare}
                 onChange={e=>setProofmodel(e.target.checked)}/>
               <span><strong>Experimental decision model</strong>
                 <small className="d-block text-secondary">Synthetic-trained model can flag uncertain responses; not validated on real photos.</small>
@@ -338,13 +358,15 @@ export default function ScanPage({ appState }: Props) {
             </label>
             <label className="d-flex align-items-start gap-2">
               <input type="checkbox" className="form-check-input mt-1" checked={proofmesh}
+                disabled={dualCompare}
                 onChange={e=>setProofmesh(e.target.checked)}/>
               <span><strong>Validated local mesh correction</strong>
                 <small className="d-block text-secondary">Apply local offsets only when withheld printed-ring checks improve.</small>
               </span>
             </label>
             <p className="small text-secondary mt-2 mb-0">
-              QR identity and timing verification always remain mandatory. Choose optional modes before uploading.
+              {dualCompare?'Comparison runs all optional checks only in pass 2. Individual options are ignored.':
+                'QR identity and timing verification always remain mandatory. Choose optional modes before uploading.'}
             </p>
           </fieldset>
           {capturedFile && (
@@ -390,6 +412,30 @@ export default function ScanPage({ appState }: Props) {
               onClick={handleReset}><i className="bi bi-arrow-repeat me-1"/>New scan</button>
           </div>
 
+          {comparison && (
+            <div className="border rounded-3 p-3 mb-3">
+              <strong>One-upload A/B comparison completed</strong>
+              <p className="small text-secondary mb-2">
+                Baseline {comparison.baseline.processingTimeMs} ms versus enhanced
+                {' '}{comparison.enhanced.processingTimeMs} ms.
+                The enhanced reading is shown below. Timing differences from two sequential
+                runs can reflect warmup and do not prove a speed improvement.
+              </p>
+              <div className="d-flex flex-wrap gap-2">
+                <button className="btn btn-dark btn-sm"
+                  onClick={async()=>{
+                    const ok=await copyText(diffReport);
+                    setLlmCopied(ok);setCopyFailed(!ok);
+                  }}>Copy differences report</button>
+                <button className="btn btn-outline-secondary btn-sm"
+                  onClick={saveReport}>Download comparison .txt</button>
+                <button className="btn btn-outline-secondary btn-sm"
+                  onClick={()=>{setActiveTab('llm');setShowTechnicalReport(false);}}>
+                  Inspect differences
+                </button>
+              </div>
+            </div>
+          )}
           <div className="minimal-stat-grid">
             <div><strong>{scanResult.alignmentMatched||0}<small>/50</small></strong><span>Timing</span></div>
             <div><strong>{scanResult.testId===null?'—':String(scanResult.testId).padStart(2,'0')}</strong><span>Test ID</span></div>
@@ -493,7 +539,10 @@ export default function ScanPage({ appState }: Props) {
                   <div className="minimal-actions">
                     <button className="minimal-text-button" onClick={saveReport}>Download .txt</button>
                     <button className="btn btn-dark btn-sm"
-                      onClick={showTechnicalReport?handleCopyLLMReport:handleCopyBetaReport}>
+                      onClick={comparison?async()=>{
+                        const ok=await copyText(diagnostic);
+                        setLlmCopied(ok);setCopyFailed(!ok);
+                      }:showTechnicalReport?handleCopyLLMReport:handleCopyBetaReport}>
                       <i className="bi bi-clipboard me-1"/>Copy report
                     </button>
                   </div>

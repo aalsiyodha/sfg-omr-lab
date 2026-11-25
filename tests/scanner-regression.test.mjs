@@ -1677,7 +1677,7 @@ test('v2.3.4: page-boundary recovery only runs after QR/timing-based registratio
   assert.ok(scanner.includes('detectArucoMarkers(rescueGray,rescueThreshold)'));
   assert.ok(scanner.includes('detectMidpointMarkers(rescueThreshold'));
   assert.ok(scanner.includes('detectMarkers(rescueThreshold'));
-  assert.ok(scanner.includes('evaluateHypothesis(rough.canvas,hypothesis,dpi,curveBudget)'));
+  assert.ok(scanner.includes('traceRegistration(rough.canvas,hypothesis,dpi,curveBudget)'));
   assert.ok(scanner.includes('Registration performance summary'));
   assert.ok(boundary.includes("no-plausible-outer-page-quadrilateral"));
   assert.ok(scanner.includes('meshQR.valid && meshQR.raw===qr.raw'));
@@ -1786,7 +1786,7 @@ test('v2.3.45: hybrid recovery remains fail-only with strict QR/timing acceptanc
   const qr=readFileSync('src/scanner/qrDecoder.ts','utf8');
   const diagnostics=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
   assert.ok(scanner.includes("if(!selected){\n      const hybridSources="));
-  assert.ok(scanner.includes('evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget)'));
+  assert.ok(scanner.includes('traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget)'));
   assert.ok(scanner.includes("if (!qr.valid)"));
   assert.ok(scanner.includes("if (!check.passed)"));
   assert.ok(scanner.includes("Independent original-photo QR locator"));
@@ -2055,7 +2055,7 @@ test('scan page: actual checkboxes wire all supported modes and autostart',()=>{
   assert.match(page,/Experimental decision model/);
   assert.match(page,/Validated local mesh correction/);
   assert.match(page,/startedFileRef\.current === capturedFile/);
-  assert.match(page,/void scan\(capturedFile, \{ proofscan, proofmodel, proofmesh \}\)/);
+  assert.match(page,/void scan\(capturedFile, \{ proofscan, proofmodel, proofmesh \}, dualCompare\)/);
   assert.match(hook,/runFullScan\(file, setProgress, options\)/);
   assert.match(engine,/options\?\.proofmesh/);
   assert.match(engine,/options\?\.proofmodel/);
@@ -2079,4 +2079,43 @@ test('v2.5.2: reports explicit experiment states and measured registration costs
  assert.match(report,/not logged \(not proof of execution\)/);
  assert.match(report,/experimentSummary\(scanResult,true\)/);
  assert.match(report,/experimentSummary\(scanResult\)/);
+});
+
+test('v2.5.2 experiment v2 runs baseline and enhanced sequentially and reports differences',()=>{
+  const hook=readFileSync('src/hooks/useScanResult.ts','utf8');
+  const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+  const report=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
+  const scanner=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.match(hook,/if\(compare\)/);
+  assert.match(hook,/const baseline=await runFullScan/);
+  assert.match(hook,/const enhanced=await runFullScan/);
+  assert.ok(hook.indexOf('const baseline=await runFullScan')<
+    hook.indexOf('const enhanced=await runFullScan'));
+  assert.match(page,/One upload: compare baseline vs all enhancements/);
+  assert.match(page,/Copy differences report/);
+  assert.match(page,/buildDualScanReport/);
+  assert.match(report,/PER-REGISTRATION CANDIDATE TRACE:/);
+  assert.match(report,/Answer\/status changes=/);
+  assert.match(scanner,/v2\.5\.2 detailed registration candidate/);
+  assert.match(scanner,/geometryFingerprint\(hypothesis\)/);
+  assert.match(scanner,/duplicate exact marker geometry skipped/);
+});
+test('v2.5.2 mesh diagnostically distinguishes missing verified offsets',()=>{
+  const {validateLocalMesh}=loadTS('src/scanner/validatedMesh.ts',{
+    '../config/omrLayout':{getBubbleCentre:()=>({xMm:50,yMm:50}),
+      mmToPx:(x,dpi)=>x*dpi/25.4},
+    './gridAlignment':{offsetForQuestion:()=>({
+      dx:0,dy:0,confidence:0,applied:false
+    }),scorePrintedRingAt:()=>0},
+    './predictiveGrid':{predictGridOffset:()=>({
+      dx:0,dy:0,valid:false,uncertaintyPx:0,source:'unavailable'
+    })}
+  });
+  const base={dx:0,dy:0,confidence:0,applied:false};
+  const grid={leftUpper:base,leftLower:base,
+    rightUpper:base,rightLower:base,testId:base};
+  const out=validateLocalMesh({rows:1000,cols:1000,ucharPtr:()=>[220]},150,grid);
+  assert.equal(out.accepted,false);
+  assert.equal(out.rejectionBreakdown.noTrustworthyPrediction,50);
+  assert.match(out.reason,/No independently trusted grid offsets/);
 });
