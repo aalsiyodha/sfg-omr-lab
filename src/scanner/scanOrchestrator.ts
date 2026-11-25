@@ -530,7 +530,9 @@ export async function runFullScan(
     }
     // Fail back to the established full-resolution corner selection when the
     // coarse estimate fails QR verification; never silently discard valid sheets.
-    if(!selected&&coarse?.markers.found){
+    if(coarse?.markers.found&&(!selected||!canStopUnifiedRegistration(
+      selected.qr.valid,selected.check.matched,
+      selected.check.leftMatched,selected.check.rightMatched))){
       const legacy=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
       if(legacy.found){
         const alternative:Hypothesis={kind:'corner',name:'corner/full-resolution-fallback',markers:legacy};
@@ -539,10 +541,23 @@ export async function runFullScan(
           usedGeometries.add(fingerprint);fastWarpAttempts++;
           markerProfile.hypothesesEvaluated++;
           const fallback=traceRegistration(loaded.canvas,alternative,dpi,curveBudget);
+          const previousScore=selected?registrationScore({kind:'corner',
+            timingMatched:selected.check.matched,leftMatched:selected.check.leftMatched,
+            rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid}):-Infinity;
+          const newScore=fallback?registrationScore({kind:'corner',
+            timingMatched:fallback.check.matched,leftMatched:fallback.check.leftMatched,
+            rightMatched:fallback.check.rightMatched,qrVerified:fallback.qr.valid}):-Infinity;
+          const adopt=Boolean(fallback&&newScore>previousScore);
           logger.info('markerDetection','v2.5.3 full-resolution corner retry',{
             previous:'coarse-refined',result:fallback?'verified':'unverified',
+            adopted:adopt,priorTiming:selected?.check.matched??null,
+            candidateTiming:fallback?.check.matched??null,
             sameSource:false});
-          if(fallback)selected=fallback;else hypotheses.push(alternative);
+          if(adopt&&fallback){
+            if(selected)disposeAlignment(selected);
+            selected=fallback;
+          }else if(fallback)disposeAlignment(fallback);
+          else hypotheses.push(alternative);
         }
       }
     }
