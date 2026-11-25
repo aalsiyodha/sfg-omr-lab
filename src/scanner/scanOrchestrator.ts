@@ -12,6 +12,7 @@ import { inspectLocalBubble } from './localVisualProof';
 import { summarizePredictedGrid } from './predictiveGrid';
 import { validateLocalMesh } from './validatedMesh';
 import { orderFallbackCandidates } from './registrationPriority';
+import { makeReviewCropSheet } from './reviewCropSheet';
 import { fitMaskedLatentPredictor } from './latentPredictor';
 import { predictSyntheticDecision, SYNTHETIC_MODEL_INFO } from './trainedDecisionHead';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
