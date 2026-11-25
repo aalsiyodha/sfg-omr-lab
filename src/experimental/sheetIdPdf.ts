@@ -24,8 +24,6 @@ export function downloadSheetIdPrototype(count:SheetQuestionCount=50){
  pdf.text('Candidate Name: ______________________________________________',16,40);
  pdf.text('Roll No.: ___________________________________________________',16,46);
  pdf.text('Shade one complete circle with a blue/black pen. Do not tick, cross or half-fill.',16,52);
- pdf.setFontSize(8);pdf.setFont('helvetica','bold');
- pdf.text('TEST ID   (mark one tens digit and one units digit)',16,56);
  for(const type of ['tens','units'] as const){
   const item=testId[type];
   pdf.setFontSize(7);
