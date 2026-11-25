@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import PracticeTestPage from './pages/PracticeTestPage';
-import ScanPage from './pages/ScanPage';
+import V26ScanPage from './pages/V26ScanPage';
 import ResultsPage from './pages/ResultsPage';
 import DiagnosticsPage from './pages/DiagnosticsPage';
 import { usePracticeTest } from './hooks/usePracticeTest';
@@ -53,7 +53,7 @@ export default function App() {
           <div className="minimal-nav-links">
             <NavLink to="/scan">Scan</NavLink>
             <NavLink to="/practice">Practice</NavLink>
-            <NavLink to="/diagnostics">Tools</NavLink>
+            <NavLink to="/diagnostics">Diagnostics</NavLink>
             <button type="button" className="minimal-theme-switch"
               aria-label={theme==='dark'?'Use light appearance':'Use dark appearance'}
               onClick={()=>setTheme(t=>t==='dark'?'light':'dark')}>
@@ -65,7 +65,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/scan" replace />} />
             <Route path="/practice" element={<PracticeTestPage appState={appState} />} />
-            <Route path="/scan" element={<ScanPage appState={appState} />} />
+            <Route path="/scan" element={<V26ScanPage appState={appState} />} />
             <Route path="/results" element={<ResultsPage appState={appState} />} />
             <Route path="/diagnostics" element={<DiagnosticsPage appState={appState} />} />
           </Routes>

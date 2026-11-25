@@ -1,7 +1,7 @@
 {
   "name": "sfg-omr-lab",
   "private": true,
-  "version": "2.5.2-experimental.3",
+  "version": "2.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,7 +21,11 @@
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.6"
+    "react-router-dom": "^7.18.6",
+    "@banou/opencv-wasm": "0.0.6",
+    "scanic": "1.8.0",
+    "scanic-ml": "0.2.0",
+    "opencv-js-wasm": "4.12.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

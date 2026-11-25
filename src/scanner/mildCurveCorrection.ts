@@ -47,6 +47,18 @@ export const smoothDrift=(control:Drift[],row:number):{dx:number;dy:number}=>{
   }
   return {dx:0,dy:0};
 };
+/** Interpolate only already-sorted controls; no array copy or sort per image row. */
+export const smoothDriftSorted = (a:readonly Drift[],row:number):{dx:number;dy:number} => {
+  if(!a.length)return {dx:0,dy:0};
+  if(row<=a[0].row)return {dx:a[0].dx,dy:a[0].dy};
+  if(row>=a[a.length-1].row)return {dx:a[a.length-1].dx,dy:a[a.length-1].dy};
+  let lo=0,hi=a.length-1;
+  while(lo+1<hi){const mid=(lo+hi)>>1;if(a[mid].row<row)lo=mid;else hi=mid;}
+  const gap=a[hi].row-a[lo].row;
+  if(gap<=0)return {dx:a[lo].dx,dy:a[lo].dy};
+  const t=(row-a[lo].row)/gap;
+  return {dx:a[lo].dx+(a[hi].dx-a[lo].dx)*t,dy:a[lo].dy+(a[hi].dy-a[lo].dy)*t};
+};
 /** Reject corrections that are implausibly large or change too fast.
  * This is not a validation of registration, just a safety bound. */
 export function isPlausibleDrift(control:Drift[],maxDx:number,maxDy:number):boolean{
@@ -211,14 +223,17 @@ export function correctMildPageWarp(rectified:any,dpi:number,
     const lastY=mmToPx(OMR_LAYOUT.answers.rowStartY+
       24*OMR_LAYOUT.answers.rowSpacingY,dpi);
     const fadeTop=firstY-mmToPx(18,dpi),fadeBottom=lastY+mmToPx(18,dpi);
+    const sortedLeft=[...controls.left].sort((a,b)=>a.row-b.row);
+    const sortedRight=[...controls.right].sort((a,b)=>a.row-b.row);
+    const invSpan=xR===xL?0:1/(xR-xL);
     for(let y=0;y<rectified.rows;y++){
       const row=(y/mmToPx(1,dpi)-OMR_LAYOUT.answers.rowStartY)/
         OMR_LAYOUT.answers.rowSpacingY;
-      const l=smoothDrift(controls.left,row),r=smoothDrift(controls.right,row);
+      const l=smoothDriftSorted(sortedLeft,row),r=smoothDriftSorted(sortedRight,row);
       const fade=y<firstY?Math.max(0,Math.min(1,(y-fadeTop)/(firstY-fadeTop))):
         y>lastY?Math.max(0,Math.min(1,(fadeBottom-y)/(fadeBottom-lastY))):1;
       for(let x=0;x<rectified.cols;x++){
-        const t=Math.max(0,Math.min(1,(x-xL)/(xR-xL)));
+        const t=Math.max(0,Math.min(1,(x-xL)*invSpan));
         const dx=(l.dx+(r.dx-l.dx)*t)*fade;
         const dy=(l.dy+(r.dy-l.dy)*t)*fade;
         const k=y*rectified.cols+x;

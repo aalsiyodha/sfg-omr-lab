@@ -2,6 +2,11 @@ import type { ScanResult, IntermediateImages, QuestionResult, MarkerDetectionRes
 import { loadImageFromFile, validateImage } from './imageLoader';
 import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
+import { detectCoarseToFineCorners } from './coarseToFineCorners';
+import { fitRobustSheetWarp, type FusionEvidence } from './robustSheetHomography';
+import {discoverUpperPairs} from './partialMarkerRescue';
+import { measureOpenCv5Simd } from './opencv5SimdLab';
+import { measureTtop32Fork } from './ttop32ForkLab';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
@@ -52,13 +57,14 @@ type Hypothesis =
   | { kind: 'corner'; name: string; markers: MarkerDetectionResult }
   | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
   | { kind: 'aruco'; name: string; markers: ArucoRegistration }
-  | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> };
+  | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> }
+  | { kind: 'fusion'; name: string; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
 /** Deduplicate only EXACT reference coordinates on the SAME source image.
  * No near-match tolerance: a subpixel difference can affect printed rings.
  * All QR and timing gates are still enforced for the first occurrence.
  */
 function geometryFingerprint(h:Hypothesis):string|null {
-  if(h.kind==='hybrid')return null;
+  if(h.kind==='hybrid'||h.kind==='fusion')return null;
   if(h.kind==='corner')return JSON.stringify(['corner',h.markers.topLeft,
     h.markers.topRight,h.markers.bottomLeft,h.markers.bottomRight]);
   if(h.kind==='midpoint')return JSON.stringify(['midpoint',h.markers.top,
@@ -88,10 +94,36 @@ function disposeAlignment(alignment: AcceptedAlignment): void {
  * The original sheet has a unique QR and 50 timing marks, so a geometrically
  * plausible but incorrect set of squares must not be trusted (Test 4).
  */
+/** Decode only the expected 25mm QR patch from the rectified CV Mat.
+ * This avoids rendering/encoding the entire A4 image during failed probes.
+ * The existing regional jsQR fallback and strict SFGOMR1: parser are reused.
+ */
+function decodeWarpedQrAt(mat:any,xMm:number,yMm:number,sizeMm:number,dpi:number):QRStatus {
+  const scale=dpi/25.4,padMm=2;
+  const x=Math.max(0,Math.round((xMm-padMm)*scale));
+  const y=Math.max(0,Math.round((yMm-padMm)*scale));
+  const side=Math.round((sizeMm+2*padMm)*scale);
+  if(x+side>mat.cols||y+side>mat.rows||side<=0)
+    return {found:false,raw:null,valid:false,studentId:null,
+      error:'Expected QR region outside registered A4 page'};
+  let crop:any=null;
+  try{
+    crop=mat.roi(new cv.Rect(x,y,side,side));
+    const canvas=document.createElement('canvas');
+    canvas.width=side;canvas.height=side;
+    cv.imshow(canvas,crop);
+    // In a 25.25mm crop, the printed QR begins 2mm from its top-left.
+    // decodeQRFromRegion preserves all its normal low-contrast rescue steps.
+    return decodeQRFromRegion(canvas,padMm,padMm,sizeMm,dpi);
+  }finally{crop?.delete?.();}
+}
+
 type RegistrationProbe = {
   phase:'warp'|'qr'|'timing'|'accepted'|'error';
   reason:string;qrValid:boolean;
   timing:number;left:number;right:number;
+  warpMs?:number;qrMs?:number;previewMs?:number;
+  fusionEvidence?:FusionEvidence;
 };
 function evaluateHypothesis(
   source: HTMLCanvasElement,
@@ -99,46 +131,84 @@ function evaluateHypothesis(
   dpi: number,
   curveBudget: { remaining: number },
   allowQrlessProvisional = false,
-  evidence?: RegistrationProbe
+  evidence?: RegistrationProbe,
+  fastQrRoi = true
 ): AcceptedAlignment | null {
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
   let keep = false;
+  const warpStart=performance.now();
   if(evidence){evidence.phase='warp';evidence.reason='Warp did not produce an image';}
   try {
     persp = hypothesis.kind === 'corner'
-      ? correctPerspective(source, hypothesis.markers)
+      ? correctPerspective(source, hypothesis.markers, !fastQrRoi)
       : hypothesis.kind === 'midpoint'
-      ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
+      ? correctPerspectiveFromMidpoints(source, hypothesis.markers, !fastQrRoi)
       : hypothesis.kind === 'hybrid'
       ? hypothesis.qrLocated
-         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco)
-         : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco)
-      : correctPerspectiveFromArucos(source,hypothesis.markers);
+         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
+         : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,!fastQrRoi)
+      : hypothesis.kind === 'fusion'
+      ? fitRobustSheetWarp(source,hypothesis.corners,hypothesis.midpoint,
+          hypothesis.aruco,dpi,(fusion)=>{
+          if(evidence)evidence.fusionEvidence=fusion;
+          logger.info('perspective','v2.5.3 robust homography evidence',{...fusion});
+        })?.perspective ?? {corrected:null,correctedDataUrl:'',
+            transform:null,success:false,error:'RANSAC failed independent marker agreement'}
+      : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
+    if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
+    // Only Experimental 4's failure-only partial-ArUco candidates receive
+    // this cheap preflight. A real verified 48+/50 timing lattice cannot
+    // fail these deliberately permissive preliminary bounds.
+    if(hypothesis.name.startsWith('partial-aruco/')){
+      let preflight:any=null;
+      try{
+        preflight=new cv.Mat();
+        cv.cvtColor(persp.corrected,preflight,cv.COLOR_RGBA2GRAY);
+        const t=verifyTimingMarks(preflight,dpi);
+        const possible=t.matched>=16&&t.leftMatched>=5&&t.rightMatched>=5;
+        logger.info('perspective','v2.5.4 partial-ArUco timing preflight',{
+          method:hypothesis.name,matched:t.matched,
+          left:t.leftMatched,right:t.rightMatched,passed:possible,
+          note:'Cheap rejection only; QR + full dual timing remain mandatory for acceptance'
+        });
+        if(!possible){
+          if(evidence){evidence.phase='timing';evidence.timing=t.matched;
+            evidence.left=t.leftMatched;evidence.right=t.rightMatched;
+            evidence.reason='Partial ArUco candidate rejected by permissive preliminary timing';}
+          return null;
+        }
+      }finally{cleanupMats(preflight);}
+    }
+    const qrStart=performance.now();
     if(evidence){evidence.phase='qr';evidence.reason='QR not yet independently verified';}
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
     canvas.height = persp.corrected.rows;
-    cv.imshow(canvas, persp.corrected);
-
-    let qr = decodeQRFromRegion(
-      canvas, OMR_LAYOUT.qr.xMm, OMR_LAYOUT.qr.yMm, OMR_LAYOUT.qr.sizeMm, dpi
-    );
+    if(!fastQrRoi)cv.imshow(canvas,persp.corrected);
+    let qr=fastQrRoi
+      ?decodeWarpedQrAt(persp.corrected,OMR_LAYOUT.qr.xMm,
+        OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi)
+      :decodeQRFromRegion(canvas,OMR_LAYOUT.qr.xMm,
+        OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
     let rotated = false;
     if (!qr.valid) {
       const x = OMR_LAYOUT.page.widthMm - OMR_LAYOUT.qr.xMm - OMR_LAYOUT.qr.sizeMm;
       const y = OMR_LAYOUT.page.heightMm - OMR_LAYOUT.qr.yMm - OMR_LAYOUT.qr.sizeMm;
-      const opposite = decodeQRFromRegion(canvas, x, y, OMR_LAYOUT.qr.sizeMm, dpi);
+      const opposite=fastQrRoi?decodeWarpedQrAt(persp.corrected,x,y,OMR_LAYOUT.qr.sizeMm,dpi):decodeQRFromRegion(canvas,x,y,OMR_LAYOUT.qr.sizeMm,dpi);
       if (opposite.valid) {
         cv.rotate(persp.corrected, persp.corrected, cv.ROTATE_180);
-        cv.imshow(canvas, persp.corrected);
-        qr = decodeQRFromRegion(
-          canvas, OMR_LAYOUT.qr.xMm, OMR_LAYOUT.qr.yMm, OMR_LAYOUT.qr.sizeMm, dpi
-        );
+        if(!fastQrRoi)cv.imshow(canvas,persp.corrected);
+        qr=fastQrRoi
+          ?decodeWarpedQrAt(persp.corrected,OMR_LAYOUT.qr.xMm,
+            OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi)
+          :decodeQRFromRegion(canvas,OMR_LAYOUT.qr.xMm,
+            OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
         rotated = true;
       }
     }
+    if(evidence)evidence.qrMs=Math.round(performance.now()-qrStart);
     if(evidence){evidence.qrValid=qr.valid;evidence.reason=qr.valid?'QR valid; checking timing':'QR invalid at both expected corners';}
     if (!qr.valid && allowQrlessProvisional && !rotated) {
       // Independent fallback for READ-ONLY provisional measurements. Never
@@ -161,6 +231,7 @@ function evaluateHypothesis(
         if(strongTiming&&stripValid){
           gray=candidateGray;candidateGray=null;keep=true;
           logger.warning('perspective',`${hypothesis.name}: PROVISIONAL ONLY — QR not decoded; scoring prohibited`);
+          cv.imshow(canvas,persp.corrected);
           return {hypothesis,perspective:persp,gray,canvas,qr,check:timing,
             rotated:false,provisional:true};
         }
@@ -241,7 +312,7 @@ function evaluateHypothesis(
             if(shouldAdoptTimingRefinement(check,updatedCheck)){
               cleanupMats(gray,persp.corrected);
               persp.corrected=rescued.corrected;
-              persp.correctedDataUrl=candidate.toDataURL('image/png');
+              persp.correctedDataUrl=fastQrRoi?'':candidate.toDataURL('image/png');
               gray=updatedGray;updatedGray=null;
               cv.imshow(canvas,persp.corrected);
               check=updatedCheck;
@@ -303,7 +374,7 @@ function evaluateHypothesis(
               qrIdentityUnchanged:true});
             if(after.passed && after.matched>check.matched &&
                holdout.left>=8 && holdout.right>=8){
-              const correctedUrl=candidate.toDataURL('image/png');
+              const correctedUrl=fastQrRoi?'':candidate.toDataURL('image/png');
               cv.imshow(canvas,mesh.corrected);
               cleanupMats(gray,persp.corrected);
               persp.corrected=mesh.corrected;
@@ -333,6 +404,10 @@ function evaluateHypothesis(
     if(evidence){evidence.phase='accepted';evidence.reason='QR valid and timing accepted';
       evidence.qrValid=qr.valid;evidence.timing=check.matched;
       evidence.left=check.leftMatched;evidence.right=check.rightMatched;}
+    // The verified image is rendered once, and only when actually selected.
+    const previewStart=performance.now();
+    cv.imshow(canvas,persp.corrected);
+    if(evidence)evidence.previewMs=Math.round(performance.now()-previewStart);
     keep = true;
     return { hypothesis, perspective: persp, gray, canvas, qr, check, rotated };
   } catch (error) {
@@ -349,6 +424,11 @@ export interface ScanModeOptions {
   proofscan?: boolean;
   proofmodel?: boolean;
   proofmesh?: boolean;
+  fastQrRoi?: boolean;
+  coarseToFine?: boolean;
+  robustFusion?: boolean;
+  simdProbe?: boolean;
+  ttopProbe?: boolean;
 }
 export async function runFullScan(
   file: File,
@@ -377,6 +457,15 @@ export async function runFullScan(
   logger.info('loading', `Image loaded: ${loaded.width}×${loaded.height}px`, { validation });
   onProgress?.({ stage: 'Preparing grayscale and threshold images…', percent: 15 });
 
+  if(options?.simdProbe){
+    const simd=await measureOpenCv5Simd(loaded.canvas);
+    logger.info('preprocessing','v2.5.3 OpenCV 5 SIMD separate runtime probe',{...simd});
+  }
+  if(options?.ttopProbe){
+    const fork=await measureTtop32Fork(loaded.canvas);
+    logger.info('preprocessing','v2.5.5 ttop32 OpenCV 4.12.0 WASM isolated runtime benchmark',{...fork,
+      scoringRuntimeUnchanged:true,qrTimingGatesUnchanged:true});
+  }
   const preprocessed = preprocessImage(loaded.canvas);
   finishStage('preprocessing');
   let selected: AcceptedAlignment | null = null;
@@ -394,8 +483,21 @@ export async function runFullScan(
       fallbackDiscoveryTriggered:false,fastPathVerified:false,
       hypothesesEvaluated:0};
     const cornerStart=Date.now();
-    const primary=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
+    const coarse=options?.coarseToFine!==false
+      ?detectCoarseToFineCorners(preprocessed.thresholded,loaded.width,loaded.height)
+      :null;
+    const primary=coarse?.markers.found?coarse.markers
+      :detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
     markerProfile.cornerDetectionMs=Date.now()-cornerStart;
+    logger.info('markerDetection','v2.5.3 coarse-to-fine corner evidence',{
+      enabled:options?.coarseToFine!==false,coarse:coarse?.stats??null,
+      source:coarse?.markers.found?'coarse-refined':'legacy/full-resolution',
+      originalPixels:loaded.width*loaded.height,
+      coarsePixels:coarse?coarse.stats.coarseWidth*coarse.stats.coarseHeight:null,
+      legacyRescueAvailable:true});
+    logger.info('perspective','v2.5.3 registration optimization mode',{fastQrRoi:options?.fastQrRoi!==false,
+      method:options?.fastQrRoi===false?'v3 legacy full-page PNG and QR scan':'ROI-only QR + deferred preview PNG',
+      gates:'QR identity and 25+25 timing unchanged'});
     const dpi=getSettings().scanDpi;
     const curveBudget={remaining:1};
     let arucoAdaptive:ArucoRegistration={found:false,count:0,points:{}};
@@ -405,6 +507,8 @@ export async function runFullScan(
       method:string;source:string;durationMs:number;phase:string;reason:string;
       qrValid:boolean;timing:number;left:number;right:number;
       accepted:boolean;provisional:boolean;
+      warpMs?:number;qrMs?:number;previewMs?:number;
+      fusionEvidence?:FusionEvidence;
     }[]=[];
     const traceRegistration=(
       source:HTMLCanvasElement,hypothesis:Hypothesis,dpi:number,
@@ -413,7 +517,8 @@ export async function runFullScan(
       const t=Date.now();
       const evidence:RegistrationProbe={phase:'warp',reason:'Not attempted',
         qrValid:false,timing:0,left:0,right:0};
-      const result=evaluateHypothesis(source,hypothesis,dpi,budget,allowProvisional,evidence);
+      const result=evaluateHypothesis(source,hypothesis,dpi,budget,allowProvisional,evidence,
+        options?.fastQrRoi!==false);
       const item={
         method:hypothesis.name,source:source===loaded.canvas?'original':'recovered',
         durationMs:Date.now()-t,phase:evidence.phase,reason:evidence.reason,
@@ -421,7 +526,9 @@ export async function runFullScan(
         timing:result?.check.matched??evidence.timing,
         left:result?.check.leftMatched??evidence.left,
         right:result?.check.rightMatched??evidence.right,
-        accepted:Boolean(result),provisional:Boolean(result?.provisional)
+        accepted:Boolean(result),provisional:Boolean(result?.provisional),
+        warpMs:evidence.warpMs,qrMs:evidence.qrMs,previewMs:evidence.previewMs,
+        fusionEvidence:evidence.fusionEvidence
       };
       registrationAttempts.push(item);
       logger.info('perspective','v2.5.2 detailed registration candidate',item);
@@ -452,6 +559,39 @@ export async function runFullScan(
           left:candidate.check.leftMatched,right:candidate.check.rightMatched,qrValid:candidate.qr.valid});
       }else if(!candidate)hypotheses.push(hypothesis);
     }
+    // Fail back to the established full-resolution corner selection when the
+    // coarse estimate fails QR verification; never silently discard valid sheets.
+    if(coarse?.markers.found&&(!selected||!canStopUnifiedRegistration(
+      selected.qr.valid,selected.check.matched,
+      selected.check.leftMatched,selected.check.rightMatched))){
+      const legacy=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
+      if(legacy.found){
+        const alternative:Hypothesis={kind:'corner',name:'corner/full-resolution-fallback',markers:legacy};
+        const fingerprint=geometryFingerprint(alternative);
+        if(fingerprint&&!usedGeometries.has(fingerprint)){
+          usedGeometries.add(fingerprint);fastWarpAttempts++;
+          markerProfile.hypothesesEvaluated++;
+          const fallback=traceRegistration(loaded.canvas,alternative,dpi,curveBudget);
+          const previousScore=selected?registrationScore({kind:'corner',
+            timingMatched:selected.check.matched,leftMatched:selected.check.leftMatched,
+            rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid}):-Infinity;
+          const newScore=fallback?registrationScore({kind:'corner',
+            timingMatched:fallback.check.matched,leftMatched:fallback.check.leftMatched,
+            rightMatched:fallback.check.rightMatched,qrVerified:fallback.qr.valid}):-Infinity;
+          const adopt=Boolean(fallback&&newScore>previousScore);
+          logger.info('markerDetection','v2.5.3 full-resolution corner retry',{
+            previous:'coarse-refined',result:fallback?'verified':'unverified',
+            adopted:adopt,priorTiming:selected?.check.matched??null,
+            candidateTiming:fallback?.check.matched??null,
+            sameSource:false});
+          if(adopt&&fallback){
+            if(selected)disposeAlignment(selected);
+            selected=fallback;
+          }else if(fallback)disposeAlignment(fallback);
+          else hypotheses.push(alternative);
+        }
+      }
+    }
     if(!selected||!canStopUnifiedRegistration(selected.qr.valid,selected.check.matched,
       selected.check.leftMatched,selected.check.rightMatched)){
     markerProfile.fallbackDiscoveryTriggered=true;
@@ -468,6 +608,20 @@ export async function runFullScan(
     // corner quadrilateral can be geometrically plausible (Test 4 v1.6).
     const mid = detectMidpointMarkers(preprocessed.thresholded, loaded.width, loaded.height);
     if (mid.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/adaptive', markers: mid });
+    const partialArucoCount=Object.keys(arucoAdaptive.points).length;
+    const fusionAnchors=(primary.found?4:0)+(mid.found?4:0)+partialArucoCount;
+    const fusionFamilies=(primary.found?1:0)+(mid.found?1:0)+(partialArucoCount?1:0);
+    const fusionEligible=options?.robustFusion!==false&&fusionAnchors>=6&&fusionFamilies>=2;
+    logger.info('markerDetection','v2.5.4 RANSAC fusion eligibility',{
+      enabled:options?.robustFusion!==false,arucoCount:partialArucoCount,
+      arucoFound:arucoAdaptive.found,midpointCount:mid.count,
+      midpointFound:mid.found,cornerCount:primary.count,
+      anchors:fusionAnchors,families:fusionFamilies,eligible:fusionEligible,
+      note:'Partial independently decoded ArUco IDs permitted; QR and timing remain mandatory'});
+    if(fusionEligible){
+      hypotheses.push({kind:'fusion',name:'fusion/ransac-partial-aruco',
+        corners:primary,midpoint:mid,aruco:arucoAdaptive});
+    }
     if(arucoMidpointPrediction){
       const guided=detectMidpointMarkers(preprocessed.thresholded,loaded.width,loaded.height,arucoMidpointPrediction);
       logger.info('markerDetection','ArUco-guided midpoint square selection',{
@@ -554,12 +708,12 @@ export async function runFullScan(
           ? { top:hypothesis.markers.top, right:hypothesis.markers.right, bottom:hypothesis.markers.bottom, left:hypothesis.markers.left }
           : hypothesis.kind === 'aruco'
           ? { ids:Object.keys(hypothesis.markers.points),points:hypothesis.markers.points }
-          : {hybrid:true,anchors:hypothesis.aruco.points});
+          : {fusion:hypothesis.kind==='fusion',anchors:hypothesis.aruco.points});
       // Clean photos should not pay for two extra full-resolution warps.
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
       if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name,
-        hypothesis.kind==='hybrid'?'corner':hypothesis.kind)) {
+        hypothesis.kind==='hybrid'||hypothesis.kind==='fusion'?'corner':hypothesis.kind)) {
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
@@ -572,7 +726,7 @@ export async function runFullScan(
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
       const rank = (a: AcceptedAlignment) => registrationScore({
-        kind: a.hypothesis.kind==='hybrid'?'corner':a.hypothesis.kind, timingMatched: a.check.matched,
+        kind: a.hypothesis.kind==='hybrid'||a.hypothesis.kind==='fusion'?'corner':a.hypothesis.kind, timingMatched: a.check.matched,
         leftMatched: a.check.leftMatched, rightMatched: a.check.rightMatched,
         qrVerified: a.qr.valid,
       });
@@ -624,7 +778,7 @@ export async function runFullScan(
           rightMatched:attempt.check.rightMatched,
           qrVerified:attempt.qr.valid});
         const prior=selected?registrationScore({
-          kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
+          kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
           leftMatched:selected.check.leftMatched,
           rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid,
         }): -Infinity;
@@ -697,6 +851,53 @@ export async function runFullScan(
           left:accepted.check.leftMatched,right:accepted.check.rightMatched});
         break;
       }
+    }
+
+    // EXPERIMENT 4: two independently decoded bottom ArUco IDs suffice to
+    // propose alternative top corner squares. On clean images this never runs.
+    if(!selected && ((arucoAdaptive.points[2]&&arucoAdaptive.points[3]) ||
+       (arucoOtsu.points[2]&&arucoOtsu.points[3]))){
+      const start=performance.now();
+      const rescueOtsu=new cv.Mat();
+      try{
+        cv.threshold(preprocessed.gray,rescueOtsu,0,255,cv.THRESH_BINARY_INV|cv.THRESH_OTSU);
+        const sources=[
+          {name:'adaptive',binary:preprocessed.thresholded,aruco:arucoAdaptive},
+          {name:'Otsu',binary:rescueOtsu,aruco:arucoOtsu}
+        ];
+        const candidates=sources.flatMap(source=>{
+          const discovered=discoverUpperPairs(source.binary,source.aruco,source.name,8);
+          logger.info('markerDetection','v2.5.4 partial-ArUco upper-corner discovery',{
+            source:source.name,...discovered.evidence,
+            proposals:discovered.candidates.map(p=>({
+              topLeft:p.topLeft,topRight:p.topRight,rankScore:p.score
+            }))
+          });
+          return discovered.candidates.map(p=>({...p,aruco:source.aruco}));
+        }).sort((a,b)=>a.score-b.score);
+        const visited=new Set<string>();
+        let evaluated=0;
+        for(const p of candidates){
+          if(evaluated>=12)break;
+          const fingerprint=JSON.stringify([p.topLeft,p.topRight,p.aruco.points[2],p.aruco.points[3]]);
+          if(visited.has(fingerprint))continue;
+          visited.add(fingerprint);evaluated++;
+          const hypothesis:Hypothesis={kind:'hybrid',
+            name:'partial-aruco/'+p.source+'/upper-'+evaluated,
+            corners:p.markers,aruco:p.aruco};
+          warpAttempts++;
+          const attempt=traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget);
+          if(attempt){selected=attempt;break;}
+        }
+        logger.info('perspective','v2.5.4 partial-ArUco recovery summary',{
+          proposed:candidates.length,evaluated,verified:Boolean(selected),
+          selected:selected?.hypothesis.name??null,
+          durationMs:Math.round(performance.now()-start),
+          note:'All candidates require SFGOMR1 identity and independent dual timing acceptance'
+        });
+      }catch(error){
+        logger.warning('perspective','v2.5.4 partial-ArUco recovery exception',{reason:String(error)});
+      }finally{rescueOtsu.delete();}
     }
 
     // Geometric QR finder search on the ORIGINAL photo is independent of
@@ -783,11 +984,11 @@ export async function runFullScan(
             const candidate=traceRegistration(rough.canvas,hypothesis,dpi,curveBudget);
             if(!candidate)continue;
             const score=registrationScore({
-              kind:candidate.hypothesis.kind==='hybrid'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
+              kind:candidate.hypothesis.kind==='hybrid'||candidate.hypothesis.kind==='fusion'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
               leftMatched:candidate.check.leftMatched,rightMatched:candidate.check.rightMatched,
               qrVerified:candidate.qr.valid});
             const previous=selected?registrationScore({
-              kind:selected.hypothesis.kind==='hybrid'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
+              kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
               leftMatched:selected.check.leftMatched,rightMatched:selected.check.rightMatched,
               qrVerified:selected.qr.valid}):-Infinity;
             if(score>previous){

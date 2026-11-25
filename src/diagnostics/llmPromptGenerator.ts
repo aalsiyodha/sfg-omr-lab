@@ -18,6 +18,8 @@ interface LLMReportOptions {
 const EXPERIMENT_LOGS=[
   'User-selected scan controls',
   'Registration engine budget and measured work',
+  'v2.5.3 OpenCV 5 SIMD separate runtime probe',
+  'v2.5.5 ttop32 OpenCV 4.12.0 WASM isolated runtime benchmark',
   'v2.5.2 withheld-print-validated local mesh',
   'v2.5.2 masked latent template predictor',
   'v2.5.2 synthetic-trained closed-set head',

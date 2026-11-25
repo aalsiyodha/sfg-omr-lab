@@ -10,7 +10,7 @@ import type { ScanResult, LogEntry } from '../types';
 export type DualScanComparison = {
   baseline:ScanResult;
   enhanced:ScanResult;
-  enhancedOptions:{proofscan:boolean;proofmodel:boolean;proofmesh:boolean};
+  enhancedOptions:{proofscan:boolean;proofmodel:boolean;proofmesh:boolean;fastQrRoi?:boolean;coarseToFine?:boolean;robustFusion?:boolean;simdProbe?:boolean};
   firstPass:'baseline'|'enhanced';
 };
 function findLog(result:ScanResult,message:string):LogEntry|undefined {
@@ -74,12 +74,14 @@ export function buildDualScanReport(
   const keys=[...new Set([...Object.keys(stagesA??{}),...Object.keys(stagesB??{})])];
   const baselineMs=baseline.processingTimeMs,enhancedMs=enhanced.processingTimeMs;
   const lines=[
-    'SFG OMR LAB — SINGLE-UPLOAD TWO-PASS COMPARISON',
+    'SFG OMR LAB — v2.5.4 ROI BASELINE vs PARTIAL-GEOMETRY RESCUE A/B',
     'Same image; sequential A/B with alternating run order.',
     'Actual first pass='+comparison.firstPass+'; second pass='+
       (comparison.firstPass==='baseline'?'enhanced':'baseline'),
     'File='+filename+' | SHA-256='+fmt(fileSha256),
-    'Experimental options='+JSON.stringify(enhancedOptions),
+    'Enhanced ROI optimization='+JSON.stringify(enhancedOptions)+
+    ' | Baseline: fastQrRoi=true; coarseToFine=false; robustFusion=false; SIMD=false; AI OFF',
+    'SIMD NOTE: Both A/B passes use the existing OpenCV.js scoring runtime. The optional OpenCV 5 SIMD probe is OFF in the A/B test and must be run separately.',
     'WARNING: Order alternates across consecutive comparisons in one page session. A single pair cannot establish a speed gain.',
     'WARNING: Answer agreement is not ground truth; inspect the actual sheet for correctness.',
     '',
@@ -89,7 +91,9 @@ export function buildDualScanReport(
       ' (enhanced minus baseline; negative means shorter observed time)',
     'Registration changed='+String(baseline.registrationMethod!==enhanced.registrationMethod),
     'QR identity preserved='+String(baseline.qrRaw===enhanced.qrRaw&&baseline.qrValid&&enhanced.qrValid),
-    'Test ID preserved='+String(baseline.testId===enhanced.testId),
+    'Test ID preserved='+String(baseline.testId!==null&&enhanced.testId!==null&&baseline.testId===enhanced.testId),
+    'Comparison result='+((!a.qrValid||!b.qrValid)?'INCONCLUSIVE — one or both scans failed identity verification':
+      changed.length===0?'PARITY ONLY — independently check answer accuracy':'ANSWER DIFFERENCES — review before promotion'),
     'Answer/status changes='+changed.length,
     ...changed.map(row=>'  Q'+String(row.question).padStart(2,'0')+': '+JSON.stringify(row)),
     '',
@@ -99,6 +103,17 @@ export function buildDualScanReport(
       ' delta='+((stagesB?.[key]??0)-(stagesA?.[key]??0))),
     '',
     'PER-REGISTRATION CANDIDATE TRACE:',
+    'FALLBACK GEOMETRY EVIDENCE (per-pass):',
+    ...['Baseline','Enhanced'].flatMap((label,i)=>{
+      const result=i===0?baseline:enhanced;
+      return [label+' coarse='+JSON.stringify(findLog(result,'v2.5.3 coarse-to-fine corner evidence')?.data??null),
+        label+' fullResolutionRetry='+JSON.stringify(findLog(result,'v2.5.3 full-resolution corner retry')?.data??null),
+        label+' RANSAC eligibility='+JSON.stringify(findLog(result,'v2.5.3 RANSAC fusion eligibility')?.data??null),
+        label+' RANSAC trials='+JSON.stringify(result.stageLogs.filter(l=>l.message==='v2.5.3 robust homography evidence').map(l=>l.data)),
+        label+' Partial ArUco upper-corner discovery='+JSON.stringify(result.stageLogs.filter(l=>l.message==='v2.5.4 partial-ArUco upper-corner discovery').map(l=>l.data)),
+        label+' Partial ArUco outcome='+JSON.stringify(findLog(result,'v2.5.4 partial-ArUco recovery summary')?.data??null)];
+    }),
+    '',
     ...['Baseline','Enhanced'].flatMap((label,i)=>{
       const result=i===0?baseline:enhanced;
       const trace=result.stageLogs.filter(l=>l.message==='v2.5.2 detailed registration candidate');
@@ -109,6 +124,12 @@ export function buildDualScanReport(
     'ENHANCED EXPERIMENT EVIDENCE:',
     ...[
       'User-selected scan controls',
+      'v2.5.3 coarse-to-fine corner evidence',
+      'v2.5.3 full-resolution corner retry',
+      'v2.5.4 RANSAC fusion eligibility',
+      'v2.5.4 partial-ArUco recovery summary',
+      'v2.5.3 robust homography evidence',
+      'v2.5.3 OpenCV 5 SIMD separate runtime probe',
       'v2.5.2 withheld-print-validated local mesh',
       'v2.5.2 masked latent template predictor',
       'v2.5.2 synthetic-trained closed-set head',

@@ -1,7 +1,17 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
 declare const __APP_BUILD_META__: { version:string; source:'vercel'|'local-dev'|'local-build'; environment:string; sha:string; buildId:string; builtAt:string; dirty:boolean };
-export const APP_VERSION = version === '2.5.2-experimental.3'
+export const APP_VERSION = version === '2.6.0' ? 'v2.6 · Verified Scanner' : version === '2.5.5-experimental.1'
+  ? 'v2.5.5 Experimental 5 · OpenCV Runtime Benchmark'
+  : version === '2.5.4-experimental.1'
+  ? 'v2.5.4 Experimental 4 · Partial-Marker Geometry Rescue'
+  : version === '2.5.3-experimental.3'
+  ? 'v2.5.3 Experimental 3 · Geometry Diagnostics Audited'
+  : version === '2.5.3-experimental.2'
+  ? 'v2.5.3 Experimental 2 · SIMD + Geometric Fusion Lab'
+  : version === '2.5.3-experimental.1'
+  ? 'v2.5.3 Experiment 1 · Fast QR ROI + Legacy Parity Lab'
+  : version === '2.5.2-experimental.3'
   ? 'v2.5.2 Experimental 3 · Adaptive Registration + A/B Crops'
   : version === '2.5.2-experimental.2'
   ? 'v2.5.2 Experimental 2 · Single Upload A/B Comparison'

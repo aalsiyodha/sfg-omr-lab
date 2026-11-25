@@ -772,3 +772,20 @@ body{background:var(--bg);color:var(--text-main);font-feature-settings:"ss01" on
 @media(prefers-reduced-motion:reduce){
   .product-theme-toggle,.product-hero .btn,.review-choice{transition:none}
 }
+
+
+/* v2.5.3 Geometry Lab — intentionally quiet UI refresh, both themes */
+.geometry-lab-options{
+ display:grid;gap:11px;margin:14px 0;padding:16px;
+ border:1px solid var(--border);border-radius:14px;
+ background:color-mix(in srgb,var(--card-bg) 94%,var(--primary) 6%);
+}
+.geometry-lab-heading{font-size:.7rem;letter-spacing:.13em;font-weight:750;color:var(--text-main)}
+.geometry-lab-heading span{letter-spacing:0;font-weight:450;font-size:.73rem;color:var(--text-muted);margin-left:8px}
+.geometry-lab-choice{display:flex;align-items:flex-start;gap:11px;padding:2px 0;cursor:pointer}
+.geometry-lab-choice input{margin-top:5px;accent-color:var(--primary);width:16px;height:16px;flex-shrink:0}
+.geometry-lab-choice span{display:grid;gap:2px}
+.geometry-lab-choice strong{font-size:.88rem;font-weight:620;color:var(--text-main)}
+.geometry-lab-choice small{color:var(--text-muted);line-height:1.5;font-size:.78rem}
+.geometry-lab-choice:has(input:disabled){opacity:.6}
+@media(max-width:540px){.geometry-lab-options{padding:12px}.geometry-lab-heading span{display:block;margin-left:0;margin-top:5px}}

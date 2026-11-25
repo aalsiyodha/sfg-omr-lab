@@ -25,7 +25,8 @@ function matToDataUrl(mat: any): string {
 
 export function correctPerspective(
   src: HTMLCanvasElement,
-  markers: MarkerDetectionResult
+  markers: MarkerDetectionResult,
+  serializePreview = true
 ): PerspectiveResult {
   if (!markers.found || markers.count < 4) {
     return { corrected: null, correctedDataUrl: '', transform: null, success: false,
@@ -68,7 +69,7 @@ export function correctPerspective(
     transform = cv.getPerspectiveTransform(srcPoints, dstPoints);
     corrected = new cv.Mat();
     cv.warpPerspective(srcMat, corrected, transform, new cv.Size(outW, outH));
-    const correctedDataUrl = matToDataUrl(corrected);
+    const correctedDataUrl = serializePreview ? matToDataUrl(corrected) : '';
     return { corrected, correctedDataUrl, transform, success: true };
   } catch (error) {
     if (corrected) corrected.delete();
@@ -88,7 +89,8 @@ export function correctPerspective(
  */
 export function correctPerspectiveFromMidpoints(
   src: HTMLCanvasElement,
-  markers: MidpointRegistration
+  markers: MidpointRegistration,
+  serializePreview = true
 ): PerspectiveResult {
   const missing = { corrected: null, correctedDataUrl: '', transform: null, success: false,
     error: markers.error || 'Four edge-midpoint reference squares could not be verified.' };
@@ -115,7 +117,7 @@ export function correctPerspectiveFromMidpoints(
     corrected = new cv.Mat();
     cv.warpPerspective(srcMat, corrected, transform, new cv.Size(w,h));
     return {
-      corrected, correctedDataUrl: matToDataUrl(corrected),
+      corrected, correctedDataUrl: serializePreview ? matToDataUrl(corrected) : '',
       transform, success: true
     };
   } catch (error) {
@@ -135,7 +137,8 @@ export function correctPerspectiveFromMidpoints(
  * verifies QR orientation and independent left/right timing rows.
  */
 export function correctPerspectiveFromArucos(
-  src:HTMLCanvasElement, markers:ArucoRegistration
+  src:HTMLCanvasElement, markers:ArucoRegistration,
+  serializePreview = true
 ):PerspectiveResult {
   if(!markers.found||ARUCO_MARKERS_MM.some(m=>!markers.points[m.id]))
     return {corrected:null,correctedDataUrl:'',transform:null,success:false,
@@ -158,7 +161,7 @@ export function correctPerspectiveFromArucos(
     cv.warpPerspective(srcMat,corrected,transform,
       new cv.Size(Math.round(mmToPx(OMR_LAYOUT.page.widthMm,dpi)),
         Math.round(mmToPx(OMR_LAYOUT.page.heightMm,dpi))));
-    return {corrected,correctedDataUrl:matToDataUrl(corrected),
+    return {corrected,correctedDataUrl:serializePreview ? matToDataUrl(corrected) : '',
       transform,success:true};
   }catch(error){
     corrected?.delete?.();transform?.delete?.();

@@ -53,8 +53,13 @@ export default function ScanPage({ appState }: Props) {
   const [proofscan, setProofscan] = useState(false);
   const [proofmodel, setProofmodel] = useState(false);
   const [proofmesh, setProofmesh] = useState(false);
+  const [fastQrRoi,setFastQrRoi]=useState(true);
+  const [coarseToFine,setCoarseToFine]=useState(true);
+  const [robustFusion,setRobustFusion]=useState(true);
+  const [simdProbe,setSimdProbe]=useState(false);
+  const [ttopProbe,setTtopProbe]=useState(false);
   const startedFileRef = useRef<File | null>(null);
-  const selectedModes: ScanModeOptions = { proofscan, proofmodel, proofmesh };
+  const selectedModes: ScanModeOptions = {proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,ttopProbe};
 
 
   const stopCamera = useCallback(() => {
@@ -165,8 +170,8 @@ export default function ScanPage({ appState }: Props) {
     if (!autoStart || !capturedFile || opencv !== 'ready' || isScanning ||
         startedFileRef.current === capturedFile) return;
     startedFileRef.current = capturedFile;
-    void scan(capturedFile, { proofscan, proofmodel, proofmesh }, dualCompare);
-  }, [autoStart, capturedFile, opencv, isScanning, scan, proofscan, proofmodel, proofmesh, dualCompare]);
+    void scan(capturedFile, {proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,ttopProbe}, dualCompare);
+  }, [autoStart, capturedFile, opencv, isScanning, scan,proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,ttopProbe,dualCompare]);
 
   const handleReset = () => {
     reset();
@@ -340,14 +345,49 @@ export default function ScanPage({ appState }: Props) {
             <label className="d-flex align-items-start gap-2 mb-2">
               <input type="checkbox" className="form-check-input mt-1" checked={dualCompare}
                 onChange={e=>setDualCompare(e.target.checked)}/>
-              <span><strong>One upload: compare baseline vs all enhancements</strong>
+              <span><strong>One upload: compare v2.5.3 baseline vs geometric lab</strong>
                 <small className="d-block text-secondary">
-                  Two sequential scans of the identical file. Automatically reports every changed answer,
-                  registration and processing-time difference, plus model decisions.
-                  Takes approximately twice the processing work.
+                  Two sequential scans with QR ROI unchanged. Compare original marker registration against coarse-to-fine and RANSAC fusion, alternating run order. OpenCV 5 SIMD is tested separately.
                 </small>
               </span>
             </label>
+            <label className="d-flex align-items-start gap-2 mb-2">
+              <input type="checkbox" className="form-check-input mt-1" checked={fastQrRoi}
+                disabled={dualCompare} onChange={e=>setFastQrRoi(e.target.checked)}/>
+              <span><strong>Fast QR region-only registration (v2.5.3)</strong>
+                <small className="d-block text-secondary">
+                  Avoid rendering and PNG-encoding the whole corrected A4 on failed attempts.
+                  Untick for the original v3 method. QR identity and both timing tracks still mandatory.
+                </small>
+              </span>
+            </label>
+            <div className="geometry-lab-options" aria-label="Geometric acceleration controls">
+              <div className="geometry-lab-heading">GEOMETRY LAB <span>Experimental · independently verified</span></div>
+              <label className="geometry-lab-choice">
+                <input type="checkbox" checked={coarseToFine} disabled={dualCompare}
+                  onChange={e=>setCoarseToFine(e.target.checked)}/>
+                <span><strong>Coarse-to-fine corners</strong>
+                  <small>Low-resolution discovery, then precise full-resolution markers</small></span>
+              </label>
+              <label className="geometry-lab-choice">
+                <input type="checkbox" checked={robustFusion} disabled={dualCompare}
+                  onChange={e=>setRobustFusion(e.target.checked)}/>
+                <span><strong>Robust multimarker geometry</strong>
+                  <small>RANSAC fusion after failure; QR and 50 timing checks remain mandatory</small></span>
+              </label>
+              <label className="geometry-lab-choice">
+                <input type="checkbox" checked={simdProbe} disabled={dualCompare}
+                  onChange={e=>setSimdProbe(e.target.checked)}/>
+                <span><strong>OpenCV 5 SIMD runtime probe</strong>
+                  <small>Optional independent @banou OpenCV 5 WASM grayscale benchmark; scoring stays unchanged</small></span>
+              </label>
+              <label className="geometry-lab-choice">
+                <input type="checkbox" checked={ttopProbe} disabled={dualCompare}
+                  onChange={e=>setTtopProbe(e.target.checked)}/>
+                <span><strong>ttop32 OpenCV 4.12.0 WASM benchmark</strong>
+                  <small>Isolated embedded-WASM engine; measures grayscale, threshold and warp separately from scanner. Reports cold load and errors. Does not change answers.</small></span>
+              </label>
+            </div>
             <label className="d-flex align-items-start gap-2">
               <input type="checkbox" className="form-check-input mt-1" checked={proofscan}
                 disabled={dualCompare}

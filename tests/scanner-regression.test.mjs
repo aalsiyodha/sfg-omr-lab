@@ -2055,7 +2055,7 @@ test('scan page: actual checkboxes wire all supported modes and autostart',()=>{
   assert.match(page,/Experimental decision model/);
   assert.match(page,/Validated local mesh correction/);
   assert.match(page,/startedFileRef\.current === capturedFile/);
-  assert.match(page,/void scan\(capturedFile, \{ proofscan, proofmodel, proofmesh \}, dualCompare\)/);
+  assert.match(page,/void scan\(capturedFile, \{proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,ttopProbe\}, dualCompare\)/);
   assert.match(hook,/runFullScan\(file, setProgress, options\)/);
   assert.match(engine,/options\?\.proofmesh/);
   assert.match(engine,/options\?\.proofmodel/);
@@ -2091,7 +2091,7 @@ test('v2.5.2 experiment v2 runs baseline and enhanced sequentially and reports d
   assert.match(hook,/const second=await runPass\(firstPass==='baseline'\?'enhanced':'baseline',2\)/);
   assert.ok(hook.indexOf('const first=await runPass')<
     hook.indexOf('const second=await runPass'));
-  assert.match(page,/One upload: compare baseline vs all enhancements/);
+  assert.match(page,/One upload: compare v2\.5\.3 baseline vs geometric lab/);
   assert.match(page,/Copy differences report/);
   assert.match(page,/buildDualScanReport/);
   assert.match(report,/PER-REGISTRATION CANDIDATE TRACE:/);
@@ -2140,7 +2140,7 @@ test('v2.5.2 experimental v3 prioritizes fully identified ArUco without dropping
 test('v2.5.2 experimental v3 keeps QR and timing hard gates in adaptive registration',()=>{
  const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
  assert.match(scan,/orderFallbackCandidates\(hypotheses/);
- assert.match(scan,/const result=evaluateHypothesis\(source,hypothesis,dpi,budget,allowProvisional,evidence\)/);
+ assert.match(scan,/const result=evaluateHypothesis\(source,hypothesis,dpi,budget,allowProvisional,evidence,/);
  assert.match(scan,/QR invalid at both expected corners/);
  assert.match(scan,/QR valid, timing gate rejected/);
  assert.match(scan,/for \(const hypothesis of routing\.candidates\)/);
@@ -2157,4 +2157,119 @@ test('v2.5.2 experimental v3 alternates baseline/enhanced order and collects dia
  assert.match(report,/Actual first pass=/);
  assert.match(page,/Download suspicious bubble crops/);
  assert.match(scanner,/makeReviewCropSheet\(chosen\.canvas,answers\)/);
+});
+
+test('v2.5.3 QR ROI A/B retains exact QR and independent timing safety gates',()=>{
+ const orchestrator=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const hook=readFileSync('src/hooks/useScanResult.ts','utf8');
+ const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+ const comparison=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
+ assert.match(orchestrator,/function decodeWarpedQrAt\(/);
+ assert.match(orchestrator,/crop=mat\.roi\(new cv\.Rect\(x,y,side,side\)\)/);
+ assert.match(orchestrator,/decodeQRFromRegion\(canvas,padMm,padMm,sizeMm,dpi\)/);
+ assert.match(orchestrator,/options\?\.fastQrRoi!==false/);
+ assert.match(orchestrator,/correctPerspective\(source, hypothesis\.markers, !fastQrRoi\)/);
+ assert.match(orchestrator,/verifyTimingMarks\(gray, dpi\)/);
+ assert.match(orchestrator,/canStopUnifiedRegistration/);
+ assert.match(orchestrator,/if \(!qr\.valid\)/);
+ assert.match(orchestrator,/const previewStart=performance\.now\(\)/);
+ assert.match(hook,/coarseToFine:false,robustFusion:false,simdProbe:false/);
+ assert.match(hook,/fastQrRoi:true/);
+ assert.match(hook,/const first=await runPass\(firstPass,1\)/);
+ assert.match(hook,/const second=await runPass\(firstPass==='baseline'\?'enhanced':'baseline',2\)/);
+ assert.match(page,/One upload: compare v2\.5\.3 baseline vs geometric lab/);
+ assert.match(comparison,/ROI BASELINE vs PARTIAL-GEOMETRY RESCUE A\/B/);
+});
+test('v2.5.3 avoids redundant PNG encoding during registration only when fast QR ROI enabled',()=>{
+ for(const file of [
+  'src/scanner/perspectiveCorrection.ts',
+  'src/scanner/hybridRegistration.ts',
+  'src/scanner/qrArucoRegistration.ts']){
+  const src=readFileSync(file,'utf8');
+  assert.match(src,/serializePreview\s*\?\s*[^\n]*toDataUrl|serializePreview\s*\?\s*[^\n]*toDataURL/i);
+ }
+ const orchestrator=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ assert.match(orchestrator,/if\(!fastQrRoi\)cv\.imshow\(canvas,persp\.corrected\)/);
+ assert.match(orchestrator,/cv\.imshow\(canvas,persp\.corrected\);\n    if\(evidence\)evidence\.previewMs/);
+});
+
+test('v2.5.3.2 geometry lab requires full-resolution refinement and independent QR/timing gates',()=>{
+ const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const coarse=readFileSync('src/scanner/coarseToFineCorners.ts','utf8');
+ const fused=readFileSync('src/scanner/robustSheetHomography.ts','utf8');
+ const simd=readFileSync('src/scanner/opencv5SimdLab.ts','utf8');
+ const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+ assert.match(coarse,/cv\.resize\(binary,small/);
+ assert.match(coarse,/cv\.findContours\(roi,contours/);
+ assert.match(scan,/corner\/full-resolution-fallback/);
+ assert.match(scan,/options\?\.coarseToFine!==false/);
+ assert.match(scan,/options\?\.robustFusion!==false/);
+ assert.match(fused,/cv\.findHomography\(pts,dst,cv\.RANSAC,7\)/);
+ assert.match(fused,/accepted\.length<5\|\|families\.length<2/);
+ assert.match(scan,/verifyTimingMarks\(gray, dpi\)/);
+ assert.match(simd,/initOpenCV\(\{wasmUrl:wasm\.default\}\)/);
+ assert.match(simd,/simd\.cvtColor\(src,gray,simd\.COLOR_RGBA2GRAY\)/);
+ assert.match(page,/OpenCV 5 SIMD runtime probe/);
+});
+
+test('geometry lab diagnostics report each fallback and genuine SIMD comparison',()=>{
+ const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const report=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
+ const fusion=readFileSync('src/scanner/robustSheetHomography.ts','utf8');
+ const simd=readFileSync('src/scanner/opencv5SimdLab.ts','utf8');
+ const coarse=readFileSync('src/scanner/coarseToFineCorners.ts','utf8');
+ assert.match(scan,/evidence\.fusionEvidence=fusion/);
+ assert.match(scan,/v2\.5\.3 robust homography evidence/);
+ assert.match(scan,/v2\.5\.3 full-resolution corner retry/);
+ assert.match(report,/FALLBACK GEOMETRY EVIDENCE/);
+ assert.match(report,/SIMD NOTE: Both A\/B passes use the existing OpenCV\.js scoring runtime/);
+ assert.match(report,/v2\.5\.3 OpenCV 5 SIMD separate runtime probe/);
+ assert.match(fusion,/typeof cv\.findHomography!=='function'/);
+ assert.match(fusion,/rejectedNames:anchors\.filter/);
+ assert.match(fusion,/RANSAC runtime exception/);
+ assert.match(coarse,/Refined marker quadruple failed convexity\/A4 geometry/);
+ assert.match(simd,/legacyGrayMs/);
+ assert.match(simd,/maxSampleDifference/);
+ assert.match(simd,/cv\.cvtColor\(legacySrc,legacyGray,cv\.COLOR_RGBA2GRAY\)/);
+});
+
+test('v2.5.4 difficult-image rescue is fallback-only, bounded and QR/timing-verified',()=>{
+ const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const geometry=readFileSync('src/scanner/partialMarkerRescue.ts','utf8');
+ const fusion=readFileSync('src/scanner/robustSheetHomography.ts','utf8');
+ const comparison=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
+ const ai=readFileSync('src/scanner/scanicPageRescue.ts','utf8');
+ assert.match(scan,/if\(!selected && \(\(arucoAdaptive\.points\[2\]/);
+ assert.match(scan,/const attempt=traceRegistration\(loaded\.canvas,hypothesis,dpi,curveBudget\)/);
+ assert.match(scan,/if\(evaluated>=12\)break/);
+ assert.match(scan,/v2\.5\.4 partial-ArUco timing preflight/);
+ assert.match(scan,/t\.matched>=16&&t\.leftMatched>=5&&t\.rightMatched>=5/);
+ assert.match(scan,/v2\.5\.4 partial-ArUco recovery summary/);
+ assert.match(scan,/v2\.5\.4 RANSAC fusion eligibility/);
+ assert.match(geometry,/hybridAnchorEvidence\(markers,arucos\)/);
+ assert.match(geometry,/Bottom ArUco IDs 2 and 3 not both decoded/);
+ assert.match(geometry,/for\(const tl of left\)for\(const tr of right\)/);
+ assert.match(fusion,/if\(aruco\)\{/);
+ assert.match(comparison,/INCONCLUSIVE — one or both scans failed identity verification/);
+ assert.match(comparison,/partial-ArUco upper-corner discovery/);
+ assert.match(ai,/import\('scanic'\)/);
+ assert.doesNotMatch(ai,/import\(\/\* @vite-ignore \*\/ moduleUrl\)/);
+});
+
+test('v2.5.5 ttop32 fork is opt-in, realm isolated and cannot alter OMR scoring',()=>{
+ const fork=readFileSync('src/scanner/ttop32ForkLab.ts','utf8');
+ const orchestrator=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+ const report=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+ assert.match(fork,/ttop32\/opencv-js-wasm@4\.12\.0/);
+ assert.match(fork,/sandbox','allow-scripts'/);
+ assert.match(fork,/cv\.cvtColor\(src,gray,cv\.COLOR_RGBA2GRAY\)/);
+ assert.match(fork,/cv\.threshold\(gray,binary,128,255,cv\.THRESH_BINARY\)/);
+ assert.match(fork,/cv\.warpPerspective\(gray,warped,transform/);
+ assert.match(fork,/evt\.source!==frame\.contentWindow/);
+ assert.match(fork,/window\.setTimeout/);
+ assert.match(orchestrator,/if\(options\?\.ttopProbe\)/);
+ assert.match(orchestrator,/scoringRuntimeUnchanged:true/);
+ assert.match(page,/checked=\{ttopProbe\}/);
+ assert.match(report,/v2\.5\.5 ttop32 OpenCV 4\.12\.0 WASM isolated runtime benchmark/);
 });

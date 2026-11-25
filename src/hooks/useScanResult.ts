@@ -21,12 +21,15 @@ export function useScanResult() {
       if(compare){
         // Alternate the first run to reduce systematic warmup advantage.
         const firstPass=compareRound.current++ % 2===0?'baseline':'enhanced';
-        const enhancedOptions={proofscan:true,proofmodel:true,proofmesh:true};
+        const enhancedOptions={proofscan:false,proofmodel:false,proofmesh:false,fastQrRoi:true,
+          coarseToFine:true,robustFusion:true,simdProbe:false};
+        const legacyOptions={proofscan:false,proofmodel:false,proofmesh:false,fastQrRoi:true,
+          coarseToFine:false,robustFusion:false,simdProbe:false};
         const runPass=async(kind:'baseline'|'enhanced',index:number)=>
           runFullScan(file,p=>setProgress({
             stage:'Pass '+index+'/2 — '+kind+': '+p.stage,
             percent:(index-1)*50+p.percent/2
-          }),kind==='baseline'?{proofscan:false,proofmodel:false,proofmesh:false}:enhancedOptions);
+          }),kind==='baseline'?legacyOptions:enhancedOptions);
         const first=await runPass(firstPass,1);
         const second=await runPass(firstPass==='baseline'?'enhanced':'baseline',2);
         const baseline=firstPass==='baseline'?first:second;
