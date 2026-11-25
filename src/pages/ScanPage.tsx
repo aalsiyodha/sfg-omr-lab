@@ -53,8 +53,9 @@ export default function ScanPage({ appState }: Props) {
   const [proofscan, setProofscan] = useState(false);
   const [proofmodel, setProofmodel] = useState(false);
   const [proofmesh, setProofmesh] = useState(false);
+  const [fastQrRoi,setFastQrRoi]=useState(true);
   const startedFileRef = useRef<File | null>(null);
-  const selectedModes: ScanModeOptions = { proofscan, proofmodel, proofmesh };
+  const selectedModes: ScanModeOptions = { proofscan, proofmodel, proofmesh, fastQrRoi };
 
 
   const stopCamera = useCallback(() => {
@@ -165,8 +166,8 @@ export default function ScanPage({ appState }: Props) {
     if (!autoStart || !capturedFile || opencv !== 'ready' || isScanning ||
         startedFileRef.current === capturedFile) return;
     startedFileRef.current = capturedFile;
-    void scan(capturedFile, { proofscan, proofmodel, proofmesh }, dualCompare);
-  }, [autoStart, capturedFile, opencv, isScanning, scan, proofscan, proofmodel, proofmesh, dualCompare]);
+    void scan(capturedFile, { proofscan, proofmodel, proofmesh,fastQrRoi }, dualCompare);
+  }, [autoStart, capturedFile, opencv, isScanning, scan, proofscan, proofmodel, proofmesh, fastQrRoi, dualCompare]);
 
   const handleReset = () => {
     reset();
@@ -340,11 +341,20 @@ export default function ScanPage({ appState }: Props) {
             <label className="d-flex align-items-start gap-2 mb-2">
               <input type="checkbox" className="form-check-input mt-1" checked={dualCompare}
                 onChange={e=>setDualCompare(e.target.checked)}/>
-              <span><strong>One upload: compare baseline vs all enhancements</strong>
+              <span><strong>One upload: compare original v3 vs v2.5.3 ROI optimization</strong>
                 <small className="d-block text-secondary">
-                  Two sequential scans of the identical file. Automatically reports every changed answer,
-                  registration and processing-time difference, plus model decisions.
-                  Takes approximately twice the processing work.
+                  Two sequential scans of the identical file with all optional AI disabled. Only the QR region-rendering optimization differs; compare answers, verification and timings.
+                  Run order alternates. Requires approximately twice the processing work.
+                </small>
+              </span>
+            </label>
+            <label className="d-flex align-items-start gap-2 mb-2">
+              <input type="checkbox" className="form-check-input mt-1" checked={fastQrRoi}
+                disabled={dualCompare} onChange={e=>setFastQrRoi(e.target.checked)}/>
+              <span><strong>Fast QR region-only registration (v2.5.3)</strong>
+                <small className="d-block text-secondary">
+                  Avoid rendering and PNG-encoding the whole corrected A4 on failed attempts.
+                  Untick for the original v3 method. QR identity and both timing tracks still mandatory.
                 </small>
               </span>
             </label>
