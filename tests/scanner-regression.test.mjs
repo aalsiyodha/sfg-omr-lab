@@ -2190,3 +2190,45 @@ test('isolated Sheet ID prototype prints and checks 25+25 timing, footer and Tes
  assert.doesNotMatch(scanner,/decodeQR/);
  assert.match(app,/path="\/sheetid"/);
 });
+
+test('Sheet ID decoder reads thin hollow outlines, exact code, and rejects a damaged code',()=>{
+ const protocol=loadTS('src/experimental/sheetIdProtocol.ts');
+ const {decodeSheetFooter}=loadTS('src/experimental/sheetIdDecoder.ts',{
+  './sheetIdProtocol':protocol,
+  '../config/omrLayout':{mmToPx:(mm,dpi)=>mm*dpi/25.4}
+ });
+ const dpi=150,W=1241,H=1754,scale=dpi/25.4;
+ const data=new Uint8Array(W*H).fill(255);
+ const dot=(x,y,rad,v=0)=>{
+  const cx=Math.round(x*scale),cy=Math.round(y*scale),r=Math.max(1,rad*scale);
+  for(let yy=Math.floor(cy-r);yy<=Math.ceil(cy+r);yy++)
+   for(let xx=Math.floor(cx-r);xx<=Math.ceil(cx+r);xx++)
+    if(xx>=0&&yy>=0&&xx<W&&yy<H&&Math.hypot(xx-cx,yy-cy)<=r)data[yy*W+xx]=v;
+ };
+ const border=(x,y)=>{
+  const d=4.8;
+  for(let t=0;t<=d;t+=.05){
+   dot(x+t,y,.12);dot(x+t,y+d,.12);
+   dot(x,y+t,.12);dot(x+d,y+t,.12);
+  }
+ };
+ border(49.5,271.6);border(117.2,271.6);
+ const code=protocol.footerBits(50);
+ for(let i=0;i<16;i++){
+  const x=59+i*3.45,y=274;
+  for(let a=0;a<360;a+=3){
+   const rad=a*Math.PI/180;
+   dot(x+1.25*Math.cos(rad),y+1.25*Math.sin(rad),.09);
+  }
+  if(code[i])dot(x,y,.75);
+ }
+ const gray={rows:H,cols:W,data,ucharPtr:(y,x)=>[data[y*W+x]]};
+ const valid=decodeSheetFooter(gray,dpi);
+ assert.equal(valid.valid,true,JSON.stringify(valid));
+ assert.equal(valid.count,50);
+ data[Math.round(274*scale)*W+Math.round(59*scale)]=255;
+ // Replace whole first filled centre rather than a single pixel.
+ dot(59,274,.75,255);
+ const broken=decodeSheetFooter(gray,dpi);
+ assert.equal(broken.valid,false,JSON.stringify(broken));
+});
