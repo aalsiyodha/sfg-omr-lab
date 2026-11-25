@@ -1186,7 +1186,9 @@ export async function runFullScan(
       if(proofEnabled||proofModelEnabled){
         const lookup=new Map(proofs.map(p=>[p.question,p]));
         answers=answers.map(row=>{
-          const reviewed=applyDecisionReview(row,lookup.get(row.question)!,proofEnabled);
+          const audit=lookup.get(row.question);
+          const reviewed=proofEnabled&&audit
+            ?applyDecisionReview(row,audit,true):row;
           return reviewed.status==='detected'&&(
             unstableAccepted.has(row.question)||
             (proofModelEnabled&&modelReview.has(row.question)))
