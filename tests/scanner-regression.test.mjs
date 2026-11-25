@@ -2240,6 +2240,6 @@ test('Sheet ID timing correction requires independently confirmed per-row left/r
  assert.match(source,/const valid=matched>=48&&left>=23&&right>=23/);
  assert.match(source,/coherent\('left'\)&&coherent\('right'\)/);
  assert.match(source,/offsetForQuestion:/);
- assert.match(scanner,/timing\.offsetForQuestion\(q,xMm\)/);
+ assert.match(scanner,/verifiedTiming\.offsetForQuestion\(q,xMm\)/);
  assert.match(scanner,/if\(!candidateTiming\.valid\)continue/);
 });
