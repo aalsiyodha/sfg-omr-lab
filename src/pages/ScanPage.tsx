@@ -257,9 +257,14 @@ export default function ScanPage({ appState }: Props) {
   const diffReport = comparison
     ?buildDualScanReport(comparison,capturedFile?.name??'unknown',fileSha256)
     :'';
-  const diagnostic = comparison
-    ?diffReport+(showTechnicalReport?'\n\n=== FULL ENHANCED DIAGNOSTIC ===\n'+reportFull:'')
-    :(showTechnicalReport?reportFull:reportCompact);
+  const runtimeLabel = 'OpenCV engine: ' +
+    ((window as Window & { omrCvEngine?: string }).omrCvEngine ?? 'unknown') +
+    ' | Init: ' + String((window as Window & { omrCvInitMs?: number | null }).omrCvInitMs ?? 'unknown') +
+    'ms | Runtime source: ' +
+    ((window as Window & { omrCvSource?: string }).omrCvSource ?? 'unknown');
+  const diagnostic = runtimeLabel + '\n' + (comparison
+    ?diffReport+(showTechnicalReport?'\n\n=== FULL ENHANCED DIAGNOSTIC ===\\n'+reportFull:'')
+    :(showTechnicalReport?reportFull:reportCompact));
   const saveReport = () => {
     if(!scanResult)return;
     const blob=new Blob([diagnostic],{type:'text/plain;charset=utf-8'});
@@ -284,6 +289,10 @@ export default function ScanPage({ appState }: Props) {
       <header className="minimal-scan-heading">
         <div>
           <span className="minimal-kicker">SFG OMR LAB · v{APP_BUILD_META.version}</span>
+          <div className="small text-secondary" data-testid="opencv-engine">
+            OpenCV runtime: {(window as Window & { omrCvEngine?: string }).omrCvEngine ?? 'unknown'}
+            {' · '}Initialization: {(window as Window & { omrCvInitMs?: number | null }).omrCvInitMs ?? 'pending'} ms
+          </div>
           <h1>Scan a sheet</h1>
         </div>
         <span className="minimal-build" title={APP_DEPLOY_LABEL+' · '+APP_BUILD_META.sha}>{APP_VERSION}</span>
