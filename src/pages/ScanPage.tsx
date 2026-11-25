@@ -6,6 +6,7 @@ import { generateLLMDiagnosticPrompt, generateBetaFeedbackPrompt } from '../diag
 import { APP_VERSION, APP_BUILD_META, APP_DEPLOY_LABEL } from '../config/version';
 import { copyText } from '../utils/copyText';
 import { needsReview, filterReviewAnswers, countRejectedBlankMarks } from '../review/reviewPolicy';
+import type { ScanModeOptions } from '../scanner/scanOrchestrator';
 
 interface Props { appState: AppState; }
 
@@ -46,6 +47,13 @@ export default function ScanPage({ appState }: Props) {
   const [llmCopied, setLlmCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const [showTechnicalReport, setShowTechnicalReport] = useState(false);
+  const [autoStart, setAutoStart] = useState(true);
+  const [proofscan, setProofscan] = useState(false);
+  const [proofmodel, setProofmodel] = useState(false);
+  const [proofmesh, setProofmesh] = useState(false);
+  const startedFileRef = useRef<File | null>(null);
+  const selectedModes: ScanModeOptions = { proofscan, proofmodel, proofmesh };
+
 
   const stopCamera = useCallback(() => {
     cameraStream?.getTracks().forEach(t => t.stop());
@@ -141,13 +149,26 @@ export default function ScanPage({ appState }: Props) {
   };
 
   const handleScan = async () => {
-    if (!capturedFile) return;
+    if (!capturedFile || opencv !== 'ready' || isScanning) return;
+    if (startedFileRef.current === capturedFile) return;
+    startedFileRef.current = capturedFile;
     setSubmitError(null);
-    await scan(capturedFile);
+    await scan(capturedFile, selectedModes);
   };
+
+  // Start on file selection (or once OpenCV finishes loading), rather than
+  // requiring another click. The File reference is claimed synchronously to
+  // prevent duplicate work across React rerenders/StrictMode effects.
+  useEffect(() => {
+    if (!autoStart || !capturedFile || opencv !== 'ready' || isScanning ||
+        startedFileRef.current === capturedFile) return;
+    startedFileRef.current = capturedFile;
+    void scan(capturedFile, { proofscan, proofmodel, proofmesh });
+  }, [autoStart, capturedFile, opencv, isScanning, scan, proofscan, proofmodel, proofmesh]);
 
   const handleReset = () => {
     reset();
+    startedFileRef.current = null;
     setCapturedFile(null);
     setPreviewUrl(null);
     setSubmitError(null);
@@ -289,16 +310,56 @@ export default function ScanPage({ appState }: Props) {
               </div>
             </div>
           )}
+          <fieldset className="border rounded-3 p-3 mt-3" disabled={isScanning}
+            aria-label="Scanning options">
+            <legend className="float-none w-auto px-2 fs-6 fw-semibold mb-1">
+              Scan options
+            </legend>
+            <label className="d-flex align-items-start gap-2 mb-2">
+              <input type="checkbox" className="form-check-input mt-1" checked={autoStart}
+                onChange={e=>setAutoStart(e.target.checked)}/>
+              <span><strong>Start scanning immediately after upload</strong>
+                <small className="d-block text-secondary">Runs automatically once OpenCV is ready. No second click.</small>
+              </span>
+            </label>
+            <label className="d-flex align-items-start gap-2 mb-2">
+              <input type="checkbox" className="form-check-input mt-1" checked={proofscan}
+                onChange={e=>setProofscan(e.target.checked)}/>
+              <span><strong>Extra optical proof checks</strong>
+                <small className="d-block text-secondary">Review suspicious marks using local geometry, shape and counterfactual checks.</small>
+              </span>
+            </label>
+            <label className="d-flex align-items-start gap-2 mb-2">
+              <input type="checkbox" className="form-check-input mt-1" checked={proofmodel}
+                onChange={e=>setProofmodel(e.target.checked)}/>
+              <span><strong>Experimental decision model</strong>
+                <small className="d-block text-secondary">Synthetic-trained model can flag uncertain responses; not validated on real photos.</small>
+              </span>
+            </label>
+            <label className="d-flex align-items-start gap-2">
+              <input type="checkbox" className="form-check-input mt-1" checked={proofmesh}
+                onChange={e=>setProofmesh(e.target.checked)}/>
+              <span><strong>Validated local mesh correction</strong>
+                <small className="d-block text-secondary">Apply local offsets only when withheld printed-ring checks improve.</small>
+              </span>
+            </label>
+            <p className="small text-secondary mt-2 mb-0">
+              QR identity and timing verification always remain mandatory. Choose optional modes before uploading.
+            </p>
+          </fieldset>
           {capturedFile && (
             <div className="minimal-selected">
               {previewUrl && <img src={previewUrl} alt="Selected sheet" />}
               <div className="minimal-selected-details">
                 <strong className="minimal-filename">{capturedFile.name}</strong>
                 <span className="text-secondary small">{(capturedFile.size/1024/1024).toFixed(2)} MB</span>
-                <button className="btn btn-dark" onClick={handleScan}
-                  disabled={isScanning||opencv!=='ready'}>
-                  {isScanning?'Scanning…':'Scan sheet'} <i className="bi bi-arrow-right ms-1"/>
-                </button>
+                {(!autoStart || (!isScanning && !scanResult && startedFileRef.current !== capturedFile)) && (
+                  <button className="btn btn-dark" onClick={handleScan}
+                    disabled={isScanning||opencv!=='ready'}>
+                    Scan sheet <i className="bi bi-arrow-right ms-1"/>
+                  </button>
+                )}
+                {autoStart && isScanning && <span className="small text-secondary">Auto-scanning…</span>}
               </div>
             </div>
           )}
