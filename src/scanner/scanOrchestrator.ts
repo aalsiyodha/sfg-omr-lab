@@ -1215,6 +1215,16 @@ export async function runFullScan(
       images.bubbleOverlay = generateBubbleOverlay(
         chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi, idOffset
       );
+      if(proofEnabled||proofModelEnabled){
+        const contact=makeReviewCropSheet(chosen.canvas,answers);
+        if(contact){
+          images.reviewCrops=contact.dataUrl;
+          logger.info('bubbleDetection','v2.5.2 diagnostic review crops',{
+            count:contact.questions.length,questions:contact.questions,
+            note:'Registered-image crops, not ground truth; no scoring effect'
+          });
+        }
+      }
       finishStage('bubbleOverlay');
     } else {
       logger.error('perspective',
