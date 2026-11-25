@@ -116,6 +116,7 @@ type RegistrationProbe = {
   phase:'warp'|'qr'|'timing'|'accepted'|'error';
   reason:string;qrValid:boolean;
   timing:number;left:number;right:number;
+  warpMs?:number;qrMs?:number;previewMs?:number;
 };
 function evaluateHypothesis(
   source: HTMLCanvasElement,
@@ -129,6 +130,7 @@ function evaluateHypothesis(
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
   let keep = false;
+  const warpStart=performance.now();
   if(evidence){evidence.phase='warp';evidence.reason='Warp did not produce an image';}
   try {
     persp = hypothesis.kind === 'corner'
@@ -140,7 +142,9 @@ function evaluateHypothesis(
          ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
          : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,!fastQrRoi)
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
+    if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
+    const qrStart=performance.now();
     if(evidence){evidence.phase='qr';evidence.reason='QR not yet independently verified';}
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
@@ -167,6 +171,7 @@ function evaluateHypothesis(
         rotated = true;
       }
     }
+    if(evidence)evidence.qrMs=Math.round(performance.now()-qrStart);
     if(evidence){evidence.qrValid=qr.valid;evidence.reason=qr.valid?'QR valid; checking timing':'QR invalid at both expected corners';}
     if (!qr.valid && allowQrlessProvisional && !rotated) {
       // Independent fallback for READ-ONLY provisional measurements. Never
@@ -363,7 +368,9 @@ function evaluateHypothesis(
       evidence.qrValid=qr.valid;evidence.timing=check.matched;
       evidence.left=check.leftMatched;evidence.right=check.rightMatched;}
     // The verified image is rendered once, and only when actually selected.
+    const previewStart=performance.now();
     cv.imshow(canvas,persp.corrected);
+    if(evidence)evidence.previewMs=Math.round(performance.now()-previewStart);
     keep = true;
     return { hypothesis, perspective: persp, gray, canvas, qr, check, rotated };
   } catch (error) {
@@ -440,6 +447,7 @@ export async function runFullScan(
       method:string;source:string;durationMs:number;phase:string;reason:string;
       qrValid:boolean;timing:number;left:number;right:number;
       accepted:boolean;provisional:boolean;
+      warpMs?:number;qrMs?:number;previewMs?:number;
     }[]=[];
     const traceRegistration=(
       source:HTMLCanvasElement,hypothesis:Hypothesis,dpi:number,
@@ -457,7 +465,8 @@ export async function runFullScan(
         timing:result?.check.matched??evidence.timing,
         left:result?.check.leftMatched??evidence.left,
         right:result?.check.rightMatched??evidence.right,
-        accepted:Boolean(result),provisional:Boolean(result?.provisional)
+        accepted:Boolean(result),provisional:Boolean(result?.provisional),
+        warpMs:evidence.warpMs,qrMs:evidence.qrMs,previewMs:evidence.previewMs
       };
       registrationAttempts.push(item);
       logger.info('perspective','v2.5.2 detailed registration candidate',item);
