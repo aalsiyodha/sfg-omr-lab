@@ -23,13 +23,26 @@ const EXPERIMENT_LOGS=[
   'v2.5.2 synthetic-trained closed-set head',
   'v2.5.1 selective DecisionScan audit',
 ] as const;
-function experimentSummary(scan:ScanResult):string[]{
+function experimentSummary(scan:ScanResult,compact=false):string[]{
   const logs=scan.stageLogs??[];
   const result=['Opt-in engine decisions and execution evidence:'];
   for(const name of EXPERIMENT_LOGS){
     const hit=logs.find(l=>l.message===name);
-    result.push('  '+name+': '+(hit?JSON.stringify(hit.data??{}):
-      'not logged (not proof of execution)'));
+    if(!hit){
+      result.push('  '+name+': not logged (not proof of execution)');
+      continue;
+    }
+    const data=hit.data??{};
+    const summary=compact
+      ?Object.fromEntries(Object.entries(data).map(([key,value])=>{
+        if(['proposals','localVisualProofs','reviewCandidates','grid',
+          'anomalies'].includes(key)&&Array.isArray(value)){
+          return [key+'Count',value.length];
+        }
+        return [key,value];
+      }))
+      :data;
+    result.push('  '+name+': '+JSON.stringify(summary));
   }
   return result;
 }
@@ -208,7 +221,7 @@ export function generateBetaFeedbackPrompt({ scanResult, activeTestId, file, fil
   ];
   // Always show experiment states in the COMPACT report too; otherwise a
   // scanner claiming AI improvements cannot be audited without huge logs.
-  lines.push(...experimentSummary(scanResult));
+  lines.push(...experimentSummary(scanResult,true));
   if (scanResult.grayCalibration)
     lines.push('Calibration=' + scanResult.grayCalibration.status +
       ' | patches=' + scanResult.grayCalibration.patchMedians.join(',') +
