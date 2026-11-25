@@ -55,7 +55,9 @@ export function buildDualScanReport(
   const {baseline,enhanced,enhancedOptions}=comparison;
   const a=summary(baseline),b=summary(enhanced);
   const byQuestion=new Map(baseline.answers.map(r=>[r.question,r]));
-  const changed=enhanced.answers.flatMap(row=>{
+  type ChangedRow={question:number;baseline:string;enhanced:string;reason?:string;
+    oldRejectedBlank?:boolean;newRejectedBlank?:boolean};
+  const changed=enhanced.answers.flatMap((row):ChangedRow[]=>{
     const old=byQuestion.get(row.question);
     if(!old)return [{question:row.question,baseline:'not scanned',
       enhanced:row.status,reason:'Missing baseline question'}];
