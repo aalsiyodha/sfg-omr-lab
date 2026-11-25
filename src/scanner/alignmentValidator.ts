@@ -22,6 +22,12 @@ export function verifyTimingMarks(grayMat: any, dpi: number): AlignmentCheck {
   let leftMatched = 0;
   let rightMatched = 0;
   const rowCount = OMR_LAYOUT.answers.questionsPerCol;
+  const bytes:Uint8Array|undefined = grayMat.data;
+  const step = typeof grayMat.step==='number' ? grayMat.step : grayMat.cols;
+  const channels = typeof grayMat.channels==='function' ? grayMat.channels() : 1;
+  const grayscaleFast = bytes instanceof Uint8Array && channels===1 && step>=grayMat.cols &&
+    bytes.length >= step*(grayMat.rows-1)+grayMat.cols;
+  const sample=(y:number,x:number)=>grayscaleFast ? bytes[y*step+x] : grayMat.ucharPtr(y,x)[0];
   for (let row = 0; row < rowCount; row++) {
     const y = Math.round(mmToPx(OMR_LAYOUT.answers.rowStartY +
       row * OMR_LAYOUT.answers.rowSpacingY, dpi));
@@ -33,7 +39,7 @@ export function verifyTimingMarks(grayMat: any, dpi: number): AlignmentCheck {
       for (let dy = -radius; dy <= radius; dy++) {
         for (let dx = -radius; dx <= radius; dx++) {
           samples++;
-          if (grayMat.ucharPtr(y + dy, x + dx)[0] < threshold) dark++;
+          if (sample(y + dy, x + dx) < threshold) dark++;
         }
       }
       if (dark / samples >= 0.4) {

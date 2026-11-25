@@ -1,4 +1,4 @@
-name: Deploy SFG OMR Lab v2.5 to GitHub Pages
+name: Deploy SFG OMR Lab v2.6 to GitHub Pages
 on:
   push:
     branches: [main]
@@ -15,26 +15,102 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: production
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.2-sheetid-timing-prototype
+          path: sheetid
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.5.3-accuracy-speed
+          path: opt
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.5.3-simd-geometry-lab
+          path: simd
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.5.4-partial-geometry-rescue
+          path: rescue
+      - uses: actions/checkout@v4
+        with:
+          ref: experiment/v2.5.5-cv-runtime-bench
+          path: cvbench
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run test:scanner
-      - run: npm run build
-        env:
-          GITHUB_PAGES: 'true'
+          cache-dependency-path: |
+            production/package-lock.json
+            sheetid/package-lock.json
+            opt/package-lock.json
+            simd/package-lock.json
+            rescue/package-lock.json
+            cvbench/package-lock.json
+      - name: Verify and build production v2.6
+        working-directory: production
+        run: |
+          npm ci
+          npm run check
+          GITHUB_PAGES=true npm run build
+      - name: Build Sheet ID reference
+        working-directory: sheetid
+        run: |
+          npm ci
+          GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/sheetid-test/' npm run build
+      - name: Build ROI lab
+        working-directory: opt
+        run: |
+          npm ci
+          GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/opt-lab/' npm run build
+      - name: Build geometry lab
+        working-directory: simd
+        run: |
+          npm ci
+          GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/simd-lab/' npm run build
+      - name: Preserve v2.5.4 Rescue Lab
+        working-directory: rescue
+        run: |
+          npm ci
+          GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/rescue-lab/' npm run build
+      - name: Preserve v2.5.5 OpenCV benchmark
+        working-directory: cvbench
+        run: |
+          npm ci
+          GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/cv-bench/' npm run build
+      - name: Assemble all isolated websites
+        run: |
+          mkdir -p production/dist/{sheetid-test,opt-lab,simd-lab,rescue-lab,cv-bench}
+          cp -a sheetid/dist/. production/dist/sheetid-test/
+          cp -a opt/dist/. production/dist/opt-lab/
+          cp -a simd/dist/. production/dist/simd-lab/
+          cp -a rescue/dist/. production/dist/rescue-lab/
+          cp -a cvbench/dist/. production/dist/cv-bench/
+          for site in production rescue cvbench; do
+            case "$site" in
+              production) path="production/dist";;
+              rescue) path="production/dist/rescue-lab";;
+              cvbench) path="production/dist/cv-bench";;
+            esac
+            mkdir -p "$path/ai-model/scanic"
+            cp -a "$site/node_modules/scanic-ml/dist/." "$path/ai-model/scanic/"
+          done
+          mkdir -p production/dist/cv-bench/cv-engines/ttop32
+          cp cvbench/node_modules/opencv-js-wasm/opencv.js production/dist/cv-bench/cv-engines/ttop32/opencv.js
+          test -s production/dist/index.html
+          test -s production/dist/rescue-lab/index.html
+          test -s production/dist/cv-bench/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: production/dist
   deploy:
+    runs-on: ubuntu-latest
+    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4

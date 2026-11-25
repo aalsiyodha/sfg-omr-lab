@@ -1,7 +1,7 @@
 import { version } from '../../package.json';
 declare const __APP_BUILD_ID__: string;
 declare const __APP_BUILD_META__: { version:string; source:'vercel'|'local-dev'|'local-build'; environment:string; sha:string; buildId:string; builtAt:string; dirty:boolean };
-export const APP_VERSION = version === '2.5.5-experimental.1'
+export const APP_VERSION = version === '2.6.0' ? 'v2.6 · Verified Scanner' : version === '2.5.5-experimental.1'
   ? 'v2.5.5 Experimental 5 · OpenCV Runtime Benchmark'
   : version === '2.5.4-experimental.1'
   ? 'v2.5.4 Experimental 4 · Partial-Marker Geometry Rescue'
