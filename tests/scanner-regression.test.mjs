@@ -2055,7 +2055,7 @@ test('scan page: actual checkboxes wire all supported modes and autostart',()=>{
   assert.match(page,/Experimental decision model/);
   assert.match(page,/Validated local mesh correction/);
   assert.match(page,/startedFileRef\.current === capturedFile/);
-  assert.match(page,/void scan\(capturedFile, \{proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe\}, dualCompare\)/);
+  assert.match(page,/void scan\(capturedFile, \{proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,ttopProbe\}, dualCompare\)/);
   assert.match(hook,/runFullScan\(file, setProgress, options\)/);
   assert.match(engine,/options\?\.proofmesh/);
   assert.match(engine,/options\?\.proofmodel/);
@@ -2254,4 +2254,22 @@ test('v2.5.4 difficult-image rescue is fallback-only, bounded and QR/timing-veri
  assert.match(comparison,/partial-ArUco upper-corner discovery/);
  assert.match(ai,/import\('scanic'\)/);
  assert.doesNotMatch(ai,/import\(\/\* @vite-ignore \*\/ moduleUrl\)/);
+});
+
+test('v2.5.5 ttop32 fork is opt-in, realm isolated and cannot alter OMR scoring',()=>{
+ const fork=readFileSync('src/scanner/ttop32ForkLab.ts','utf8');
+ const orchestrator=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+ const report=readFileSync('src/diagnostics/llmPromptGenerator.ts','utf8');
+ assert.match(fork,/ttop32\/opencv-js-wasm@4\.12\.0/);
+ assert.match(fork,/sandbox','allow-scripts'/);
+ assert.match(fork,/cv\.cvtColor\(src,gray,cv\.COLOR_RGBA2GRAY\)/);
+ assert.match(fork,/cv\.threshold\(gray,binary,128,255,cv\.THRESH_BINARY\)/);
+ assert.match(fork,/cv\.warpPerspective\(gray,warped,transform/);
+ assert.match(fork,/evt\.source!==frame\.contentWindow/);
+ assert.match(fork,/window\.setTimeout/);
+ assert.match(orchestrator,/if\(options\?\.ttopProbe\)/);
+ assert.match(orchestrator,/scoringRuntimeUnchanged:true/);
+ assert.match(page,/checked=\{ttopProbe\}/);
+ assert.match(report,/v2\.5\.5 ttop32 OpenCV 4\.12\.0 WASM isolated runtime benchmark/);
 });

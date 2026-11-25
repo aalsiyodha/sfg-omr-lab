@@ -57,8 +57,9 @@ export default function ScanPage({ appState }: Props) {
   const [coarseToFine,setCoarseToFine]=useState(true);
   const [robustFusion,setRobustFusion]=useState(true);
   const [simdProbe,setSimdProbe]=useState(false);
+  const [ttopProbe,setTtopProbe]=useState(false);
   const startedFileRef = useRef<File | null>(null);
-  const selectedModes: ScanModeOptions = {proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe};
+  const selectedModes: ScanModeOptions = {proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,ttopProbe};
 
 
   const stopCamera = useCallback(() => {
@@ -169,8 +170,8 @@ export default function ScanPage({ appState }: Props) {
     if (!autoStart || !capturedFile || opencv !== 'ready' || isScanning ||
         startedFileRef.current === capturedFile) return;
     startedFileRef.current = capturedFile;
-    void scan(capturedFile, {proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe}, dualCompare);
-  }, [autoStart, capturedFile, opencv, isScanning, scan,proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,dualCompare]);
+    void scan(capturedFile, {proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,ttopProbe}, dualCompare);
+  }, [autoStart, capturedFile, opencv, isScanning, scan,proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe,ttopProbe,dualCompare]);
 
   const handleReset = () => {
     reset();
@@ -378,7 +379,13 @@ export default function ScanPage({ appState }: Props) {
                 <input type="checkbox" checked={simdProbe} disabled={dualCompare}
                   onChange={e=>setSimdProbe(e.target.checked)}/>
                 <span><strong>OpenCV 5 SIMD runtime probe</strong>
-                  <small>Loads optional WASM once, runs real grayscale, reports speed; exam scoring remains on verified OpenCV.js</small></span>
+                  <small>Optional independent @banou OpenCV 5 WASM grayscale benchmark; scoring stays unchanged</small></span>
+              </label>
+              <label className="geometry-lab-choice">
+                <input type="checkbox" checked={ttopProbe} disabled={dualCompare}
+                  onChange={e=>setTtopProbe(e.target.checked)}/>
+                <span><strong>ttop32 OpenCV 4.12.0 WASM benchmark</strong>
+                  <small>Isolated embedded-WASM engine; measures grayscale, threshold and warp separately from scanner. Reports cold load and errors. Does not change answers.</small></span>
               </label>
             </div>
             <label className="d-flex align-items-start gap-2">
