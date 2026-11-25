@@ -2158,3 +2158,35 @@ test('v2.5.2 experimental v3 alternates baseline/enhanced order and collects dia
  assert.match(page,/Download suspicious bubble crops/);
  assert.match(scanner,/makeReviewCropSheet\(chosen\.canvas,answers\)/);
 });
+
+test('isolated Sheet ID prototype has four distinct exactly decodable layouts',()=>{
+ const {SHEET_ID_CODES,footerBits,decodeFooterWord,hamming}=loadTS('src/experimental/sheetIdProtocol.ts');
+ const keys=[50,100,120,200];
+ assert.equal(new Set(keys.map(k=>SHEET_ID_CODES[k])).size,4);
+ for(const count of keys){
+  const word=SHEET_ID_CODES[count];
+  assert.equal(footerBits(count).reduce((v,b)=>(v<<1)|b,0),word);
+  assert.deepEqual(decodeFooterWord(word),{count,distance:0,exact:true});
+  for(let bit=0;bit<16;bit++){
+   const damaged=decodeFooterWord(word^(1<<bit));
+   assert.equal(damaged.count,null,'Single corrupted bit must fail closed');
+  }
+ }
+ assert.ok(hamming(SHEET_ID_CODES[50],SHEET_ID_CODES[100])>=4);
+});
+test('isolated Sheet ID prototype prints and checks 25+25 timing, footer and Test ID',()=>{
+ const pdf=readFileSync('src/experimental/sheetIdPdf.ts','utf8');
+ const scanner=readFileSync('src/experimental/sheetIdScanner.ts','utf8');
+ const app=readFileSync('src/App.tsx','utf8');
+ assert.match(pdf,/row<25/);
+ assert.match(pdf,/\[13\.3,196\.7\]/);
+ assert.match(pdf,/footerBits\(count\)/);
+ assert.match(pdf,/getTestIdBubbleCentre\(type,d\)/);
+ assert.match(pdf,/square\(f.leftBoxXmm/);
+ assert.match(scanner,/decodeSheetFooter\(gray,dpi\)/);
+ assert.match(scanner,/timing\.matched<48\|\|timing\.leftMatched<23/);
+ assert.match(scanner,/detectTestId\(gray,dpi/);
+ assert.match(scanner,/detectAllAnswers\(gray,dpi/);
+ assert.doesNotMatch(scanner,/decodeQR/);
+ assert.match(app,/path="\/sheetid"/);
+});
