@@ -76,6 +76,27 @@ export function detectCoarseToFineCorners(binary:any,width:number,height:number,
      stats.reason='Refinement did not find all four full-resolution markers';
      return {markers:fallback,stats};
    }
+   // Local full-resolution contour selection can latch onto neighbouring
+   // solid ink. Confirm convex ordering and A4 aspect before costly warp.
+   const quad=[tl,tr,br,bl];
+   const turns=quad.map((p,i)=>{
+     const a=quad[(i+1)%4],b=quad[(i+2)%4];
+     return (a.x-p.x)*(b.y-a.y)-(a.y-p.y)*(b.x-a.x);
+   });
+   const top=Math.hypot(tr.x-tl.x,tr.y-tl.y);
+   const bottom=Math.hypot(br.x-bl.x,br.y-bl.y);
+   const leftSide=Math.hypot(bl.x-tl.x,bl.y-tl.y);
+   const rightSide=Math.hypot(br.x-tr.x,br.y-tr.y);
+   const aspect=(top+bottom)/(leftSide+rightSide);
+   const expected=191/278;
+   if(turns.some(v=>v<=0)||!Number.isFinite(aspect)||
+      top<width*.4||leftSide<height*.4||
+      Math.abs(aspect/expected-1)>.18||
+      Math.abs(top-bottom)/Math.max(top,bottom)>.4||
+      Math.abs(leftSide-rightSide)/Math.max(leftSide,rightSide)>.4){
+     stats.reason='Refined marker quadruple failed convexity/A4 geometry; use legacy full-resolution discovery';
+     return {markers:fallback,stats};
+   }
    stats.used=true;stats.reason='Four coarse candidates independently refined in local full-resolution ROIs';
    return {markers:{found:true,count:4,validGeometry:true,topLeft:tl,
      topRight:tr,bottomLeft:bl,bottomRight:br},stats};
