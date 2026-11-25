@@ -2055,7 +2055,7 @@ test('scan page: actual checkboxes wire all supported modes and autostart',()=>{
   assert.match(page,/Experimental decision model/);
   assert.match(page,/Validated local mesh correction/);
   assert.match(page,/startedFileRef\.current === capturedFile/);
-  assert.match(page,/void scan\(capturedFile, \{ proofscan, proofmodel, proofmesh,fastQrRoi \}, dualCompare\)/);
+  assert.match(page,/void scan\(capturedFile, \{proofscan,proofmodel,proofmesh,fastQrRoi,coarseToFine,robustFusion,simdProbe\}, dualCompare\)/);
   assert.match(hook,/runFullScan\(file, setProgress, options\)/);
   assert.match(engine,/options\?\.proofmesh/);
   assert.match(engine,/options\?\.proofmodel/);
@@ -2091,7 +2091,7 @@ test('v2.5.2 experiment v2 runs baseline and enhanced sequentially and reports d
   assert.match(hook,/const second=await runPass\(firstPass==='baseline'\?'enhanced':'baseline',2\)/);
   assert.ok(hook.indexOf('const first=await runPass')<
     hook.indexOf('const second=await runPass'));
-  assert.match(page,/One upload: compare original v3 vs v2\.5\.3 ROI optimization/);
+  assert.match(page,/One upload: compare v2\.5\.3 baseline vs geometric lab/);
   assert.match(page,/Copy differences report/);
   assert.match(page,/buildDualScanReport/);
   assert.match(report,/PER-REGISTRATION CANDIDATE TRACE:/);
@@ -2173,12 +2173,12 @@ test('v2.5.3 QR ROI A/B retains exact QR and independent timing safety gates',()
  assert.match(orchestrator,/canStopUnifiedRegistration/);
  assert.match(orchestrator,/if \(!qr\.valid\)/);
  assert.match(orchestrator,/const previewStart=performance\.now\(\)/);
- assert.match(hook,/fastQrRoi:false/);
+ assert.match(hook,/coarseToFine:false,robustFusion:false,simdProbe:false/);
  assert.match(hook,/fastQrRoi:true/);
  assert.match(hook,/const first=await runPass\(firstPass,1\)/);
  assert.match(hook,/const second=await runPass\(firstPass==='baseline'\?'enhanced':'baseline',2\)/);
- assert.match(page,/One upload: compare original v3 vs v2\.5\.3 ROI optimization/);
- assert.match(comparison,/LEGACY vs FAST QR ROI A\/B/);
+ assert.match(page,/One upload: compare v2\.5\.3 baseline vs geometric lab/);
+ assert.match(comparison,/OPTIMIZED ROI BASELINE vs SIMD GEOMETRY LAB A\/B/);
 });
 test('v2.5.3 avoids redundant PNG encoding during registration only when fast QR ROI enabled',()=>{
  for(const file of [
@@ -2191,4 +2191,23 @@ test('v2.5.3 avoids redundant PNG encoding during registration only when fast QR
  const orchestrator=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
  assert.match(orchestrator,/if\(!fastQrRoi\)cv\.imshow\(canvas,persp\.corrected\)/);
  assert.match(orchestrator,/cv\.imshow\(canvas,persp\.corrected\);\n    if\(evidence\)evidence\.previewMs/);
+});
+
+test('v2.5.3.2 geometry lab requires full-resolution refinement and independent QR/timing gates',()=>{
+ const scan=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const coarse=readFileSync('src/scanner/coarseToFineCorners.ts','utf8');
+ const fused=readFileSync('src/scanner/robustSheetHomography.ts','utf8');
+ const simd=readFileSync('src/scanner/opencv5SimdLab.ts','utf8');
+ const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+ assert.match(coarse,/cv\.resize\(binary,small/);
+ assert.match(coarse,/cv\.findContours\(roi,contours/);
+ assert.match(scan,/corner\/full-resolution-fallback/);
+ assert.match(scan,/options\?\.coarseToFine!==false/);
+ assert.match(scan,/options\?\.robustFusion!==false/);
+ assert.match(fused,/cv\.findHomography\(pts,dst,cv\.RANSAC,7\)/);
+ assert.match(fused,/accepted\.length<5\|\|families\.length<2/);
+ assert.match(scan,/verifyTimingMarks\(gray, dpi\)/);
+ assert.match(simd,/initOpenCV\(\{wasmUrl:wasm\.default\}\)/);
+ assert.match(simd,/cv\.cvtColor\(src,gray,cv\.COLOR_RGBA2GRAY\)/);
+ assert.match(page,/OpenCV 5 SIMD runtime probe/);
 });
