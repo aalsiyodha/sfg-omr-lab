@@ -1,0 +1,143 @@
+/**
+ * One-upload sequential A/B scanner comparison. Compare the SAME File object
+ * and exact SHA-256. No guessing optical ground truth from the answer key.
+ *
+ * The two runs do not execute concurrently: OpenCV Mats, the diagnostic
+ * singleton and scanner state are not safe for concurrent use.
+ */
+import type { ScanResult, LogEntry } from '../types';
+
+export type DualScanComparison = {
+  baseline:ScanResult;
+  enhanced:ScanResult;
+  enhancedOptions:{proofscan:boolean;proofmodel:boolean;proofmesh:boolean;fastQrRoi?:boolean;coarseToFine?:boolean;robustFusion?:boolean;simdProbe?:boolean};
+  firstPass:'baseline'|'enhanced';
+};
+function findLog(result:ScanResult,message:string):LogEntry|undefined {
+  return result.stageLogs.find(x=>x.message===message);
+}
+function summary(result:ScanResult){
+  const counts=Object.fromEntries(['detected','blank','multiple','uncertain','error']
+    .map(status=>[status,result.answers.filter(a=>a.status===status).length]));
+  const marker=findLog(result,'Registration engine budget and measured work');
+  const timing=findLog(result,'Scan stage timings (milliseconds)');
+  return {elapsedMs:result.processingTimeMs,status:result.overallStatus,
+    qrValid:result.qrValid,testId:result.testId,registration:result.registrationMethod,
+    timing:result.alignmentMatched,counts,
+    markerWork:marker?.data??null,stages:timing?.data?.stages??null};
+}
+const fmt=(x:unknown)=>x===null||x===undefined?'unknown':String(x);
+function compactExperiment(result:ScanResult,name:string){
+  const data=findLog(result,name)?.data;
+  if(!data)return {ran:false,reason:'No stage log'};
+  const omit=new Set(['proposals','localVisualProofs','reviewCandidates']);
+  const minimal=Object.fromEntries(Object.entries(data).filter(([key])=>!omit.has(key)));
+  if(Array.isArray(data.proposals)){
+    const disagreements=data.proposals.filter((p:unknown)=>{
+      const v=p as {opticalStatus?:string;modelLabel?:string};
+      return v.opticalStatus==='detected'&&v.modelLabel!=='solid'||
+        v.opticalStatus==='blank'&&v.modelLabel==='solid';
+    });
+    minimal.proposalCount=data.proposals.length;
+    minimal.disagreements=disagreements;
+  }
+  if(Array.isArray(data.localVisualProofs)){
+    minimal.localVisualProofCount=data.localVisualProofs.length;
+    minimal.unstable=data.localVisualProofs.filter((p:unknown)=>
+      (p as {stable?:boolean}).stable===false)
+      .map((p:unknown)=>({question:(p as {question:number}).question,
+        spread:(p as {spread:number}).spread}));
+  }
+  return minimal;
+}
+export function buildDualScanReport(
+  comparison:DualScanComparison,filename:string,fileSha256:string|null
+):string {
+  const {baseline,enhanced,enhancedOptions}=comparison;
+  const a=summary(baseline),b=summary(enhanced);
+  const byQuestion=new Map(baseline.answers.map(r=>[r.question,r]));
+  type ChangedRow={question:number;baseline:string;enhanced:string;reason?:string;
+    oldRejectedBlank?:boolean;newRejectedBlank?:boolean};
+  const changed=enhanced.answers.flatMap((row):ChangedRow[]=>{
+    const old=byQuestion.get(row.question);
+    if(!old)return [{question:row.question,baseline:'not scanned',
+      enhanced:row.status,reason:'Missing baseline question'}];
+    if(old.detectedAnswer===row.detectedAnswer&&old.status===row.status&&
+      old.policyRejectedBlank===row.policyRejectedBlank)return [];
+    return [{question:row.question,baseline:old.status+'/'+(old.detectedAnswer??'-'),
+      enhanced:row.status+'/'+(row.detectedAnswer??'-'),
+      oldRejectedBlank:old.policyRejectedBlank??false,
+      newRejectedBlank:row.policyRejectedBlank??false}];
+  });
+  const stagesA=a.stages as Record<string,number>|null;
+  const stagesB=b.stages as Record<string,number>|null;
+  const keys=[...new Set([...Object.keys(stagesA??{}),...Object.keys(stagesB??{})])];
+  const baselineMs=baseline.processingTimeMs,enhancedMs=enhanced.processingTimeMs;
+  const lines=[
+    'SFG OMR LAB — v2.5.4 ROI BASELINE vs PARTIAL-GEOMETRY RESCUE A/B',
+    'Same image; sequential A/B with alternating run order.',
+    'Actual first pass='+comparison.firstPass+'; second pass='+
+      (comparison.firstPass==='baseline'?'enhanced':'baseline'),
+    'File='+filename+' | SHA-256='+fmt(fileSha256),
+    'Enhanced ROI optimization='+JSON.stringify(enhancedOptions)+
+    ' | Baseline: fastQrRoi=true; coarseToFine=false; robustFusion=false; SIMD=false; AI OFF',
+    'SIMD NOTE: Both A/B passes use the existing OpenCV.js scoring runtime. The optional OpenCV 5 SIMD probe is OFF in the A/B test and must be run separately.',
+    'WARNING: Order alternates across consecutive comparisons in one page session. A single pair cannot establish a speed gain.',
+    'WARNING: Answer agreement is not ground truth; inspect the actual sheet for correctness.',
+    '',
+    'BASELINE='+JSON.stringify(a),
+    'ENHANCED='+JSON.stringify(b),
+    'DELTA elapsedMs='+String(enhancedMs-baselineMs)+
+      ' (enhanced minus baseline; negative means shorter observed time)',
+    'Registration changed='+String(baseline.registrationMethod!==enhanced.registrationMethod),
+    'QR identity preserved='+String(baseline.qrRaw===enhanced.qrRaw&&baseline.qrValid&&enhanced.qrValid),
+    'Test ID preserved='+String(baseline.testId!==null&&enhanced.testId!==null&&baseline.testId===enhanced.testId),
+    'Comparison result='+((!a.qrValid||!b.qrValid)?'INCONCLUSIVE — one or both scans failed identity verification':
+      changed.length===0?'PARITY ONLY — independently check answer accuracy':'ANSWER DIFFERENCES — review before promotion'),
+    'Answer/status changes='+changed.length,
+    ...changed.map(row=>'  Q'+String(row.question).padStart(2,'0')+': '+JSON.stringify(row)),
+    '',
+    'PER-STAGE TIMING COMPARISON (milliseconds, enhanced-baseline):',
+    ...keys.map(key=>'  '+key+': baseline='+fmt(stagesA?.[key])+
+      ' enhanced='+fmt(stagesB?.[key])+
+      ' delta='+((stagesB?.[key]??0)-(stagesA?.[key]??0))),
+    '',
+    'PER-REGISTRATION CANDIDATE TRACE:',
+    'FALLBACK GEOMETRY EVIDENCE (per-pass):',
+    ...['Baseline','Enhanced'].flatMap((label,i)=>{
+      const result=i===0?baseline:enhanced;
+      return [label+' coarse='+JSON.stringify(findLog(result,'v2.5.3 coarse-to-fine corner evidence')?.data??null),
+        label+' fullResolutionRetry='+JSON.stringify(findLog(result,'v2.5.3 full-resolution corner retry')?.data??null),
+        label+' RANSAC eligibility='+JSON.stringify(findLog(result,'v2.5.3 RANSAC fusion eligibility')?.data??null),
+        label+' RANSAC trials='+JSON.stringify(result.stageLogs.filter(l=>l.message==='v2.5.3 robust homography evidence').map(l=>l.data)),
+        label+' Partial ArUco upper-corner discovery='+JSON.stringify(result.stageLogs.filter(l=>l.message==='v2.5.4 partial-ArUco upper-corner discovery').map(l=>l.data)),
+        label+' Partial ArUco outcome='+JSON.stringify(findLog(result,'v2.5.4 partial-ArUco recovery summary')?.data??null)];
+    }),
+    '',
+    ...['Baseline','Enhanced'].flatMap((label,i)=>{
+      const result=i===0?baseline:enhanced;
+      const trace=result.stageLogs.filter(l=>l.message==='v2.5.2 detailed registration candidate');
+      return [label+' candidates='+trace.length,
+        ...trace.map(l=>'  '+JSON.stringify(l.data??{}))];
+    }),
+    '',
+    'ENHANCED EXPERIMENT EVIDENCE:',
+    ...[
+      'User-selected scan controls',
+      'v2.5.3 coarse-to-fine corner evidence',
+      'v2.5.3 full-resolution corner retry',
+      'v2.5.4 RANSAC fusion eligibility',
+      'v2.5.4 partial-ArUco recovery summary',
+      'v2.5.3 robust homography evidence',
+      'v2.5.3 OpenCV 5 SIMD separate runtime probe',
+      'v2.5.2 withheld-print-validated local mesh',
+      'v2.5.2 masked latent template predictor',
+      'v2.5.2 synthetic-trained closed-set head',
+      'v2.5.1 selective DecisionScan audit'
+    ].map(name=>name+': '+JSON.stringify(compactExperiment(enhanced,name))),
+    '',
+    'RECOMMENDED HUMAN REVIEW: Q24 and Q38 are historically disputed; no algorithm self-grade is proof.',
+    'Both image-processing pipelines must independently pass QR + left/right timing gates.',
+  ];
+  return lines.join('\n');
+}
