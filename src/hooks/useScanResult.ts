@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { ScanResult, AnswerOption, IntermediateImages } from '../types';
 import { runFullScan, type ScanProgress, type ScanModeOptions } from '../scanner/scanOrchestrator';
 import type { DualScanComparison } from '../diagnostics/dualScanComparison';
@@ -10,6 +10,7 @@ export function useScanResult() {
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [comparison, setComparison] = useState<DualScanComparison | null>(null);
+  const compareRound=useRef(0);
 
   const scan = useCallback(async (file: File, options?: ScanModeOptions, compare=false) => {
     setScanning(true);
@@ -18,15 +19,20 @@ export function useScanResult() {
     setComparison(null);
     try {
       if(compare){
-        const baseline=await runFullScan(file,p=>setProgress({
-          stage:'Pass 1/2 — baseline: '+p.stage,percent:p.percent/2
-        }),{proofscan:false,proofmodel:false,proofmesh:false});
+        // Alternate the first run to reduce systematic warmup advantage.
+        const firstPass=compareRound.current++ % 2===0?'baseline':'enhanced';
         const enhancedOptions={proofscan:true,proofmodel:true,proofmesh:true};
-        const enhanced=await runFullScan(file,p=>setProgress({
-          stage:'Pass 2/2 — enhanced: '+p.stage,percent:50+p.percent/2
-        }),enhancedOptions);
+        const runPass=async(kind:'baseline'|'enhanced',index:number)=>
+          runFullScan(file,p=>setProgress({
+            stage:'Pass '+index+'/2 — '+kind+': '+p.stage,
+            percent:(index-1)*50+p.percent/2
+          }),kind==='baseline'?{proofscan:false,proofmodel:false,proofmesh:false}:enhancedOptions);
+        const first=await runPass(firstPass,1);
+        const second=await runPass(firstPass==='baseline'?'enhanced':'baseline',2);
+        const baseline=firstPass==='baseline'?first:second;
+        const enhanced=firstPass==='enhanced'?first:second;
         setComparison({baseline:baseline.result,enhanced:enhanced.result,
-          enhancedOptions});
+          enhancedOptions,firstPass});
         // Show the enhanced result and its overlay as primary. Keep the
         // baseline full diagnostic/log snapshot in the comparison object.
         setScanResult(enhanced.result);
