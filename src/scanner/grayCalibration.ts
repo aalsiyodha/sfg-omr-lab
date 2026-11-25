@@ -4,6 +4,7 @@
  * Printed source: SFG_OMR_2.1_COORDINATES.json.
  * The two white-reference samples are diagnostics, not hard thresholds.
  */
+import { grayReader, type GrayPixels } from './pixelAccess';
 export interface GrayCalibration {
   status: 'ok' | 'low_contrast' | 'unavailable';
   patchMedians: number[];
@@ -21,14 +22,15 @@ export const WHITE_REFERENCE_CENTRES_MM = [
   {x:73,y:9.5}, {x:37,y:286.5},
 ] as const;
 
-type Gray = { rows:number;cols:number;ucharPtr(y:number,x:number):ArrayLike<number> };
+type Gray = GrayPixels;
 function sampleMedian(gray:Gray,dpi:number,xMm:number,yMm:number,halfMm:number):number|null {
   const scale=dpi/25.4, cx=Math.round(xMm*scale), cy=Math.round(yMm*scale);
   const half=Math.max(1,Math.round(halfMm*scale));
   if(cx-half<0||cy-half<0||cx+half>=gray.cols||cy+half>=gray.rows)return null;
+  const pixel=grayReader(gray);
   const values:number[]=[];
   for(let y=cy-half;y<=cy+half;y++)
-    for(let x=cx-half;x<=cx+half;x++) values.push(gray.ucharPtr(y,x)[0]);
+    for(let x=cx-half;x<=cx+half;x++) values.push(pixel(y,x));
   values.sort((a,b)=>a-b);
   return values[Math.floor(values.length/2)];
 }

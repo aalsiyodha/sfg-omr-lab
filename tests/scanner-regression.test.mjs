@@ -20,7 +20,10 @@ function loadTS(path, dependencies = {}) {
     .replace(/^import\s+(\w+)\s+from\s+['"]([^'"]+)['"];?\s*$/gm,
       (_all, local, from) => `const ${local} = deps[${JSON.stringify(from)}].default;`)
     .replace(/^export\s+(?=(?:async\s+)?(?:function|const|class))/gm, '');
-  return new Function('deps', 'cv', js + `\nreturn { ${exports.join(', ')} };\n`)(dependencies, globalThis.cv);
+  const resolved = path === 'src/scanner/pixelAccess.ts'
+    ? dependencies
+    : { './pixelAccess': loadTS('src/scanner/pixelAccess.ts'), ...dependencies };
+  return new Function('deps', 'cv', js + `\nreturn { ${exports.join(', ')} };\n`)(resolved, globalThis.cv);
 }
 
 const settings = {
@@ -2272,4 +2275,32 @@ test('v2.5.5 ttop32 fork is opt-in, realm isolated and cannot alter OMR scoring'
  assert.match(orchestrator,/scoringRuntimeUnchanged:true/);
  assert.match(page,/checked=\{ttopProbe\}/);
  assert.match(report,/v2\.5\.5 ttop32 OpenCV 4\.12\.0 WASM isolated runtime benchmark/);
+});
+
+test('v2.7.1: direct grayscale reads exactly match fallback, including padded stride',()=>{
+  const {grayReader}=loadTS('src/scanner/pixelAccess.ts');
+  const rows=17,cols=19,stride=25;
+  const bytes=new Uint8Array(rows*stride);
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)bytes[y*stride+x]=(x*19+y*7)%256;
+  const fallback={rows,cols,ucharPtr:(y,x)=>[bytes[y*stride+x]]};
+  const fast={...fallback,data:bytes,step:stride,channels:()=>1};
+  const rgba={...fast,channels:()=>4};
+  const truncated={...fast,data:bytes.subarray(0,13)};
+  const a=grayReader(fallback),b=grayReader(fast),c=grayReader(rgba),d=grayReader(truncated);
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+    assert.equal(b(y,x),a(y,x));
+    assert.equal(c(y,x),a(y,x));
+    assert.equal(d(y,x),a(y,x));
+  }
+});
+test('v2.7.1: paper median uses exact upper-middle historical rule',()=>{
+  const src=readFileSync('src/scanner/bubbleDetector.ts','utf8');
+  assert.match(src,/ringHistogram\[pixel\(sampleY, sampleX\)\]\+\+/);
+  assert.match(src,/seen > Math\.floor\(ringCount\/2\)/);
+  assert.doesNotMatch(src,/ringSamples\.sort/);
+});
+test('v2.7.1: no preview PNG encodes in the preprocessor fast path',()=>{
+  const src=readFileSync('src/scanner/imagePreprocessor.ts','utf8');
+  assert.match(src,/grayDataUrl: ''/);
+  assert.match(src,/thresholdedDataUrl: ''/);
 });

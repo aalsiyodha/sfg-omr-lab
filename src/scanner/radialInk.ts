@@ -7,6 +7,8 @@
  * Read-only algorithm: it NEVER moves a bubble centre to chase dark ink.
  * All scores are physical ink coverages, not correctness probabilities.
  */
+import { grayReader, type GrayPixels } from './pixelAccess';
+
 export interface RadialInkProfile {
   core: number;
   middle: number;
@@ -45,13 +47,14 @@ export const RADIAL_RULES: RadialRules = {
 
 /** Analyses the same fixed physical coordinates at any output DPI. */
 export function measureRadialInk(
-  gray: { rows:number; cols:number; ucharPtr(y:number,x:number):ArrayLike<number> },
+  gray: GrayPixels,
   cxPx: number,
   cyPx: number,
   dpi: number,
   threshold: number,
   rules: RadialRules = RADIAL_RULES,
 ): RadialInkProfile {
+  const pixel = grayReader(gray);
   const mmPx = dpi / 25.4;
   const bounds = [
     (rules.coreRadiusMm * mmPx) ** 2,
@@ -71,7 +74,7 @@ export function measureRadialInk(
       if(x<0||x>=gray.cols) continue;
       const zone = r2<=bounds[0]?0:r2<=bounds[1]?1:2;
       total[zone]++;
-      if(gray.ucharPtr(y,x)[0]<threshold)dark[zone]++;
+      if(pixel(y,x)<threshold)dark[zone]++;
     }
   }
   const [core,middle,outer]=total.map((n,i)=>n ? 100*dark[i]/n : 0);

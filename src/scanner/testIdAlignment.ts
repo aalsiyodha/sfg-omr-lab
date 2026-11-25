@@ -5,16 +5,18 @@
  * one marked row, a close tie, or the known practice test.
  */
 import { getTestIdBubbleCentre, mmToPx } from '../config/omrLayout';
-type Gray={rows:number;cols:number;ucharPtr(y:number,x:number):ArrayLike<number>};
+import { grayReader, type GrayPixels } from './pixelAccess';
+type Gray=GrayPixels;
 export interface TestIdOffsetCandidate {dx:number;dy:number;tens:number;units:number;strength:number}
 function coreFill(gray:Gray,x:number,y:number,r:number,threshold:number):number {
   const cx=Math.round(x),cy=Math.round(y),rr=Math.max(2,Math.round(r));
   if(cx-rr<0||cy-rr<0||cx+rr>=gray.cols||cy+rr>=gray.rows)return 0;
+  const pixel=grayReader(gray);
   let dark=0,total=0;
   for(let dy=-rr;dy<=rr;dy++)for(let dx=-rr;dx<=rr;dx++){
     if(dx*dx+dy*dy>rr*rr)continue;
     total++;
-    if(gray.ucharPtr(cy+dy,cx+dx)[0]<threshold)dark++;
+    if(pixel(cy+dy,cx+dx)<threshold)dark++;
   }
   return total?100*dark/total:0;
 }

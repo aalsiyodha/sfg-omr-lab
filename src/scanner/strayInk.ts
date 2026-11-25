@@ -3,20 +3,16 @@
  * All distances use the fixed physical template; these sensors never
  * choose an answer or alter registered bubble coordinates.
  */
-export interface InkMat {
-  rows: number;
-  cols: number;
-  ucharPtr(y: number, x: number): ArrayLike<number>;
+import { grayReader, type GrayPixels } from './pixelAccess';
+export interface InkMat extends GrayPixels {
 }
 
-function grayAt(mat: InkMat, x: number, y: number): number {
-  return mat.ucharPtr(y, x)[0];
-}
 
 /** Mean gray value of the printed-outline band (lower means darker). */
 export function measureOutlineBand(
   mat: InkMat, cx: number, cy: number, dpi: number,
 ): number {
+  const pixel = grayReader(mat);
   const scale = dpi / 25.4;
   const inner2 = (1.48 * scale) ** 2;
   const outer2 = (1.95 * scale) ** 2;
@@ -29,7 +25,7 @@ export function measureOutlineBand(
       if (d2 < inner2 || d2 > outer2) continue;
       const x = ox + dx, y = oy + dy;
       if (x < 0 || y < 0 || x >= mat.cols || y >= mat.rows) continue;
-      sum += grayAt(mat, x, y);
+      sum += pixel(y,x);
       count++;
     }
   }
@@ -45,6 +41,7 @@ export function hasInterBubbleInk(
   mat: InkMat, centres: { x: number; y: number }[],
   dpi: number, threshold: number, localPaper?: number[],
 ): boolean {
+  const pixel = grayReader(mat);
   const scale = dpi / 25.4;
   const halfHeight = Math.max(2, Math.round(1.05 * scale));
   for (let i = 0; i < centres.length - 1; i++) {
@@ -65,7 +62,7 @@ export function hasInterBubbleInk(
       for (let x = xStart; x <= xEnd; x++) {
         if (x < 0 || x >= mat.cols) continue;
         total++;
-        if (grayAt(mat,x,y) < localCutoff) { dark++; rowDark++; }
+        if (pixel(y,x) < localCutoff) { dark++; rowDark++; }
       }
       if (rowDark >= 3) activeRows++;
     }
@@ -74,7 +71,7 @@ export function hasInterBubbleInk(
       let columnDark = 0;
       for (let dy = -halfHeight; dy <= halfHeight; dy++) {
         const y = cy + dy;
-        if (y >= 0 && y < mat.rows && grayAt(mat,x,y) < localCutoff) columnDark++;
+        if (y >= 0 && y < mat.rows && pixel(y,x) < localCutoff) columnDark++;
       }
       if (columnDark >= 3) activeCols++;
     }
@@ -95,6 +92,7 @@ export function hasExternalStroke(
   mat: InkMat, cx: number, cy: number, dpi: number, paper: number,
 ): boolean {
   if (paper < 95) return false; // unreliable contrast reference
+  const pixel = grayReader(mat);
   const scale = dpi / 25.4;
   // Increase inner radius to 2.25mm so that the printed circle (ends ~1.95mm)
   // and registration variance (+-0.25mm) never trigger as an external stroke.
@@ -110,7 +108,7 @@ export function hasExternalStroke(
     if (d2 < innerSq || d2 > outerSq || dx > 1.40*scale) continue;
     const x=ox+dx,y=oy+dy;
     if(x<0||y<0||x>=mat.cols||y>=mat.rows)continue;
-    if(grayAt(mat,x,y)<threshold)darkPoints.push({x:dx,y:dy});
+    if(pixel(y,x)<threshold)darkPoints.push({x:dx,y:dy});
   }
   if(darkPoints.length<Math.ceil(0.45*scale*scale))return false;
   const xs=darkPoints.map(p=>p.x),ys=darkPoints.map(p=>p.y);

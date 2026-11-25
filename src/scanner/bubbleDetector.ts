@@ -3,6 +3,7 @@ import { getBubbleCentre, getTestIdBubbleCentre, mmToPx, OMR_LAYOUT } from '../c
 import { getSettings, MARK_REVIEW_THRESHOLDS } from '../config/scannerSettings';
 const RULES = MARK_REVIEW_THRESHOLDS;
 import { measureRadialInk } from './radialInk';
+import { grayReader } from './pixelAccess';
 import { measureOutlineBand, hasInterBubbleInk, hasExternalStroke } from './strayInk';
 import type { AnswerOption, BubbleMeasurement, DetectionStatus, QuestionResult } from '../types';
 
@@ -42,11 +43,12 @@ export interface BubbleMeasurementDetail {
 export function computeAdaptiveDarkThreshold(grayMat: any): number {
   if (!grayMat || !grayMat.rows || !grayMat.cols) return 152;
   const hist = new Int32Array(256);
+  const pixel = grayReader(grayMat);
   let count = 0;
   // Subsample every 4th pixel for high speed (< 2ms)
   for (let r = 0; r < grayMat.rows; r += 4) {
     for (let c = 0; c < grayMat.cols; c += 4) {
-      const val = grayMat.ucharPtr(r, c)[0];
+      const val = pixel(r, c);
       hist[val]++;
       count++;
     }
@@ -118,18 +120,28 @@ function measureBubbleInterior(
   // letter printed ~3.3mm to the right. Use the median to resist speckles.
   const ringInner = Math.max(r + 2, Math.round(mmToPx(2.05, dpi)));
   const ringOuter = Math.max(ringInner + 2, Math.round(mmToPx(2.55, dpi)));
-  const ringSamples: number[] = [];
+  const pixel = grayReader(grayMat);
+  const ringHistogram = new Uint16Array(256);
+  let ringCount = 0;
   for (let dy = -ringOuter; dy <= ringOuter; dy++) {
     for (let dx = -ringOuter; dx <= ringOuter; dx++) {
       const distanceSq = dx * dx + dy * dy;
       if (distanceSq < ringInner * ringInner || distanceSq > ringOuter * ringOuter) continue;
       const sampleX = bestCx + dx, sampleY = bestCy + dy;
       if (sampleX < 0 || sampleY < 0 || sampleX >= grayMat.cols || sampleY >= grayMat.rows) continue;
-      ringSamples.push(grayMat.ucharPtr(sampleY, sampleX)[0]);
+      ringHistogram[pixel(sampleY, sampleX)]++;
+      ringCount++;
     }
   }
-  ringSamples.sort((a,b) => a-b);
-  const paper = ringSamples.length ? ringSamples[Math.floor(ringSamples.length / 2)] : 235;
+  // Same upper-middle median as the old sorted array, with no allocations.
+  let paper = 235;
+  if (ringCount) {
+    let seen = 0;
+    for (let value = 0; value < 256; value++) {
+      seen += ringHistogram[value];
+      if (seen > Math.floor(ringCount/2)) { paper = value; break; }
+    }
+  }
   // Shadow-resistant threshold: local paper must never itself count as ink.
   // Retain the established threshold on well-lit paper.
   const referencePaper = paperOverride ?? paper;
@@ -156,7 +168,7 @@ function measureBubbleInterior(
       const dx = col - r;
       if (dx * dx + dySq <= rSq) {
         totalCirclePx++;
-        const pixelVal = grayMat.ucharPtr(y + row, x + col)[0];
+        const pixelVal = pixel(y + row, x + col);
         const isDark = pixelVal < inkThreshold;
         if (isDark) darkCirclePx++;
         if (r >= 5 && dx * dx + dy * dy >= rSq * 0.25) {
@@ -263,12 +275,13 @@ export function interiorHatchEvidence(
   const cx=Math.round(cxPx),cy=Math.round(cyPx);
   if(cx-r<0||cy-r<0||cx+r>=gray.cols||cy+r>=gray.rows)
     return {gapRows:0,hatchLike:false};
+  const pixel=grayReader(gray);
   let rows=0;
   for(let dy=-Math.round(r*.72);dy<=Math.round(r*.72);dy++){
     const xs:number[]=[];
     for(let dx=-r;dx<=r;dx++)
       if(dx*dx+dy*dy<=r*r)xs.push(dx);
-    const dark=xs.map(dx=>gray.ucharPtr(cy+dy,cx+dx)[0]<threshold);
+    const dark=xs.map(dx=>pixel(cy+dy,cx+dx)<threshold);
     // A gap must be inside ink, not a partially marked outer edge.
     let found=false;
     for(let i=2;i<dark.length-3;i++){
@@ -466,6 +479,7 @@ export function detectQuestion(
     // A small crossed or ticked bubble can have almost no dark interior
     // at the standard threshold. Compare the fixed interior against local
     // paper without promoting any mark to a valid answer.
+    const faintPixel=grayReader(correctedGray);
     const faintMark = centres.some((c,i) => {
       const paper = measurements[i].paperReferenceBrightness ??
         measurements[i].localPaperBrightness ?? 235;
@@ -477,7 +491,7 @@ export function detectQuestion(
         const x=x0+dx,y=y0+dy;
         if(x<0||y<0||x>=correctedGray.cols||y>=correctedGray.rows)continue;
         total++;
-        if(correctedGray.ucharPtr(y,x)[0] < paper-38)dark++;
+        if(faintPixel(y,x) < paper-38)dark++;
       }
       const fraction=total?dark/total:0;
       // Faint strokes: nontrivial interior evidence but not broad solid ink.

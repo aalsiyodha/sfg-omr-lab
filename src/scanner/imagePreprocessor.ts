@@ -26,35 +26,30 @@ export function preprocessImage(canvas: HTMLCanvasElement): PreprocessedImages {
   if (!checkOpenCV()) throw new Error('OpenCV not loaded');
   const settings = getSettings();
   
-  const src = cv.imread(canvas);
-  const gray = new cv.Mat();
-  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-  src.delete();
-
-  const blurred = new cv.Mat();
-  const ksize = settings.gaussianBlurKsize % 2 === 0
-    ? settings.gaussianBlurKsize + 1 
-    : settings.gaussianBlurKsize;
-  cv.GaussianBlur(gray, blurred, new cv.Size(ksize, ksize), 0);
-
-  const thresholded = new cv.Mat();
-  const blockSize = settings.adaptiveThreshBlockSize % 2 === 0
-    ? settings.adaptiveThreshBlockSize + 1
-    : settings.adaptiveThreshBlockSize;
-  cv.adaptiveThreshold(
-    blurred, thresholded, 255,
-    cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-    cv.THRESH_BINARY_INV,
-    blockSize, settings.adaptiveThreshC
-  );
-
-  return {
-    gray,
-    blurred,
-    thresholded,
-    grayDataUrl: matToDataUrl(gray),
-    thresholdedDataUrl: matToDataUrl(thresholded),
-  };
+  // Single owner for each Mat. Release partial allocations on exceptions.
+  let src: any = null, gray: any = null, blurred: any = null, thresholded: any = null;
+  try {
+    src = cv.imread(canvas);
+    gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    blurred = new cv.Mat();
+    const ksize = settings.gaussianBlurKsize % 2 === 0
+      ? settings.gaussianBlurKsize + 1 : settings.gaussianBlurKsize;
+    cv.GaussianBlur(gray, blurred, new cv.Size(ksize, ksize), 0);
+    thresholded = new cv.Mat();
+    const blockSize = settings.adaptiveThreshBlockSize % 2 === 0
+      ? settings.adaptiveThreshBlockSize + 1 : settings.adaptiveThreshBlockSize;
+    cv.adaptiveThreshold(blurred, thresholded, 255,
+      cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV,
+      blockSize, settings.adaptiveThreshC);
+    // Neither image is displayed on the public scanner. Avoid both PNG encodes.
+    return {gray, blurred, thresholded, grayDataUrl: '', thresholdedDataUrl: ''};
+  } catch (error) {
+    cleanupMats(gray, blurred, thresholded);
+    throw error;
+  } finally {
+    cleanupMats(src);
+  }
 }
 
 export function cleanupMats(...mats: any[]): void {

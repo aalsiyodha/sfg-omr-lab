@@ -7,6 +7,7 @@
  * the darkest ink point; this would chase student markings.
  */
 import { getBubbleCentre, getTestIdBubbleCentre, mmToPx } from '../config/omrLayout';
+import { grayReader } from './pixelAccess';
 
 export interface GridOffset { dx: number; dy: number; confidence: number; applied: boolean }
 export interface GridAlignment {
@@ -49,17 +50,10 @@ function ringScore(gray:Gray,x:number,y:number,dpi:number,radiusMm:number):numbe
   if(cx-samples.outer<0||cy-samples.outer<0||
     cx+samples.outer>=gray.cols||cy+samples.outer>=gray.rows)return 0;
   if(samples.ring.length<8||samples.core.length<5)return 0;
-  const raw=gray.data;
-  const data=raw&&raw.length>=gray.cols*gray.rows?raw:null;
+  const pixel=grayReader(gray);
   let ringSum=0,coreSum=0;
-  if(data){
-    const base=cy*gray.cols+cx,w=gray.cols;
-    for(const [dx,dy] of samples.ring)ringSum+=data[base+dy*w+dx];
-    for(const [dx,dy] of samples.core)coreSum+=data[base+dy*w+dx];
-  }else{
-    for(const [dx,dy] of samples.ring)ringSum+=gray.ucharPtr(cy+dy,cx+dx)[0];
-    for(const [dx,dy] of samples.core)coreSum+=gray.ucharPtr(cy+dy,cx+dx)[0];
-  }
+  for(const [dx,dy] of samples.ring)ringSum+=pixel(cy+dy,cx+dx);
+  for(const [dx,dy] of samples.core)coreSum+=pixel(cy+dy,cx+dx);
   return Math.max(0,Math.min(90,
     coreSum/samples.core.length-ringSum/samples.ring.length));
 }
