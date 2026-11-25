@@ -88,6 +88,30 @@ function disposeAlignment(alignment: AcceptedAlignment): void {
  * The original sheet has a unique QR and 50 timing marks, so a geometrically
  * plausible but incorrect set of squares must not be trusted (Test 4).
  */
+/** Decode only the expected 25mm QR patch from the rectified CV Mat.
+ * This avoids rendering/encoding the entire A4 image during failed probes.
+ * The existing regional jsQR fallback and strict SFGOMR1: parser are reused.
+ */
+function decodeWarpedQrAt(mat:any,xMm:number,yMm:number,sizeMm:number,dpi:number):QRStatus {
+  const scale=dpi/25.4,padMm=2;
+  const x=Math.max(0,Math.round((xMm-padMm)*scale));
+  const y=Math.max(0,Math.round((yMm-padMm)*scale));
+  const side=Math.round((sizeMm+2*padMm)*scale);
+  if(x+side>mat.cols||y+side>mat.rows||side<=0)
+    return {found:false,raw:null,valid:false,studentId:null,
+      error:'Expected QR region outside registered A4 page'};
+  let crop:any=null;
+  try{
+    crop=mat.roi(new cv.Rect(x,y,side,side));
+    const canvas=document.createElement('canvas');
+    canvas.width=side;canvas.height=side;
+    cv.imshow(canvas,crop);
+    // In a 25.25mm crop, the printed QR begins 2mm from its top-left.
+    // decodeQRFromRegion preserves all its normal low-contrast rescue steps.
+    return decodeQRFromRegion(canvas,padMm,padMm,sizeMm,dpi);
+  }finally{crop?.delete?.();}
+}
+
 type RegistrationProbe = {
   phase:'warp'|'qr'|'timing'|'accepted'|'error';
   reason:string;qrValid:boolean;
@@ -107,35 +131,32 @@ function evaluateHypothesis(
   if(evidence){evidence.phase='warp';evidence.reason='Warp did not produce an image';}
   try {
     persp = hypothesis.kind === 'corner'
-      ? correctPerspective(source, hypothesis.markers)
+      ? correctPerspective(source, hypothesis.markers, false)
       : hypothesis.kind === 'midpoint'
-      ? correctPerspectiveFromMidpoints(source, hypothesis.markers)
+      ? correctPerspectiveFromMidpoints(source, hypothesis.markers, false)
       : hypothesis.kind === 'hybrid'
       ? hypothesis.qrLocated
-         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco)
-         : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco)
-      : correctPerspectiveFromArucos(source,hypothesis.markers);
+         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,false)
+         : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,false)
+      : correctPerspectiveFromArucos(source,hypothesis.markers,false);
     if (!persp.success || !persp.corrected) return null;
     if(evidence){evidence.phase='qr';evidence.reason='QR not yet independently verified';}
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
     canvas.height = persp.corrected.rows;
-    cv.imshow(canvas, persp.corrected);
-
-    let qr = decodeQRFromRegion(
-      canvas, OMR_LAYOUT.qr.xMm, OMR_LAYOUT.qr.yMm, OMR_LAYOUT.qr.sizeMm, dpi
+    // Full A4 canvas is populated only for a successfully verified alignment.
+    let qr = decodeWarpedQrAt(
+      persp.corrected,OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi
     );
     let rotated = false;
     if (!qr.valid) {
       const x = OMR_LAYOUT.page.widthMm - OMR_LAYOUT.qr.xMm - OMR_LAYOUT.qr.sizeMm;
       const y = OMR_LAYOUT.page.heightMm - OMR_LAYOUT.qr.yMm - OMR_LAYOUT.qr.sizeMm;
-      const opposite = decodeQRFromRegion(canvas, x, y, OMR_LAYOUT.qr.sizeMm, dpi);
+      const opposite = decodeWarpedQrAt(persp.corrected,x,y,OMR_LAYOUT.qr.sizeMm,dpi);
       if (opposite.valid) {
         cv.rotate(persp.corrected, persp.corrected, cv.ROTATE_180);
-        cv.imshow(canvas, persp.corrected);
-        qr = decodeQRFromRegion(
-          canvas, OMR_LAYOUT.qr.xMm, OMR_LAYOUT.qr.yMm, OMR_LAYOUT.qr.sizeMm, dpi
-        );
+        qr=decodeWarpedQrAt(persp.corrected,OMR_LAYOUT.qr.xMm,
+          OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
         rotated = true;
       }
     }
@@ -161,6 +182,7 @@ function evaluateHypothesis(
         if(strongTiming&&stripValid){
           gray=candidateGray;candidateGray=null;keep=true;
           logger.warning('perspective',`${hypothesis.name}: PROVISIONAL ONLY — QR not decoded; scoring prohibited`);
+          cv.imshow(canvas,persp.corrected);
           return {hypothesis,perspective:persp,gray,canvas,qr,check:timing,
             rotated:false,provisional:true};
         }
@@ -241,7 +263,7 @@ function evaluateHypothesis(
             if(shouldAdoptTimingRefinement(check,updatedCheck)){
               cleanupMats(gray,persp.corrected);
               persp.corrected=rescued.corrected;
-              persp.correctedDataUrl=candidate.toDataURL('image/png');
+              persp.correctedDataUrl='';
               gray=updatedGray;updatedGray=null;
               cv.imshow(canvas,persp.corrected);
               check=updatedCheck;
@@ -303,7 +325,7 @@ function evaluateHypothesis(
               qrIdentityUnchanged:true});
             if(after.passed && after.matched>check.matched &&
                holdout.left>=8 && holdout.right>=8){
-              const correctedUrl=candidate.toDataURL('image/png');
+              const correctedUrl='';
               cv.imshow(canvas,mesh.corrected);
               cleanupMats(gray,persp.corrected);
               persp.corrected=mesh.corrected;
@@ -333,6 +355,8 @@ function evaluateHypothesis(
     if(evidence){evidence.phase='accepted';evidence.reason='QR valid and timing accepted';
       evidence.qrValid=qr.valid;evidence.timing=check.matched;
       evidence.left=check.leftMatched;evidence.right=check.rightMatched;}
+    // The verified image is rendered once, and only when actually selected.
+    cv.imshow(canvas,persp.corrected);
     keep = true;
     return { hypothesis, perspective: persp, gray, canvas, qr, check, rotated };
   } catch (error) {
