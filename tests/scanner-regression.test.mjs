@@ -2183,7 +2183,7 @@ test('isolated Sheet ID prototype prints and checks 25+25 timing, footer and Tes
  assert.match(pdf,/footerBits\(count\)/);
  assert.match(pdf,/getTestIdBubbleCentre\(type,d\)/);
  assert.match(pdf,/square\(f.leftBoxXmm/);
- assert.match(scanner,/decodeSheetFooter\(gray,dpi\)/);
+ assert.match(scanner,/decodeSheetFooter\(candidateGray,dpi\)/);
  assert.match(scanner,/timing\.matched<48\|\|timing\.leftMatched<23/);
  assert.match(scanner,/detectTestId\(gray,dpi/);
  assert.match(scanner,/detectAllAnswers\(gray,dpi/);
