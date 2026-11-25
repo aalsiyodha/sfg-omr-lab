@@ -1030,6 +1030,7 @@ export async function runFullScan(
         relativeGain:verifiedMesh?.relativeGain??null,
         maxDisplacementPx:verifiedMesh?.maxDisplacementPx??null,
         reason:verifiedMesh?.reason??'Checkbox disabled; mesh evaluation skipped',
+        rejectionBreakdown:verifiedMesh?.rejectionBreakdown??null,
         durationMs:meshMs,
         note:'Candidate based only on printed rings; cannot override QR identity'
       });
