@@ -1,6 +1,8 @@
 import { loadImageFromFile, validateImage } from '../scanner/imageLoader';
 import { preprocessImage, cleanupMats, checkOpenCV } from '../scanner/imagePreprocessor';
 import { detectMarkers } from '../scanner/markerDetector';
+import { proposeSheetCorners } from './sheetIdCornerCandidates';
+import type { MarkerDetectionResult } from '../types';
 import { correctPerspective } from '../scanner/perspectiveCorrection';
 import { verifyTimingMarks } from '../scanner/alignmentValidator';
 import { measureGrayCalibration, grayStripInkCeiling } from '../scanner/grayCalibration';
@@ -17,7 +19,8 @@ export interface SheetIdScanReport {
   status:'verified'|'rejected';
   reason:string;
   sheet:FooterEvidence|null;
-  registration:'corner/adaptive'|null;
+  registration:'corner/adaptive'|'corner/footer-rescue'|null;
+  cornerAttempts:Array<{method:string;centres:number[][];footerBits:string;leftBox:boolean;rightBox:boolean;timing:number|null;reason:string}>;
   rotated180:boolean;
   timing:{matched:number;left:number;right:number}|null;
   testId:number|null;
@@ -35,9 +38,11 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
  let sheet:FooterEvidence|null=null;
  let timing:ReturnType<typeof verifyTimingMarks>|null=null;
  let rotated180=false;
+ const cornerAttempts:SheetIdScanReport['cornerAttempts']=[];
+ let registration:SheetIdScanReport['registration']=null;
  const empty=(reason:string):SheetIdScanReport=>({
   elapsedMs:Math.round(performance.now()-start),stages,status:'rejected',
-  reason,sheet,registration:null,rotated180,timing:timing?
+  reason,sheet,registration,rotated180,cornerAttempts,timing:timing?
   {matched:timing.matched,left:timing.leftMatched,right:timing.rightMatched}:null,
   testId:null,answers:[],detected:0,blank:0,multiple:0,uncertain:0,overlayUrl:null
  });
@@ -51,33 +56,85 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
   stage('preprocessing');
   const corners=detectMarkers(prep.thresholded,img.width,img.height);
   stage('cornerDetection');
-  if(!corners.found)return empty(corners.error??'Four corners not verified');
-  persp=correctPerspective(img.canvas,corners);
-  stage('perspective');
-  if(!persp.success||!persp.corrected)return empty('Perspective correction failed');
-  gray=new cv.Mat();
-  cv.cvtColor(persp.corrected,gray,cv.COLOR_RGBA2GRAY);
   const dpi=getSettings().scanDpi;
-  sheet=decodeSheetFooter(gray,dpi);
-  if(!sheet.valid){
-   cv.rotate(persp.corrected,persp.corrected,cv.ROTATE_180);
-   cv.cvtColor(persp.corrected,gray,cv.COLOR_RGBA2GRAY);
-   const flipped=decodeSheetFooter(gray,dpi);
-   if(flipped.valid){sheet=flipped;rotated180=true;}
-   else {
-    // Preserve original orientation for a truthful rejected trace.
-    cv.rotate(persp.corrected,persp.corrected,cv.ROTATE_180);
-    cv.cvtColor(persp.corrected,gray,cv.COLOR_RGBA2GRAY);
+  // The legacy finder can choose dark objects in the background or a bottom
+  // grayscale calibration square instead of the printed page corner. A
+  // plausible quadrilateral is not proof: cross-verify the encoded footer
+  // and both timing tracks before adopting any registration candidate.
+  const fallback=proposeSheetCorners(prep.thresholded,img.width,img.height,20);
+  stage('cornerProposals');
+  const hypotheses:{method:'corner/adaptive'|'corner/footer-rescue';markers:MarkerDetectionResult}[]=[];
+  if(corners.found)hypotheses.push({method:'corner/adaptive',markers:corners});
+  for(const candidate of fallback){
+   const centre=(m:{x:number;y:number}|null)=>m?[m.x,m.y]:[0,0];
+   const coords=(m:MarkerDetectionResult)=>[
+    centre(m.topLeft),centre(m.topRight),centre(m.bottomLeft),centre(m.bottomRight)
+   ];
+   const signature=JSON.stringify(coords(candidate.markers));
+   if(hypotheses.some(h=>JSON.stringify(coords(h.markers))===signature))continue;
+   hypotheses.push({method:'corner/footer-rescue',markers:candidate.markers});
+  }
+  let chosen=false;
+  for(const h of hypotheses){
+   let candidate:ReturnType<typeof correctPerspective>|null=null;
+   let candidateGray:any=null;
+   let candidateTiming:ReturnType<typeof verifyTimingMarks>|null=null;
+   let candidateSheet:FooterEvidence|null=null;
+   let candidateRotated=false;
+   let accepted=false;
+   const centre=(p:{x:number;y:number}|null)=>p?[p.x,p.y]:[0,0];
+   const centres=[h.markers.topLeft,h.markers.topRight,
+    h.markers.bottomLeft,h.markers.bottomRight].map(centre);
+   try{
+    candidate=correctPerspective(img.canvas,h.markers);
+    if(!candidate.success||!candidate.corrected)continue;
+    candidateGray=new cv.Mat();
+    cv.cvtColor(candidate.corrected,candidateGray,cv.COLOR_RGBA2GRAY);
+    candidateSheet=decodeSheetFooter(candidateGray,dpi);
+    if(!candidateSheet.valid){
+      cv.rotate(candidate.corrected,candidate.corrected,cv.ROTATE_180);
+      cv.cvtColor(candidate.corrected,candidateGray,cv.COLOR_RGBA2GRAY);
+      const reversed=decodeSheetFooter(candidateGray,dpi);
+      if(reversed.valid){candidateSheet=reversed;candidateRotated=true;}
+      else {
+        cv.rotate(candidate.corrected,candidate.corrected,cv.ROTATE_180);
+        cv.cvtColor(candidate.corrected,candidateGray,cv.COLOR_RGBA2GRAY);
+      }
+    }
+    if(!candidateSheet.valid||candidateSheet.count!==50)continue;
+    candidateTiming=verifyTimingMarks(candidateGray,dpi);
+    if(candidateTiming.matched<48||
+      candidateTiming.leftMatched<23||candidateTiming.rightMatched<23)continue;
+    // All three checks are independent: four-corner warp, two hollow boxes
+    // with exact codeword, and 25 timing locations on EACH side.
+    persp=candidate;candidate=null;
+    gray=candidateGray;candidateGray=null;
+    sheet=candidateSheet;timing=candidateTiming;rotated180=candidateRotated;
+    registration=h.method;
+    chosen=true;accepted=true;
+    break;
+   }catch(error){
+    cornerAttempts.push({method:h.method,centres,footerBits:candidateSheet?.bits??'',
+      leftBox:candidateSheet?.leftBox??false,rightBox:candidateSheet?.rightBox??false,
+      timing:candidateTiming?.matched??null,reason:String(error)});
+   }finally{
+    if(!accepted&&cornerAttempts.at(-1)?.centres!==centres)
+      cornerAttempts.push({method:h.method,centres,footerBits:candidateSheet?.bits??'',
+       leftBox:candidateSheet?.leftBox??false,rightBox:candidateSheet?.rightBox??false,
+       timing:candidateTiming?.matched??null,
+       reason:candidateSheet?.valid?
+         'Footer valid; timing below 48/50 or 23 per side':
+         candidateSheet?.reason??'Warp could not be verified'});
+    cleanupMats(candidateGray,candidate?.corrected,candidate?.transform);
    }
   }
-  stage('footerAndOrientation');
-  if(!sheet.valid)return empty('Sheet footer invalid: '+sheet.reason);
-  if(sheet.count!==50)return empty('This scanner currently validates only 50-question geometry');
-  timing=verifyTimingMarks(gray,dpi);
-  stage('timing');
-  // Strict experimental gate, stronger than 35/50 routine check.
-  if(timing.matched<48||timing.leftMatched<23||timing.rightMatched<23)
-   return empty('Strict timing gate failed ('+timing.matched+'/50)');
+  stage('registrationAndFooter');
+  if(!chosen){
+   // Preserve the best available rejection evidence for diagnostics.
+   const last=cornerAttempts.at(-1);
+   return empty('No candidate independently verified footer + 48/50 timing. '+
+     (last?.reason??corners.error??'Four corners unavailable'));
+  }
   const calibration=measureGrayCalibration(gray,dpi);
   const inkCeiling=grayStripInkCeiling(calibration)??undefined;
   stage('calibration');
@@ -97,7 +154,7 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
    elapsedMs:Math.round(performance.now()-start),stages,
    status:tid.testId===null?'rejected':'verified',
    reason:tid.testId===null?'Test ID bubbles ambiguous or blank':'Footer, 4 corners and both timing tracks verified',
-   sheet,registration:'corner/adaptive',rotated180,
+   sheet,registration,rotated180,cornerAttempts,
    timing:{matched:timing.matched,left:timing.leftMatched,right:timing.rightMatched},
    testId:tid.testId,answers,overlayUrl,
    detected:answers.filter(a=>a.status==='detected').length,
