@@ -138,6 +138,7 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
    return empty('No candidate independently verified footer + 48/50 timing. '+
      (last?.reason??corners.error??'Four corners unavailable'));
   }
+  const verifiedTiming=timing;
   const calibration=measureGrayCalibration(gray,dpi);
   const inkCeiling=grayStripInkCeiling(calibration)??undefined;
   stage('calibration');
@@ -151,7 +152,7 @@ export async function scanSheetId50(file:File):Promise<SheetIdScanReport>{
     // Use measured printed side timing markers as geometry anchors rather
     // than forcing the answer grid to follow an imperfect global homography.
     // The existing bubble-shape classifier is otherwise unchanged.
-    const marker=timing.offsetForQuestion(q,xMm);
+    const marker=verifiedTiming.offsetForQuestion(q,xMm);
     return marker;
   });
   stage('answers');
