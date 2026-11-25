@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { APP_VERSION, APP_BUILD_META } from '../config/version';
 import { downloadSheetIdPrototype } from './sheetIdPdf';
 import { scanSheetId50, type SheetIdScanReport } from './sheetIdScanner';
 
@@ -16,6 +17,7 @@ export default function SheetIdExperimentPage(){
  const diagnostic=report?[
   'SFG OMR LAB — QR-FREE SHEET ID / TIMING PROTOTYPE',
   'Image='+imageName,
+  'Version='+APP_VERSION+' | build='+APP_BUILD_META.buildId+' | source='+APP_BUILD_META.source,
   'Status='+report.status+' | '+report.reason,
   'Elapsed='+report.elapsedMs+' ms',
   'Footer='+JSON.stringify(report.sheet),
@@ -45,6 +47,7 @@ export default function SheetIdExperimentPage(){
   <div className="mb-4">
    <div className="badge text-bg-warning mb-2">Independent experiment · NOT production scanner</div>
    <h2>Sheet ID + 50 Timing Boxes</h2>
+   <div role="status" className="alert alert-info py-2 small"><strong>{APP_VERSION}</strong><span className="ms-2">Build {APP_BUILD_META.buildId} · {APP_BUILD_META.builtAt} · {APP_BUILD_META.source}</span></div>
    <p className="text-secondary">Four solid corners · 25 left + 25 right timing squares ·
     compact binary footer with two hollow end boxes · grayscale · existing Test ID.
     No QR, ArUco or midpoint markers on the new sheet.</p>
