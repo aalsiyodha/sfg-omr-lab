@@ -2158,3 +2158,37 @@ test('v2.5.2 experimental v3 alternates baseline/enhanced order and collects dia
  assert.match(page,/Download suspicious bubble crops/);
  assert.match(scanner,/makeReviewCropSheet\(chosen\.canvas,answers\)/);
 });
+
+test('v2.5.3 QR ROI A/B retains exact QR and independent timing safety gates',()=>{
+ const orchestrator=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ const hook=readFileSync('src/hooks/useScanResult.ts','utf8');
+ const page=readFileSync('src/pages/ScanPage.tsx','utf8');
+ const comparison=readFileSync('src/diagnostics/dualScanComparison.ts','utf8');
+ assert.match(orchestrator,/function decodeWarpedQrAt\(/);
+ assert.match(orchestrator,/crop=mat\.roi\(new cv\.Rect\(x,y,side,side\)\)/);
+ assert.match(orchestrator,/decodeQRFromRegion\(canvas,padMm,padMm,sizeMm,dpi\)/);
+ assert.match(orchestrator,/options\?\.fastQrRoi!==false/);
+ assert.match(orchestrator,/correctPerspective\(source, hypothesis\.markers, !fastQrRoi\)/);
+ assert.match(orchestrator,/verifyTimingMarks\(gray, dpi\)/);
+ assert.match(orchestrator,/canStopUnifiedRegistration/);
+ assert.match(orchestrator,/if \(!qr\.valid\)/);
+ assert.match(orchestrator,/const previewStart=performance\.now\(\)/);
+ assert.match(hook,/fastQrRoi:false/);
+ assert.match(hook,/fastQrRoi:true/);
+ assert.match(hook,/const first=await runPass\(firstPass,1\)/);
+ assert.match(hook,/const second=await runPass\(firstPass==='baseline'\?'enhanced':'baseline',2\)/);
+ assert.match(page,/One upload: compare original v3 vs v2\.5\.3 ROI optimization/);
+ assert.match(comparison,/LEGACY vs FAST QR ROI A\/B/);
+});
+test('v2.5.3 avoids redundant PNG encoding during registration only when fast QR ROI enabled',()=>{
+ for(const file of [
+  'src/scanner/perspectiveCorrection.ts',
+  'src/scanner/hybridRegistration.ts',
+  'src/scanner/qrArucoRegistration.ts']){
+  const src=readFileSync(file,'utf8');
+  assert.match(src,/serializePreview\s*\?\s*[^\n]*toDataUrl|serializePreview\s*\?\s*[^\n]*toDataURL/i);
+ }
+ const orchestrator=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+ assert.match(orchestrator,/if\(!fastQrRoi\)cv\.imshow\(canvas,persp\.corrected\)/);
+ assert.match(orchestrator,/cv\.imshow\(canvas,persp\.corrected\);\n    if\(evidence\)evidence\.previewMs/);
+});
