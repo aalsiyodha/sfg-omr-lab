@@ -3,7 +3,7 @@ import { loadImageFromFile, validateImage } from './imageLoader';
 import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
 import { detectCoarseToFineCorners } from './coarseToFineCorners';
-import { fitRobustSheetWarp } from './robustSheetHomography';
+import { fitRobustSheetWarp, type FusionEvidence } from './robustSheetHomography';
 import { measureOpenCv5Simd } from './opencv5SimdLab';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
@@ -121,6 +121,7 @@ type RegistrationProbe = {
   reason:string;qrValid:boolean;
   timing:number;left:number;right:number;
   warpMs?:number;qrMs?:number;previewMs?:number;
+  fusionEvidence?:FusionEvidence;
 };
 function evaluateHypothesis(
   source: HTMLCanvasElement,
@@ -147,7 +148,10 @@ function evaluateHypothesis(
          : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,!fastQrRoi)
       : hypothesis.kind === 'fusion'
       ? fitRobustSheetWarp(source,hypothesis.corners,hypothesis.midpoint,
-          hypothesis.aruco,dpi)?.perspective ?? {corrected:null,correctedDataUrl:'',
+          hypothesis.aruco,dpi,(fusion)=>{
+          if(evidence)evidence.fusionEvidence=fusion;
+          logger.info('perspective','v2.5.3 robust homography evidence',{...fusion});
+        })?.perspective ?? {corrected:null,correctedDataUrl:'',
             transform:null,success:false,error:'RANSAC failed independent marker agreement'}
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
@@ -456,7 +460,10 @@ export async function runFullScan(
     markerProfile.cornerDetectionMs=Date.now()-cornerStart;
     logger.info('markerDetection','v2.5.3 coarse-to-fine corner evidence',{
       enabled:options?.coarseToFine!==false,coarse:coarse?.stats??null,
-      source:coarse?.markers.found?'coarse-refined':'legacy/full-resolution'});
+      source:coarse?.markers.found?'coarse-refined':'legacy/full-resolution',
+      originalPixels:loaded.width*loaded.height,
+      coarsePixels:coarse?coarse.stats.coarseWidth*coarse.stats.coarseHeight:null,
+      legacyRescueAvailable:true});
     logger.info('perspective','v2.5.3 registration optimization mode',{fastQrRoi:options?.fastQrRoi!==false,
       method:options?.fastQrRoi===false?'v3 legacy full-page PNG and QR scan':'ROI-only QR + deferred preview PNG',
       gates:'QR identity and 25+25 timing unchanged'});
@@ -470,6 +477,7 @@ export async function runFullScan(
       qrValid:boolean;timing:number;left:number;right:number;
       accepted:boolean;provisional:boolean;
       warpMs?:number;qrMs?:number;previewMs?:number;
+      fusionEvidence?:FusionEvidence;
     }[]=[];
     const traceRegistration=(
       source:HTMLCanvasElement,hypothesis:Hypothesis,dpi:number,
@@ -488,7 +496,8 @@ export async function runFullScan(
         left:result?.check.leftMatched??evidence.left,
         right:result?.check.rightMatched??evidence.right,
         accepted:Boolean(result),provisional:Boolean(result?.provisional),
-        warpMs:evidence.warpMs,qrMs:evidence.qrMs,previewMs:evidence.previewMs
+        warpMs:evidence.warpMs,qrMs:evidence.qrMs,previewMs:evidence.previewMs,
+        fusionEvidence:evidence.fusionEvidence
       };
       registrationAttempts.push(item);
       logger.info('perspective','v2.5.2 detailed registration candidate',item);
@@ -530,6 +539,9 @@ export async function runFullScan(
           usedGeometries.add(fingerprint);fastWarpAttempts++;
           markerProfile.hypothesesEvaluated++;
           const fallback=traceRegistration(loaded.canvas,alternative,dpi,curveBudget);
+          logger.info('markerDetection','v2.5.3 full-resolution corner retry',{
+            previous:'coarse-refined',result:fallback?'verified':'unverified',
+            sameSource:false});
           if(fallback)selected=fallback;else hypotheses.push(alternative);
         }
       }
