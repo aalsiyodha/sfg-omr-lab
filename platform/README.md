@@ -11,7 +11,7 @@ scanner in the repository root is unchanged.**
 - 50-question test creation (matches current SFG scanner template)
 - Manual answer key editor and strict CSV import/export
 - Draft and published answer keys, immutable after publishing
-- SQL schema for candidates, reviewed scan submissions, scores and leaderboard
+- SQL schema for candidates, reviewed scan submissions, scores, leaderboard and per-question option analysis
 - Row-level security / institute data isolation
 - Dedicated real scoring RPC; do **not** trust browser-calculated totals
 
@@ -27,7 +27,7 @@ Open http://localhost:3000/demo to try the dashboard without setting up auth.
 ## Enable real sign-in and database
 
 1. Create a Supabase project.
-2. In the Supabase SQL editor, run `supabase/schema.sql` then `supabase/results.sql`.
+2. In the Supabase SQL editor, run `supabase/schema.sql` then `supabase/results.sql`, followed by `supabase/analytics.sql`.
 3. Enable **Google** under Authentication > Providers; configure a Google Cloud OAuth
    client and its Supabase callback.
 4. Add `http://localhost:3000/auth/callback` to Supabase Auth redirect allowlist.
@@ -38,7 +38,7 @@ Open http://localhost:3000/demo to try the dashboard without setting up auth.
 
 ## Privacy and release limitations
 
-- No candidate images are automatically uploaded from the existing scanner.
+- Candidate response storage is compact: 100 students × 100 tests × 50 questions means 10,000 attempts and 500,000 response values, not 500,000 full image records. Store photos separately only if required.\n- No candidate images are automatically uploaded from the existing scanner.
   Integrating reviewed scans with the submission RPC is a separate step.
 - Scanned results only qualify for storage after identity/timing verification
   and review. The database function computes marks against a published key.

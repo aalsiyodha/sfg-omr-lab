@@ -2,7 +2,7 @@ import Link from 'next/link';
 import {notFound,redirect} from 'next/navigation';
 import {requireUser} from '@/lib/auth';
 import {isConfigured} from '@/lib/env';
-type Item={question:number;correct_answer:string;total_attempts:number;correct_count:number;option_a:number;option_b:number;option_c:number;option_d:number;blank_count:number;correct_percent:number};
+type Item={question:number;correct_answer:string;total_attempts:number;correct_count:number;option_a:number;option_b:number;option_c:number;option_d:number;blank_count:number;multiple_count:number;correct_percent:number};
 export default async function QuestionAnalysis({params}:{params:Promise<{id:string}>}){
  if(!isConfigured())redirect('/demo');
  const {db}=await requireUser();
@@ -27,7 +27,7 @@ export default async function QuestionAnalysis({params}:{params:Promise<{id:stri
       <h2>{row.correct_answer==='X'?'Cancelled':'Correct answer: '+row.correct_answer}</h2></div>
       <span className="pill">{row.total_attempts} attempts</span></div>
     <div className="analysisScore">{row.correct_answer==='X'?'Not scored':Number(row.correct_percent).toFixed(1)+'% correct'}</div>
-    {([['A',row.option_a],['B',row.option_b],['C',row.option_c],['D',row.option_d],['Blank',row.blank_count]] as const).map(([option,count])=>
+    {([['A',row.option_a],['B',row.option_b],['C',row.option_c],['D',row.option_d],['Blank',row.blank_count],['Multiple',row.multiple_count]] as const).map(([option,count])=>
       <div className="analysisOption" key={option}>
        <div className="analysisLabel"><span>{option}{option===row.correct_answer?' ✓':''}</span><strong>{count}</strong></div>
        <div className="analysisTrack"><span className={option===row.correct_answer?'correct':''}
