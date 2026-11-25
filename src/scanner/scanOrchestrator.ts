@@ -6,6 +6,7 @@ import { detectCoarseToFineCorners } from './coarseToFineCorners';
 import { fitRobustSheetWarp, type FusionEvidence } from './robustSheetHomography';
 import {discoverUpperPairs} from './partialMarkerRescue';
 import { measureOpenCv5Simd } from './opencv5SimdLab';
+import { measureTtop32Fork } from './ttop32ForkLab';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
@@ -427,6 +428,7 @@ export interface ScanModeOptions {
   coarseToFine?: boolean;
   robustFusion?: boolean;
   simdProbe?: boolean;
+  ttopProbe?: boolean;
 }
 export async function runFullScan(
   file: File,
@@ -458,6 +460,11 @@ export async function runFullScan(
   if(options?.simdProbe){
     const simd=await measureOpenCv5Simd(loaded.canvas);
     logger.info('preprocessing','v2.5.3 OpenCV 5 SIMD separate runtime probe',{...simd});
+  }
+  if(options?.ttopProbe){
+    const fork=await measureTtop32Fork(loaded.canvas);
+    logger.info('preprocessing','v2.5.5 ttop32 OpenCV 4.8.1 WASM isolated runtime benchmark',{...fork,
+      scoringRuntimeUnchanged:true,qrTimingGatesUnchanged:true});
   }
   const preprocessed = preprocessImage(loaded.canvas);
   finishStage('preprocessing');
