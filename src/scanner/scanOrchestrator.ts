@@ -363,6 +363,29 @@ export async function runFullScan(
     let arucoAdaptive:ArucoRegistration={found:false,count:0,points:{}};
     let arucoOtsu:ArucoRegistration=arucoAdaptive;
     let cornerOtsuForHybrid:MarkerDetectionResult=primary;
+    const registrationAttempts:{
+      method:string;source:string;durationMs:number;
+      qrValid:boolean;timing:number;left:number;right:number;
+      accepted:boolean;provisional:boolean;
+    }[]=[];
+    const traceRegistration=(
+      source:HTMLCanvasElement,hypothesis:Hypothesis,dpi:number,
+      budget:{remaining:number},allowProvisional=false
+    ):AcceptedAlignment|null=>{
+      const t=Date.now();
+      const result=evaluateHypothesis(source,hypothesis,dpi,budget,allowProvisional);
+      const item={
+        method:hypothesis.name,source:source===loaded.canvas?'original':'recovered',
+        durationMs:Date.now()-t,qrValid:result?.qr.valid??false,
+        timing:result?.check.matched??0,left:result?.check.leftMatched??0,
+        right:result?.check.rightMatched??0,
+        accepted:Boolean(result),provisional:Boolean(result?.provisional)
+      };
+      registrationAttempts.push(item);
+      logger.info('perspective','v2.5.2 detailed registration candidate',item);
+      return result;
+    };
+
     // A genuinely cheap fast path: full QR identity and dual-side timing
     // verification BEFORE expensive ArUco, Otsu and midpoint discovery.
     if(primary.found){
@@ -373,7 +396,7 @@ export async function runFullScan(
         bottomLeft:primary.bottomLeft,bottomRight:primary.bottomRight,
         validGeometry:primary.validGeometry});
       fastWarpAttempts++;
-      const candidate=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+      const candidate=traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget);
       markerProfile.cornerVerificationMs=Date.now()-t;
       markerProfile.hypothesesEvaluated++;
       if(candidate)selected=candidate;
@@ -483,7 +506,7 @@ export async function runFullScan(
       warpAttempts++;
       markerProfile.hypothesesEvaluated++;
       const probeStart=Date.now();
-      const evaluated = evaluateHypothesis(loaded.canvas, hypothesis, dpi, curveBudget);
+      const evaluated = traceRegistration(loaded.canvas, hypothesis, dpi, curveBudget);
       markerProfile.registrationProbeMs+=Date.now()-probeStart;
       if (!evaluated) continue;
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
@@ -533,7 +556,7 @@ export async function runFullScan(
           kind:'midpoint',name:'midpoint/alternate-'+side,markers:alternateMid
         };
         warpAttempts++;
-        const attempt=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+        const attempt=traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget);
         if(!attempt)continue;
         const score=registrationScore({kind:'midpoint',
           timingMatched:attempt.check.matched,
@@ -570,7 +593,7 @@ export async function runFullScan(
         const hypothesis:Hypothesis={kind:'hybrid',name:'hybrid/corner-aruco-'+source.name,
           corners:source.corners,aruco:source.aruco};
         warpAttempts++;
-        const evaluated=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+        const evaluated=traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget);
         if(!evaluated)continue;
         selected=evaluated;
         logger.info('perspective','Hybrid cross-family candidate passed QR and timing verification',{
@@ -606,7 +629,7 @@ export async function runFullScan(
         const hypothesis:Hypothesis={kind:'hybrid',
           name:'hybrid/corner-repair-'+pair.name,
           corners:markers,aruco:arucoAdaptive};
-        const accepted=evaluateHypothesis(loaded.canvas,hypothesis,dpi,curveBudget);
+        const accepted=traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget);
         if(!accepted)continue;
         selected=accepted;
         logger.info('perspective','Cross-threshold corner repair strictly verified',{
@@ -638,7 +661,7 @@ export async function runFullScan(
             corners:primary,aruco:source.aruco,qrLocated:located
           };
           warpAttempts++;
-          const evaluated=evaluateHypothesis(loaded.canvas,proposal,dpi,curveBudget);
+          const evaluated=traceRegistration(loaded.canvas,proposal,dpi,curveBudget);
           logger.info('perspective','v2.3.46 QR-ArUco rescue result',{
             method:proposal.name,qrLocated:true,verified:Boolean(evaluated),
             timing:evaluated?.check.matched??0
@@ -697,7 +720,7 @@ export async function runFullScan(
             midpointComplete:rescueMid.found,candidates:candidates.map(c=>c.name)});
           for(const hypothesis of candidates){
             warpAttempts++;
-            const candidate=evaluateHypothesis(rough.canvas,hypothesis,dpi,curveBudget);
+            const candidate=traceRegistration(rough.canvas,hypothesis,dpi,curveBudget);
             if(!candidate)continue;
             const score=registrationScore({
               kind:candidate.hypothesis.kind==='hybrid'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
@@ -830,7 +853,7 @@ export async function runFullScan(
                 const attemptStart=Date.now();
                 const allowProvisional=corner.found && midpoint.found &&
                   ai.confidence>=.5 && variant.name==='adaptive';
-                const evaluated=evaluateHypothesis(ai.canvas,hypothesis,dpi,curveBudget,allowProvisional);
+                const evaluated=traceRegistration(ai.canvas,hypothesis,dpi,curveBudget,allowProvisional);
                 logger.info('perspective','AI candidate verification result',{
                   method:hypothesis.name,accepted:Boolean(evaluated),
                   reason:evaluated?(evaluated.provisional?'provisional-geometry-only':'qr-and-timing-verified'):
@@ -872,6 +895,13 @@ export async function runFullScan(
       }
     }
     finishStage('registration');
+    logger.info('perspective','v2.5.2 registration candidates complete',{
+      total:registrationAttempts.length,
+      accepted:registrationAttempts.filter(a=>a.accepted).length,
+      candidates:registrationAttempts,
+      candidateMs:registrationAttempts.reduce((sum,a)=>sum+a.durationMs,0),
+      note:'Attempts include fallback and AI variants; per-attempt timing includes QR, timing, and correction checks'
+    });
     logger.info('perspective','Registration performance summary',{
       durationMs:Date.now()-registrationStarted,warpAttempts,
       boundaryAttempted,curveAttempts:1-curveBudget.remaining,
