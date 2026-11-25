@@ -10,7 +10,7 @@ import type { ScanResult, LogEntry } from '../types';
 export type DualScanComparison = {
   baseline:ScanResult;
   enhanced:ScanResult;
-  enhancedOptions:{proofscan:boolean;proofmodel:boolean;proofmesh:boolean;fastQrRoi?:boolean};
+  enhancedOptions:{proofscan:boolean;proofmodel:boolean;proofmesh:boolean;fastQrRoi?:boolean;coarseToFine?:boolean;robustFusion?:boolean;simdProbe?:boolean};
   firstPass:'baseline'|'enhanced';
 };
 function findLog(result:ScanResult,message:string):LogEntry|undefined {
@@ -74,13 +74,13 @@ export function buildDualScanReport(
   const keys=[...new Set([...Object.keys(stagesA??{}),...Object.keys(stagesB??{})])];
   const baselineMs=baseline.processingTimeMs,enhancedMs=enhanced.processingTimeMs;
   const lines=[
-    'SFG OMR LAB — v2.5.3 V3 LEGACY vs FAST QR ROI A/B',
+    'SFG OMR LAB — v2.5.3 OPTIMIZED ROI BASELINE vs SIMD GEOMETRY LAB A/B',
     'Same image; sequential A/B with alternating run order.',
     'Actual first pass='+comparison.firstPass+'; second pass='+
       (comparison.firstPass==='baseline'?'enhanced':'baseline'),
     'File='+filename+' | SHA-256='+fmt(fileSha256),
     'Enhanced ROI optimization='+JSON.stringify(enhancedOptions)+
-    ' | Legacy baseline: fastQrRoi=false; both AI modes OFF',
+    ' | Baseline: fastQrRoi=true; coarseToFine=false; robustFusion=false; SIMD=false; AI OFF',
     'WARNING: Order alternates across consecutive comparisons in one page session. A single pair cannot establish a speed gain.',
     'WARNING: Answer agreement is not ground truth; inspect the actual sheet for correctness.',
     '',
