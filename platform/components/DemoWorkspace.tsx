@@ -31,6 +31,9 @@ export default function DemoWorkspace(){
   catch{/* restricted browser storage */}
  },[ready,tests,name]);
  const active=tests.find(t=>t.id===selected)||tests[0];
+ const seededExample=Boolean(active?.id==='demo-27'&&active.status==='published'&&
+  active.key.every((v,i)=>v===(['A','B','C','D'][i%4] as Choice)));
+
  const drafts=tests.filter(t=>t.status==='draft').length;
  const published=tests.filter(t=>t.status==='published').length;
  const create=()=>{
@@ -105,8 +108,13 @@ export default function DemoWorkspace(){
    {active.status==='draft'&&<div className="editorBottom"><span className="muted">Demo changes save automatically in this browser.</span>
      <button className="button primary" onClick={publish}>Publish answer key <span>↗</span></button></div>}
   </section>}
+  {seededExample&&<div className="alert">
+    This is a synthetic demonstration answer key, not your uploaded CSV.
+    To grade real OMR sheets, create a new draft with the printed Test ID, import your official key,
+    review all 50 answers and publish it.
+   </div>}
   {active&&<OmrEvaluation key={active.id} testNumber={active.number} testTitle={active.title}
-   answerKey={active.key} published={active.status==='published'}/>}
+   answerKey={active.key} published={active.status==='published'&&!seededExample}/>}
   {message&&<div className="notice" role="status">{message}</div>}
  </div>;
 }
