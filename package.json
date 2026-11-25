@@ -25,7 +25,7 @@
     "@banou/opencv-wasm": "0.0.6",
     "scanic": "1.8.0",
     "scanic-ml": "0.2.0",
-    "opencv-js-wasm": "4.8.1"
+    "opencv-js-wasm": "4.12.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
