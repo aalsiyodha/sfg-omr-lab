@@ -123,7 +123,8 @@ function evaluateHypothesis(
   dpi: number,
   curveBudget: { remaining: number },
   allowQrlessProvisional = false,
-  evidence?: RegistrationProbe
+  evidence?: RegistrationProbe,
+  fastQrRoi = true
 ): AcceptedAlignment | null {
   let persp: PerspectiveResult | null = null;
   let gray: any = null;
@@ -131,32 +132,38 @@ function evaluateHypothesis(
   if(evidence){evidence.phase='warp';evidence.reason='Warp did not produce an image';}
   try {
     persp = hypothesis.kind === 'corner'
-      ? correctPerspective(source, hypothesis.markers, false)
+      ? correctPerspective(source, hypothesis.markers, !fastQrRoi)
       : hypothesis.kind === 'midpoint'
-      ? correctPerspectiveFromMidpoints(source, hypothesis.markers, false)
+      ? correctPerspectiveFromMidpoints(source, hypothesis.markers, !fastQrRoi)
       : hypothesis.kind === 'hybrid'
       ? hypothesis.qrLocated
-         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,false)
-         : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,false)
-      : correctPerspectiveFromArucos(source,hypothesis.markers,false);
+         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
+         : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,!fastQrRoi)
+      : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if (!persp.success || !persp.corrected) return null;
     if(evidence){evidence.phase='qr';evidence.reason='QR not yet independently verified';}
     const canvas = document.createElement('canvas');
     canvas.width = persp.corrected.cols;
     canvas.height = persp.corrected.rows;
-    // Full A4 canvas is populated only for a successfully verified alignment.
-    let qr = decodeWarpedQrAt(
-      persp.corrected,OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi
-    );
+    if(!fastQrRoi)cv.imshow(canvas,persp.corrected);
+    let qr=fastQrRoi
+      ?decodeWarpedQrAt(persp.corrected,OMR_LAYOUT.qr.xMm,
+        OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi)
+      :decodeQRFromRegion(canvas,OMR_LAYOUT.qr.xMm,
+        OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
     let rotated = false;
     if (!qr.valid) {
       const x = OMR_LAYOUT.page.widthMm - OMR_LAYOUT.qr.xMm - OMR_LAYOUT.qr.sizeMm;
       const y = OMR_LAYOUT.page.heightMm - OMR_LAYOUT.qr.yMm - OMR_LAYOUT.qr.sizeMm;
-      const opposite = decodeWarpedQrAt(persp.corrected,x,y,OMR_LAYOUT.qr.sizeMm,dpi);
+      const opposite=fastQrRoi?decodeWarpedQrAt(persp.corrected,x,y,OMR_LAYOUT.qr.sizeMm,dpi):decodeQRFromRegion(canvas,x,y,OMR_LAYOUT.qr.sizeMm,dpi);
       if (opposite.valid) {
         cv.rotate(persp.corrected, persp.corrected, cv.ROTATE_180);
-        qr=decodeWarpedQrAt(persp.corrected,OMR_LAYOUT.qr.xMm,
-          OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+        if(!fastQrRoi)cv.imshow(canvas,persp.corrected);
+        qr=fastQrRoi
+          ?decodeWarpedQrAt(persp.corrected,OMR_LAYOUT.qr.xMm,
+            OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi)
+          :decodeQRFromRegion(canvas,OMR_LAYOUT.qr.xMm,
+            OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
         rotated = true;
       }
     }
@@ -263,7 +270,7 @@ function evaluateHypothesis(
             if(shouldAdoptTimingRefinement(check,updatedCheck)){
               cleanupMats(gray,persp.corrected);
               persp.corrected=rescued.corrected;
-              persp.correctedDataUrl='';
+              persp.correctedDataUrl=fastQrRoi?'':candidate.toDataURL('image/png');
               gray=updatedGray;updatedGray=null;
               cv.imshow(canvas,persp.corrected);
               check=updatedCheck;
@@ -325,7 +332,7 @@ function evaluateHypothesis(
               qrIdentityUnchanged:true});
             if(after.passed && after.matched>check.matched &&
                holdout.left>=8 && holdout.right>=8){
-              const correctedUrl='';
+              const correctedUrl=fastQrRoi?'':candidate.toDataURL('image/png');
               cv.imshow(canvas,mesh.corrected);
               cleanupMats(gray,persp.corrected);
               persp.corrected=mesh.corrected;
@@ -373,6 +380,7 @@ export interface ScanModeOptions {
   proofscan?: boolean;
   proofmodel?: boolean;
   proofmesh?: boolean;
+  fastQrRoi?: boolean;
 }
 export async function runFullScan(
   file: File,
@@ -420,6 +428,9 @@ export async function runFullScan(
     const cornerStart=Date.now();
     const primary=detectMarkers(preprocessed.thresholded,loaded.width,loaded.height);
     markerProfile.cornerDetectionMs=Date.now()-cornerStart;
+    logger.info('perspective','v2.5.3 registration optimization mode',{fastQrRoi:options?.fastQrRoi!==false,
+      method:options?.fastQrRoi===false?'v3 legacy full-page PNG and QR scan':'ROI-only QR + deferred preview PNG',
+      gates:'QR identity and 25+25 timing unchanged'});
     const dpi=getSettings().scanDpi;
     const curveBudget={remaining:1};
     let arucoAdaptive:ArucoRegistration={found:false,count:0,points:{}};
@@ -437,7 +448,8 @@ export async function runFullScan(
       const t=Date.now();
       const evidence:RegistrationProbe={phase:'warp',reason:'Not attempted',
         qrValid:false,timing:0,left:0,right:0};
-      const result=evaluateHypothesis(source,hypothesis,dpi,budget,allowProvisional,evidence);
+      const result=evaluateHypothesis(source,hypothesis,dpi,budget,allowProvisional,evidence,
+        options?.fastQrRoi!==false);
       const item={
         method:hypothesis.name,source:source===loaded.canvas?'original':'recovered',
         durationMs:Date.now()-t,phase:evidence.phase,reason:evidence.reason,
