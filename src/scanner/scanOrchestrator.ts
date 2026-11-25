@@ -577,6 +577,12 @@ export async function runFullScan(
     // corner quadrilateral can be geometrically plausible (Test 4 v1.6).
     const mid = detectMidpointMarkers(preprocessed.thresholded, loaded.width, loaded.height);
     if (mid.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/adaptive', markers: mid });
+    logger.info('markerDetection','v2.5.3 RANSAC fusion eligibility',{
+      enabled:options?.robustFusion!==false,arucoCount:arucoAdaptive.count,
+      arucoFound:arucoAdaptive.found,midpointCount:mid.count,
+      midpointFound:mid.found,cornerCount:primary.count,
+      eligible:options?.robustFusion!==false&&arucoAdaptive.found&&mid.found,
+      note:'RANSAC is a fallback; a verified QR/timing scan exits first'});
     if(options?.robustFusion!==false&&arucoAdaptive.found&&mid.found){
       hypotheses.push({kind:'fusion',name:'fusion/ransac-corner-midpoint-aruco',
         corners:primary,midpoint:mid,aruco:arucoAdaptive});
