@@ -2,7 +2,7 @@ name: Deploy isolated Z.ai audit Experiment 3.7.3
 on:
   push:
     branches:
-      - experiment/3-7-3-qr-optional
+      - experiment/3-7-3-zai-audit-fixes
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
       - name: Checkout isolated experiment
         uses: actions/checkout@v4
         with:
-          ref: experiment/3-7-3-qr-optional
+          ref: experiment/3-7-3-zai-audit-fixes
           path: experiment
       - uses: actions/setup-node@v4
         with:
