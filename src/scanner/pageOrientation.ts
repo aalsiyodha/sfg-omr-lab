@@ -16,9 +16,9 @@ export function landscapeRotation(
     // Upper-right may be an upright sheet photographed with a wide camera.
     if(x>.50&&y<.50)return 'none';
   }
-  // If the QR is too small to decode, try the common sideways capture
-  // orientation before expensive fiducial fallback; still fail closed.
-  return 'cw';
+  // Without independent QR position evidence, don't guess: keeping the
+  // original pixel orientation is safer than regressing older successful scans.
+  return 'none';
 }
 export function orientLandscapePhoto(loaded:LoadedImage):{
  rotation:'cw'|'ccw'|'none';qrFound:boolean;qrValid:boolean;
@@ -31,7 +31,7 @@ export function orientLandscapePhoto(loaded:LoadedImage):{
   };
   const located=locateQRInPhoto(loaded.canvas);
   const rotation=landscapeRotation(loaded.width,loaded.height,
-    located.found?located.center:null);
+    located.valid?located.center:null);
   if(rotation==='none')return {rotation,qrFound:located.found,
     qrValid:located.valid,qrAttempts:located.attempts,initialSize,resultSize:initialSize};
   const rotated=document.createElement('canvas');
