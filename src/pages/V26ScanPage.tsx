@@ -33,13 +33,14 @@ export default function V26ScanPage({ appState }: Props) {
   useEffect(() => {
     if (!file || opencv !== 'ready' || started.current === file || scanning) return;
     started.current = file;
-    // Yield one paint for preview/button before the CPU-intensive scanner runs.
-    const task = window.setTimeout(() => { void scan(file, {
+    // Start immediately after OpenCV becomes ready. A zero-delay timer with
+    // effect cleanup can be cancelled by React's scanning-state rerender while
+    // started.current is already set, leaving the photo permanently idle.
+    void scan(file, {
       fastQrRoi:true, coarseToFine:true, robustFusion:true,
       proofscan:false, proofmodel:false, proofmesh:false,
       simdProbe:false, ttopProbe:false
-    },false); }, 0);
-    return () => window.clearTimeout(task);
+    },false);
   }, [file, opencv, scanning, scan]);
   useEffect(() => {
     return () => { if (preview) URL.revokeObjectURL(preview); };
@@ -99,10 +100,10 @@ export default function V26ScanPage({ appState }: Props) {
   const status = scanning ? 'Scanning in progress' : scanResult
     ? verified ? flagged ? 'Verified · review required' : 'Verified scan' : 'Registration not verified'
     : error ? 'Scan failed — select another photo to retry'
-    : opencv==='error' ? 'Scanner could not load' : 'Preparing scanner';
+    : opencv==='error' ? 'Scanner could not load' : opencv==='loading' ? 'Initializing OpenCV engine' : file ? 'Starting scan' : 'Ready to scan';
   return <div className="v26-page">
     <header className="v26-intro">
-      <div className="v26-eyebrow"><span className="v26-indicator"/> SFG OMR LAB <span className="v26-version">V2.7.1</span></div>
+      <div className="v26-eyebrow"><span className="v26-indicator"/> SFG OMR LAB <span className="v26-version">V2.7.2</span></div>
       <h1>OMR scanning,<br/><span>made simple.</span></h1>
       <p>Upload or photograph an answer sheet. We'll verify its QR identity and alignment,
         read the responses and highlight anything needing review.</p>
@@ -163,7 +164,7 @@ export default function V26ScanPage({ appState }: Props) {
     {reveal && file && <section className="v26-panel v26-results" aria-label="Scan results">
       <div className="v26-section-head">
         <div><span className="v26-step">REVIEW</span><h2>Your scan results</h2></div>
-        <span className={'v26-pill '+(verified?'is-good':'')}>{scanResult?status:'Processing'}</span>
+        <span className={'v26-pill '+(verified?'is-good':'')}>{scanning?'Processing':scanResult?status:'Not processing'}</span>
       </div>
       {!scanResult ? <div className="v26-wait">{scanning ? <><div className="v26-spinner"/> {progress?.stage||'Reading image and checking registration…'}</> : <span>{error|| (opencv==='error'?'OpenCV failed to initialize. Reload to retry.':opencv==='loading'?'Preparing scanner runtime…':'Select a new photo to retry scanning.')}</span>}</div> : <>
         <div className="v26-metrics">
