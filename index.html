@@ -18,82 +18,73 @@
     </script>
     <title>SFG OMR Lab — Scan and Review Answer Sheets</title>
     <script>
-      // A downloaded script is not necessarily an initialized WebAssembly runtime.
-      // Prefer the build-pinned, same-origin OpenCV asset and never signal "ready"
-      // until cv.Mat is usable. Local development can fall back to upstream.
+      // Self-hosted, version-pinned OpenCV 4.8. Avoid conflicting runtime instances
+      // and never signal ready merely because the JS file finished downloading.
       window.opencvReady = false;
       window.opencvError = null;
       (() => {
-        const local = '%BASE_URL%opencv/opencv.js';
-        const fallback = 'https://docs.opencv.org/4.8.0/opencv.js';
-        const deadlineMs = 45000;
-        const startedAt = Date.now();
-        let done = false, fallbackStarted = false, handledThenable = false;
-        let interval, timer;
-        const ready = (instance) => {
-          if (done || !instance || typeof instance.Mat !== 'function') return false;
-          window.cv = instance;
-          done = true;
+        const asset = '%BASE_URL%opencv/opencv.js';
+        let settled = false;
+        let thenAttached = false;
+        let lastError = '';
+        const started = Date.now();
+        const timeoutMs = 45000;
+        const ready = (runtime) => {
+          if (settled || !runtime || typeof runtime.Mat !== 'function') return false;
+          try {
+            const probe = new runtime.Mat();
+            probe.delete();
+          } catch (e) {
+            lastError = String(e);
+            return false;
+          }
+          settled = true;
+          window.cv = runtime;
           window.opencvReady = true;
-          window.opencvError = null;
-          clearInterval(interval);
-          clearTimeout(timer);
+          clearInterval(probeTimer);
           window.dispatchEvent(new Event('opencv-ready'));
           return true;
         };
-        const fail = (message) => {
-          if (done) return;
-          done = true;
-          window.opencvError = message;
-          clearInterval(interval);
-          clearTimeout(timer);
+        const fail = (reason) => {
+          if (settled) return;
+          settled = true;
+          window.opencvError = reason;
+          clearInterval(probeTimer);
           window.dispatchEvent(new Event('opencv-error'));
         };
-        const probe = () => {
-          if (done) return;
+        const inspect = () => {
+          if (settled) return;
           if (ready(window.cv)) return;
-          const candidate = window.cv;
-          if (candidate && typeof candidate.then === 'function' && !handledThenable) {
-            handledThenable = true;
+          const runtime = window.cv;
+          if (runtime && typeof runtime.then === 'function' && !thenAttached) {
+            thenAttached = true;
             try {
-              // Do not Promise.resolve or await an OpenCV thenable that returns itself.
-              candidate.then((instance) => {
-                if (!ready(instance) && !ready(window.cv)) {
-                  handledThenable = false;
-                }
-              }, () => {
-                handledThenable = false;
+              // OpenCV's custom thenable must not be wrapped in Promise.resolve().
+              runtime.then((resolved) => {
+                if (!ready(resolved)) ready(window.cv);
+              }, (e) => {
+                lastError = 'OpenCV WASM initialization rejected: ' + String(e);
+                fail(lastError);
               });
-            } catch { handledThenable = false; }
-          }
-        };
-        const load = (src, upstream) => {
-          const script = document.createElement('script');
-          script.async = true;
-          script.src = src;
-          script.onload = probe;
-          script.onerror = () => {
-            if (done) return;
-            if (!upstream && !fallbackStarted) {
-              fallbackStarted = true;
-              load(fallback, true);
-            } else {
-              fail('OpenCV could not be downloaded. Check connectivity and reload.');
+            } catch (e) {
+              lastError = String(e);
+              fail('OpenCV initialization error: ' + lastError);
             }
-          };
-          document.head.appendChild(script);
-        };
-        interval = setInterval(probe, 100);
-        timer = setTimeout(() => {
-          if (!done && !fallbackStarted) {
-            fallbackStarted = true;
-            load(fallback, true);
-            timer = setTimeout(() => fail('OpenCV did not initialize. Reload to retry.'), 20000);
-          } else if (!done) {
-            fail('OpenCV did not initialize. Reload to retry.');
+          } else if (runtime && !thenAttached && typeof runtime.onRuntimeInitialized !== 'function') {
+            runtime.onRuntimeInitialized = () => { ready(window.cv); };
           }
-        }, deadlineMs);
-        load(local, false);
+          if (!settled && Date.now() - started >= timeoutMs) {
+            fail('OpenCV runtime did not initialize within 45 seconds. ' +
+              (lastError ? lastError : 'Try a fresh reload or another browser.'));
+          }
+        };
+        const probeTimer = window.setInterval(inspect, 150);
+        const script = document.createElement('script');
+        script.src = asset;
+        script.async = true;
+        script.onload = inspect;
+        script.onerror = () => fail('The self-hosted OpenCV runtime could not load: ' + asset);
+        document.head.appendChild(script);
       })();
     </script>
   </head>
