@@ -930,11 +930,13 @@ export async function runFullScan(
       }finally{rescueOtsu.delete();}
     }
 
+    let photoQr:ReturnType<typeof locateQRInPhoto>|null=null;
     // Geometric QR finder search on the ORIGINAL photo is independent of
     // a failed perspective warp. It is diagnostic evidence, not scan approval.
     if(!selected){
       const qrLocatorStart=Date.now();
       const located=locateQRInPhoto(loaded.canvas);
+      photoQr=located;
       logger.info('qrDecoding','Independent original-photo QR locator',{
         found:located.found,valid:located.valid,center:located.center,
         corners:located.corners,raw:located.raw,attempts:located.attempts,
@@ -1019,6 +1021,23 @@ export async function runFullScan(
           boundarySourceMat=cv.imread(loaded.canvas);
         for(const [candidateIndex,page] of pageCandidates.entries()){
         if(selected)break;
+        // Z.ai P-3 conservative prefilter: the independently decoded source QR
+        // must lie inside the proposed physical paper quad. Reject only when
+        // it is definitely outside, leaving near-edge cases for full checks.
+        if(photoQr?.valid && photoQr.center){
+          const q=photoQr.center;
+          const cross=page.corners.map((p,i)=>{
+            const n=page.corners[(i+1)%4];
+            return (n.x-p.x)*(q.y-p.y)-(n.y-p.y)*(q.x-p.x);
+          });
+          const positive=cross.filter(v=>v>0).length;
+          const negative=cross.filter(v=>v<0).length;
+          if(positive>0&&negative>0){
+            logger.info('perspective','Exp3.7.3 boundary candidate rejected by source QR location',{
+              candidateIndex,method:page.method,qrCenter:q,reason:'located QR outside candidate quad'});
+            continue;
+          }
+        }
         for(const turn of [0,1,2,3] as const){
           let candidateCanvas:HTMLCanvasElement|null=null;
           let candidateColor:any=null,candidateGray:any=null;
