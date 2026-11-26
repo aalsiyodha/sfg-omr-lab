@@ -2350,3 +2350,17 @@ test('Experiment 3.6: 360-degree quad orientation covers each distinct corner as
   }
   assert.deepEqual(corners,[{x:12,y:5},{x:97,y:27},{x:81,y:152},{x:4,y:124}]);
 });
+
+test('Experiment 3.7.3 P-1 hatch shadow requires paper-bright internal gaps',()=>{
+  const mk=(gapBrightness)=>{
+    const pixels=Array.from({length:35},()=>Array(35).fill(50));
+    // Repeated light slots in the same two columns: ordinary JPEG grey
+    // holes must not mimic an actual paper-white hatch.
+    for(let y=13;y<=21;y++){pixels[y][17]=gapBrightness;pixels[y][18]=gapBrightness;}
+    return {rows:35,cols:35,ucharPtr:(y,x)=>[pixels[y][x]]};
+  };
+  const grey=bubbles.interiorHatchEvidenceV2(mk(180),17,17,150,150,235);
+  const bright=bubbles.interiorHatchEvidenceV2(mk(244),17,17,150,150,235);
+  assert.equal(grey.hatchLike,false);
+  assert.equal(bright.hatchLike,true);
+});
