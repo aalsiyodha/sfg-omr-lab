@@ -1069,6 +1069,20 @@ export async function runFullScan(
           }
         }
         for(const turn of [0,1,2,3] as const){
+          // The decoded source QR tells us which part of the sheet is its
+          // top-right corner. Most rotated assignments can be rejected by a
+          // tiny 3x3 projection before allocating/warping a full A4 image.
+          // 55mm is deliberately broad: never replace final QR+timing checks.
+          if(photoQr?.valid){
+            const pre=qrBoundaryPreflight(page.corners,turn,photoQr,dpi);
+            if(!pre.plausible){
+              logger.info('perspective','Classical source-QR orientation preflight',{
+                pageCandidate:candidateIndex,turnDegrees:turn*90,
+                errorMm:pre.errorMm,rejected:true,reason:pre.reason
+              });
+              continue;
+            }
+          }
           let candidateCanvas:HTMLCanvasElement|null=null;
           let candidateColor:any=null,candidateGray:any=null;
           let accepted=false;
