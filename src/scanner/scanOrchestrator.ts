@@ -163,7 +163,8 @@ function evaluateHypothesis(
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
-    if(hypothesis.qrLocated?.valid && hypothesis.qrLocated.center && persp.transform){
+    if(hypothesis.kind==='hybrid' && hypothesis.qrLocated?.valid &&
+      hypothesis.qrLocated.center && persp.transform){
       // Source QR projected into the candidate template: distinguishes
       // unreadable QR from a correct source QR displaced by a poor warp.
       const m=persp.transform.data64F as Float64Array;
