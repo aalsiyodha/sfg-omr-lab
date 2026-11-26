@@ -12,7 +12,11 @@ const round=(n:number)=>Math.round(n*10)/10;
 
 async function imageMetrics(file:File):Promise<PhotoMetrics>{
   // Request a small decode so photo statistics don't allocate another 12MP bitmap.
-  const bitmap=await createImageBitmap(file,{resizeWidth:256,resizeQuality:'medium'});
+  const bitmap=await Promise.race([
+    createImageBitmap(file,{resizeWidth:256,resizeQuality:'medium'}),
+    new Promise<never>((_,reject)=>setTimeout(
+      ()=>reject(new Error('Preview statistics decoder timeout')),8000))
+  ]);
   try {
     const width=bitmap.width,height=bitmap.height;
     const scale=256/Math.max(width,height);
@@ -93,12 +97,15 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
         let metrics:PhotoMetrics={width:0,height:0,mean:0,contrast:0,shadows:0,highlights:0,edge:0,landscape:false};
         let result:PhotoScan['result']=null, problem:string|null=null;
         try{
-          metrics=await imageMetrics(entry.file);
+          // Statistics are informative, not a prerequisite to scanning.
+          // If a mobile browser cannot decode the thumbnail, still try OMR.
+          try{metrics=await imageMetrics(entry.file);}
+          catch(e){setStep('Photo '+(i+1)+'/'+files.length+': lighting sample unavailable, scanning');}
           const scan=await runFullScan(entry.file,p=>
             setStep('Photo '+(i+1)+'/'+files.length+': '+p.stage),
             {fastQrRoi:true,coarseToFine:true,robustFusion:true,
               proofscan:false,proofmodel:false,proofmesh:false,
-              simdProbe:false,ttopProbe:false});
+              simdProbe:false,ttopProbe:false,compact:true});
           // Drop large image overlays; only the compact decision and optical
           // data are retained for the multi-photo comparison.
           result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
@@ -126,8 +133,8 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const comparison=comparePhotos(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 3.5 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.5 — Multi-Photo Diagnostics</h1>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.6 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.6 — Multi-Photo Diagnostics</h1>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
         No answer is silently combined or changed.</p>

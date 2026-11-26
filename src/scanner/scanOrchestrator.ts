@@ -22,6 +22,7 @@ import { makeReviewCropSheet } from './reviewCropSheet';
 import { fitMaskedLatentPredictor } from './latentPredictor';
 import { predictSyntheticDecision, SYNTHETIC_MODEL_INFO } from './trainedDecisionHead';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
+import { warpBoundaryOrientation } from './omniBoundary';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { correctPerspectiveFromQrAruco } from './qrArucoRegistration';
@@ -430,6 +431,8 @@ export interface ScanModeOptions {
   robustFusion?: boolean;
   simdProbe?: boolean;
   ttopProbe?: boolean;
+  /** Avoid retaining PNG overlays and base64 originals in batch diagnostic scans. */
+  compact?: boolean;
 }
 export async function runFullScan(
   file: File,
@@ -450,7 +453,7 @@ export async function runFullScan(
   onProgress?.({ stage: 'Loading image…', percent: 5 });
   if (!checkOpenCV()) throw new Error('OpenCV.js is not loaded. Please wait for OpenCV to initialize.');
 
-  const loaded = await loadImageFromFile(file);
+  const loaded = await loadImageFromFile(file,{compact:options?.compact===true});
   finishStage('imageDecode');
   // A horizontal camera capture can contain a vertically printed sheet
   // turned 90°. Normalize before all existing reference detectors run.
@@ -685,7 +688,7 @@ export async function runFullScan(
         midpointCandidates: hypotheses.filter(h => h.kind === 'midpoint').length,
         arucoCandidates: hypotheses.filter(h => h.kind === 'aruco').length,
         methodNames: hypotheses.map(h => h.name) });
-    images.markerOverlay = arucoAdaptive.found
+    if(!options?.compact)images.markerOverlay = arucoAdaptive.found
       ? generateArucoOverlay(loaded.canvas,arucoAdaptive)
       : generateMarkerOverlay(loaded.canvas, primary);
     onProgress?.({ stage: 'Verifying candidate registrations with QR and timing marks…', percent: 48 });
@@ -962,7 +965,58 @@ export async function runFullScan(
           quadrilateral:evidence.quadrilateral});
       });
       if(!rough)logger.warning('perspective','Outer-page rescue produced no plausible sheet candidate');
-      if(rough){
+      // Experiment 3.6: independently orient any recovered paper quad at 0,
+      // 90, 180, or 270 degrees. Each mapping is a true 4-point homography,
+      // so the ORIGINAL sheet can be tilted at any angle and in perspective.
+      // Cheap QR/geometry-verified fast registrations never enter this path.
+      // A white-page contour alone is NEVER accepted as an OMR identity.
+      if(rough?.evidence.quadrilateral && !selected){
+        for(const turn of [0,1,2,3] as const){
+          let candidateCanvas:HTMLCanvasElement|null=null;
+          let candidateColor:any=null,candidateGray:any=null;
+          let accepted=false;
+          try{
+            candidateCanvas=warpBoundaryOrientation(
+              loaded.canvas,rough.evidence.quadrilateral,turn);
+            if(!candidateCanvas)continue;
+            const qr=decodeQRFromRegion(candidateCanvas,
+              OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+            // QR-first short circuit avoids threshold scans on wrong orientations.
+            if(!qr.valid){
+              logger.info('perspective','Exp3.6 360-degree boundary orientation',{
+                turnDegrees:turn*90,qrValid:false,timing:0,accepted:false});
+              continue;
+            }
+            candidateColor=cv.imread(candidateCanvas);
+            candidateGray=new cv.Mat();
+            cv.cvtColor(candidateColor,candidateGray,cv.COLOR_RGBA2GRAY);
+            const check=verifyTimingMarks(candidateGray,dpi);
+            logger.info('perspective','Exp3.6 360-degree boundary orientation',{
+              turnDegrees:turn*90,qrValid:true,
+              timing:check.matched,left:check.leftMatched,right:check.rightMatched,
+              accepted:check.passed});
+            if(!check.passed)continue;
+            selected={
+              hypothesis:{kind:'corner',name:'boundary/360-quad-'+(turn*90),
+                markers:primary},
+              perspective:{corrected:candidateColor,correctedDataUrl:'',
+                transform:null,success:true},
+              gray:candidateGray,canvas:candidateCanvas,qr,check,rotated:turn===2
+            };
+            candidateColor=null;candidateGray=null;accepted=true;
+            logger.info('perspective','Exp3.6 verified all-angle geometry recovery',{
+              turnDegrees:turn*90,qrIdentityVerified:true,
+              timing:check.matched,note:'Both printed timing tracks mandatory'});
+            break;
+          }catch(error){
+            logger.warning('perspective','Exp3.6 quadrilateral orientation error',{
+              turnDegrees:turn*90,error:String(error)});
+          }finally{
+            if(!accepted)cleanupMats(candidateColor,candidateGray);
+          }
+        }
+      }
+      if(rough && !selected){
         let rescueGray:any=null,rescueBlur:any=null,rescueThreshold:any=null;
         try{
           const processed=preprocessImage(rough.canvas);
@@ -1004,7 +1058,7 @@ export async function runFullScan(
             if(score>previous){
               if(selected)disposeAlignment(selected);
               selected=candidate;
-              images.markerOverlay=generateArucoOverlay(rough.canvas,rescueAruco,
+              if(!options?.compact)images.markerOverlay=generateArucoOverlay(rough.canvas,rescueAruco,
                 hypothesis.name,candidate.check.matched);
             }else disposeAlignment(candidate);
             if(selected&&canStopUnifiedRegistration(selected.qr.valid,
@@ -1045,6 +1099,44 @@ export async function runFullScan(
           durationMs:Date.now()-aiStart
         });
         if(ai){
+          // Experiment 3.6: AI is a geometry proposer only. Independently
+          // test all four physical A4 orientations using the detected corners
+          // on the ORIGINAL source. No second marker fit is needed for a good
+          // candidate, and every result must pass both QR and timing gates.
+          for(const turn of [0,1,2,3] as const){
+            let trial:HTMLCanvasElement|null=null;
+            let color:any=null,gray:any=null,keep=false;
+            try{
+              trial=warpBoundaryOrientation(loaded.canvas,ai.corners,turn);
+              if(!trial)continue;
+              const qr=decodeQRFromRegion(trial,
+                OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+              if(!qr.valid)continue;
+              color=cv.imread(trial);gray=new cv.Mat();
+              cv.cvtColor(color,gray,cv.COLOR_RGBA2GRAY);
+              const timing=verifyTimingMarks(gray,dpi);
+              logger.info('perspective','Exp3.6 AI 360-degree candidate',{
+                turnDegrees:turn*90,qrValid:true,timing:timing.matched,
+                left:timing.leftMatched,right:timing.rightMatched,
+                accepted:timing.passed});
+              if(!timing.passed)continue;
+              selected={
+                hypothesis:{kind:'corner',name:'ai-boundary/360-quad-'+turn*90,
+                  markers:primary},
+                perspective:{corrected:color,correctedDataUrl:'',
+                  transform:null,success:true},
+                gray,canvas:trial,qr,check:timing,rotated:turn===2
+              };
+              keep=true;aiStatus='verified-360-quad';
+              logger.info('perspective','Exp3.6 AI 360-degree verified',
+                {turnDegrees:turn*90,timing:timing.matched});
+              break;
+            }catch(error){
+              logger.warning('perspective','Exp3.6 AI orientation probe error',{
+                turnDegrees:turn*90,error:String(error)});
+            }finally{if(!keep)cleanupMats(color,gray);}
+          }
+          if(!selected){
           // Scanic returns an already rectified A4 canvas. Before attempting a
           // second fiducial homography, directly test its native printed QR
           // and two timing tracks. This prevents a good first warp being
@@ -1150,6 +1242,7 @@ export async function runFullScan(
             }
           }finally{cleanupMats(aiOtsu,processed.gray,processed.blurred,processed.thresholded);}
           }
+          } // Normal AI-first-warp checks skipped if 360° quad already verified.
         }
       }catch(error){
         aiStatus='runtime-or-inference-error';
@@ -1213,13 +1306,13 @@ export async function runFullScan(
         leftMatched:chosen.check.leftMatched,rightMatched:chosen.check.rightMatched
       });
       logger.info('perspective','v2.5.1 geometry decision router',geometryDecision);
-      images.perspectiveCorrected = chosen.canvas.toDataURL('image/png');
-      if(arucoAdaptive.found)images.markerOverlay=generateArucoOverlay(
+      if(!options?.compact)images.perspectiveCorrected = chosen.canvas.toDataURL('image/png');
+      if(!options?.compact && arucoAdaptive.found)images.markerOverlay=generateArucoOverlay(
         loaded.canvas,arucoAdaptive,registrationMethod,alignmentMatched,
         chosen.hypothesis.kind==='midpoint'?chosen.hypothesis.markers:undefined);
-      else if(chosen.hypothesis.kind==='corner')
+      else if(!options?.compact && chosen.hypothesis.kind==='corner')
         images.markerOverlay=generateMarkerOverlay(loaded.canvas,chosen.hypothesis.markers);
-      else if(chosen.hypothesis.kind==='midpoint')
+      else if(!options?.compact && chosen.hypothesis.kind==='midpoint')
         images.markerOverlay=generateMidpointOverlay(loaded.canvas,chosen.hypothesis.markers);
 
       grayCalibration = measureGrayCalibration(chosen.gray, dpi);
@@ -1425,10 +1518,10 @@ export async function runFullScan(
       finishStage('toneCorrectionAndConsensus');
       logger.info('bubbleDetection',
         `Detected ${answers.filter(a => a.status === 'detected').length}/50 answers`);
-      images.bubbleOverlay = generateBubbleOverlay(
+      if(!options?.compact)images.bubbleOverlay = generateBubbleOverlay(
         chosen.canvas, answers, { tens: detectedId.tens, units: detectedId.units }, dpi, idOffset
       );
-      if(proofEnabled||proofModelEnabled){
+      if(!options?.compact && (proofEnabled||proofModelEnabled)){
         const contact=makeReviewCropSheet(chosen.canvas,answers);
         if(contact){
           images.reviewCrops=contact.dataUrl;
