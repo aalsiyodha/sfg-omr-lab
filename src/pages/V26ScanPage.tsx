@@ -84,7 +84,7 @@ export default function V26ScanPage({ appState }: Props) {
   const report = scanResult ? diagnosticHeader + '\n' + (fullReport
     ? generateLLMDiagnosticPrompt({scanResult,file,activeTestId:practice.activeTest?.testId,
         answerKey:practice.activeTest?.answerKey})
-    : generateBetaFeedbackPrompt({scanResult,file,activeTestId:practice.activeTest?.testId})) : diagnosticHeader + `\nScanner: v${APP_BUILD_META.version}\nCommit: ${APP_BUILD_META.sha}\nOpenCV: ${opencv}\nScan error: ${error ?? submissionError ?? 'No completed scan'}\n`;
+    : generateBetaFeedbackPrompt({scanResult,file,activeTestId:practice.activeTest?.testId})) : diagnosticHeader + `\nScanner: v${APP_BUILD_META.version}\nCommit: ${APP_BUILD_META.sha}\nOpenCV: ${opencv}\nOpenCV initialization error: ${(window as any).opencvError ?? 'none'}\nScan error: ${error ?? submissionError ?? 'No completed scan'}\n`;
   const submit = () => {
     if (!scanResult || !practice.activeTest) return;
     if (!verified || scanResult.testId===null) {
@@ -162,7 +162,7 @@ export default function V26ScanPage({ appState }: Props) {
       </div>}
       {(error||submissionError||opencv==='error') &&
         <div className="v26-error" role="alert">{error||submissionError||
-          'OpenCV failed to initialize. Reload the page and try again.'} <button type="button" className="v26-minor" onClick={()=>window.location.reload()}>Reload scanner</button> <button type="button" className="v26-minor" onClick={()=>download('sfg-omr-failure-diagnostic.txt',report)}>Download error report</button></div>}
+          (window as any).opencvError || 'OpenCV failed to initialize. Reload the page and try again.'} <button type="button" className="v26-minor" onClick={()=>window.location.reload()}>Reload scanner</button> <button type="button" className="v26-minor" onClick={()=>download('sfg-omr-failure-diagnostic.txt',report)}>Download error report</button></div>}
     </section>
     {reveal && file && <section className="v26-panel v26-results" aria-label="Scan results">
       <div className="v26-section-head">
