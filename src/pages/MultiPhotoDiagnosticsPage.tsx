@@ -126,8 +126,8 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const comparison=comparePhotos(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 2 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 2 — Multi-Photo Diagnostics</h1>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.5 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.5 — Multi-Photo Diagnostics</h1>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
         No answer is silently combined or changed.</p>
