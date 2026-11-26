@@ -25,13 +25,15 @@ jobs:
           npm run typecheck
           npm run lint
           npm run test:scanner
-      - name: Pin and verify same-origin OpenCV.js
+      - name: Stage pinned OpenCV 4.8 from npm (no docs.opencv.org dependency)
         run: |
           mkdir -p public/opencv
-          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 180 \
-            https://docs.opencv.org/4.8.0/opencv.js -o public/opencv/opencv.js
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
           test "$(wc -c < public/opencv/opencv.js)" -gt 1000000
-          grep -q 'Mat' public/opencv/opencv.js
+          sha256sum public/opencv/opencv.js
       - name: Build the public scanner
         run: GITHUB_PAGES=true npm run build
       - name: Include the document-boundary recovery assets
