@@ -70,11 +70,23 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         :'FAILED: '+(s.error??'unknown error'))
     );
     if(!r||r.overallStatus==='failed'){
-      const notable=(r?.stageLogs??[]).filter(e=>
-        /Sideways OMR orientation|original-photo QR locator|QR missing|QR-failed timing evidence|registration candidates complete|registration performance|boundary recovery|recovery conclusion|Exp3.7 alternative paper hypotheses|Exp3.6 360-degree boundary orientation/i.test(e.message)
-      ).slice(-5);
-      notable.forEach(e=>out.push('  Registration evidence: '+e.message+
-        (e.data?' '+JSON.stringify(e.data).slice(0,400):'')));
+      // Keep one concise result per decisive recovery stage, including the
+      // local AI outcome. Previous reports discarded this evidence and left
+      // failures indistinguishable from missing/undecodable QR codes.
+      const stages=[
+        /Independent original-photo QR locator/i,
+        /Outer-page boundary recovery evidence/i,
+        /Exp3.7 alternative paper hypotheses/i,
+        /AI document boundary recovery/i,
+        /AI last-resort summary/i,
+        /Registration performance summary/i,
+      ];
+      const events=r?.stageLogs??[];
+      for(const pattern of stages){
+        const item=[...events].reverse().find(e=>pattern.test(e.message));
+        if(item)out.push('  '+item.message+': '+
+          (item.data?JSON.stringify(item.data).slice(0,550):'recorded'));
+      }
       if(s.error)out.push('  Error: '+s.error);
     }
   });
