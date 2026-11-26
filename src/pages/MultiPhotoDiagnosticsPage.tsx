@@ -103,7 +103,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
           // data are retained for the multi-photo comparison.
           result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
             log.level==='ERROR'||log.level==='WARNING'||
-            /registration performance|selected .* registration|timing-track|scan stage timings|calibration/i.test(log.message)
+            /registration performance|selected .* registration|timing-track|scan stage timings|calibration|original-photo QR locator|Sideways OMR orientation|recovery conclusion|registration candidates complete|outer-page boundary recovery/i.test(log.message)
           ).slice(-24)};
           if(result.overallStatus==='failed')problem=result.errors.join('; ')||'Registration failed';
         }catch(e){
