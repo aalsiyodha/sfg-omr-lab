@@ -994,6 +994,12 @@ export async function runFullScan(
           methods:pageCandidates.map(x=>x.method),
           mandatoryGates:'QR SFGOMR1 and independent left/right timing'
         });
+        // Preserve just one large source Mat and one output canvas through the
+        // failure-only orientation loop; no additional memory per unsuccessful turn.
+        let boundarySourceMat:any=null;
+        const boundaryOutputCanvas=document.createElement('canvas');
+        try{
+          boundarySourceMat=cv.imread(loaded.canvas);
         for(const [candidateIndex,page] of pageCandidates.entries()){
         if(selected)break;
         for(const turn of [0,1,2,3] as const){
@@ -1002,7 +1008,7 @@ export async function runFullScan(
           let accepted=false;
           try{
             candidateCanvas=warpBoundaryOrientation(
-              loaded.canvas,page.corners,turn);
+              loaded.canvas,page.corners,turn,boundarySourceMat,boundaryOutputCanvas);
             if(!candidateCanvas)continue;
             const qr=decodeQRFromRegion(candidateCanvas,
               OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
@@ -1041,6 +1047,7 @@ export async function runFullScan(
           }
         }
         } // after all rotations, try next independent page candidate
+        }finally{cleanupMats(boundarySourceMat);}
       }
       if(rough && !selected){
         let rescueGray:any=null,rescueBlur:any=null,rescueThreshold:any=null;
