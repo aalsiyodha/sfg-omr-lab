@@ -1,5 +1,5 @@
 'use client';
-import {useRef,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {saveReviewedSubmission} from '@/app/submit-actions';
 import type {ScanResult,IntermediateImages} from '../scanner-core/types';
 import type {Choice} from '@/lib/key';
@@ -14,6 +14,10 @@ type Props={
 const ANSWERS:ResponseChoice[]=['A','B','C','D',null,'MULTIPLE'];
 declare global {interface Window{cv?:{Mat?:unknown;onRuntimeInitialized?:()=>void};}}
 let cvLoading:Promise<void>|null=null;
+const SCAN_LIMIT_MS=120_000;
+const MAX_SOURCE_MB=80;
+function normalizeMime(file:File){return ['image/jpeg','image/png','image/webp'].includes(file.type)||/\.(jpe?g|png|webp)$/i.test(file.name);}
+
 function loadOpenCV():Promise<void>{
  if(window.cv?.Mat)return Promise.resolve();
  if(cvLoading)return cvLoading;
@@ -41,6 +45,13 @@ function formatResponse(v:ResponseChoice):string{return v==='MULTIPLE'?'Multiple
 export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  correctMarks=2,wrongMarks=-0.66,onEvaluated,testDbId,ignoreTestIdForDemo=false}:Props){
  const fileRef=useRef<HTMLInputElement>(null);
+ const cameraRef=useRef<HTMLInputElement>(null);
+ const startRef=useRef<number>(0);
+ const timeoutRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+ const [elapsed,setElapsed]=useState(0);
+ const [showDiagnostics,setShowDiagnostics]=useState(false);
+ const [diagnostics,setDiagnostics]=useState<string[]>([]);
+ useEffect(()=>{if(!busy)return;const timer=setInterval(()=>setElapsed(Math.floor((Date.now()-startRef.current)/1000)),500);return()=>clearInterval(timer);},[busy]);
  const [busy,setBusy]=useState(false);
  const [stage,setStage]=useState('');
  const [error,setError]=useState('');
@@ -62,27 +73,31 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
   if(!file)return;
   setError('');setScore(null);setScan(null);setOverlay(null);setSavedMessage('');
   setEdits({});setConfirmed({});setFileName(file.name);
+  setDiagnostics([]);setElapsed(0);
   if(!complete){setError('Publish a complete answer key for this test before evaluating sheets.');return;}
-  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){
+  if(!normalizeMime(file)){
    setError('Upload a JPG, PNG or WebP photograph. PDF and HEIC are not supported yet.');return;
   }
-  if(file.size>12*1024*1024){setError('Image must be smaller than 12 MB.');return;}
-  setBusy(true);
+  if(file.size>MAX_SOURCE_MB*1024*1024){setError('This image is larger than 80 MB. Please use your camera’s normal photo mode or resize the image before scanning.');return;}
+  setBusy(true);startRef.current=Date.now();
   try{
-   setStage('Loading optical scanner…');
+   setDiagnostics(old=>[...old,`Source: ${file.name}, ${(file.size/1024/1024).toFixed(2)} MB, ${file.type||'unknown type'}`]);
+   setStage('Loading OpenCV.js engine (first load may require downloading WASM)…');
    await loadOpenCV();
+   setStage('Preparing image and scanner modules…');
+   setDiagnostics(old=>[...old,'OpenCV.js loaded successfully']);
    const {runFullScan}=await import('../scanner-core/scanner/scanOrchestrator');
    const {result,images}:{result:ScanResult;images:IntermediateImages}=
-     await runFullScan(file,p=>setStage(p.stage),{
+     await Promise.race([runFullScan(file,p=>{setStage(p.stage);setDiagnostics(old=>old[old.length-1]===p.stage?old:[...old,p.stage]);},{
       proofscan:false,proofmodel:false,proofmesh:false,fastQrRoi:true,coarseToFine:true
-     });
+     }),new Promise<never>((_,reject)=>{timeoutRef.current=setTimeout(()=>reject(new Error('Scanning exceeded 120 seconds. Refresh the page and try a brighter, less tilted photograph.')),SCAN_LIMIT_MS);})]);
    setScan(result);
    setOverlay(images.bubbleOverlay||images.perspectiveCorrected||null);
    const issue=acceptedScan(result,testNumber,ignoreTestIdForDemo);
    if(issue)setError(issue);
    else setStage('Scan complete. Review flagged responses before grading.');
   }catch(e){setError(e instanceof Error?e.message:'Unexpected scanner error.');}
-  finally{setBusy(false);if(fileRef.current)fileRef.current.value='';}
+  finally{setBusy(false);if(timeoutRef.current)clearTimeout(timeoutRef.current);timeoutRef.current=null;if(fileRef.current)fileRef.current.value='';if(cameraRef.current)cameraRef.current.value='';}
  };
  const review=(question:number,value:ResponseChoice)=>{
   setEdits(old=>({...old,[question]:value}));
@@ -131,16 +146,23 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
   </div>
   {ignoreTestIdForDemo&&<div className="notice"><strong>Demo-only Test ID bypass:</strong> a mismatched printed Test ID does not block local score calculation. QR and geometry verification still apply. Results cannot be saved to Neon from this page.</div>}
   {!complete?<div className="notice">Publish the test's complete answer key first. Only published keys can be used for scoring.</div>:<>
-   <label className={'omrDrop'+(busy?' busy':'')}>
-    <span className="omrDropIcon">▣</span>
-    <strong>{busy?'Scanning OMR…':'Choose a student OMR photograph'}</strong>
-    <span>JPG, PNG or WebP · maximum 12 MB · processed on your device</span>
-    <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp"
-      disabled={busy} onChange={e=>void scanImage(e.target.files?.[0])}/>
-   </label>
-   {(busy||stage)&&<p className="omrStage" role="status">{busy?'◌ ':''}{stage}</p>}
+   <div className="omrInputPanel">
+    <div className="omrInputHeader"><span className="omrDropIcon">▣</span><div><strong>Scan an OMR answer sheet</strong>
+      <p>Choose a photo or use your phone camera. Image processing stays on this device, and the scanner normalizes photos to 1600px.</p></div></div>
+    <div className="omrInputActions">
+      <button type="button" className="button primary" disabled={busy} onClick={()=>cameraRef.current?.click()}>◉ Take photo</button>
+      <button type="button" className="button secondary" disabled={busy} onClick={()=>fileRef.current?.click()}>↑ Upload image</button>
+    </div>
+    <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="omrHiddenInput"
+      disabled={busy} onChange={e=>void scanImage(e.currentTarget.files?.[0])}/>
+    <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="omrHiddenInput"
+      disabled={busy} onChange={e=>void scanImage(e.currentTarget.files?.[0])}/>
+    <span className="muted small">JPG / PNG / WebP · up to 80 MB source image · browser-local processing. Camera support depends on your device.</span>
+   </div>
+   {(busy||stage)&&<div className="omrStage" role="status"><strong>{busy?'◌ Processing…':'Scanner status'}</strong><span>{stage||'Preparing…'}</span>{busy&&<small>{elapsed}s elapsed · scanning can take longer for difficult pages</small>}</div>}
+   {(stage||error)&&<details className="omrDiagnostics" open={showDiagnostics} onToggle={e=>setShowDiagnostics((e.currentTarget as HTMLDetailsElement).open)}><summary>Scanner details and troubleshooting</summary><p>If the scan appears stuck, reload this page and try a sharp, well-lit photo showing all four corners. OpenCV runs in your browser; a heavy scan can temporarily slow the UI.</p><ol>{diagnostics.slice(-15).map((v,i)=><li key={i}>{v}</li>)}</ol></details>}
    {fileName&&<p className="muted small">Uploaded file: {fileName}</p>}
-   {error&&<div className="alert" role="alert">{error}</div>}
+   {error&&<div className="alert" role="alert">{error} <button className="textButton" type="button" onClick={()=>{setError('');setStage('');setDiagnostics([]);}}>Dismiss</button></div>}
    {scan&&<div className="scanSummary">
     <div><span>QR</span><strong>{scan.qrValid?'Verified':'Invalid'}</strong></div>
     <div><span>Timing</span><strong>{scan.alignmentMatched??0}/50</strong></div>

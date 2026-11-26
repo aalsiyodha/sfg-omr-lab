@@ -21,34 +21,31 @@ export async function loadImageFromFile(file: File): Promise<LoadedImage> {
       reject(new Error(`Unsupported file type: ${file.type}. Please upload JPG, PNG, or WebP. HEIC/HEIF must first be converted to JPEG/PNG in a supported app.`));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
-      const img = new Image();
-      img.onload = () => {
-        // Standardize high-res phone captures (e.g. 12MP/48MP) to 1600px max dimension.
-        // This ensures OpenCV adaptive-threshold kernels match the physical marker size (7mm ~ 35-40px).
-        const MAX_DIM = 1600;
-        let w = img.naturalWidth;
-        let h = img.naturalHeight;
-        if (Math.max(w, h) > MAX_DIM) {
-          const scale = MAX_DIM / Math.max(w, h);
-          w = Math.round(w * scale);
-          h = Math.round(h * scale);
-        }
+    // Blob URLs avoid creating a massive base64 copy of a full-resolution phone photo.
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX_DIM = 1600;
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      if (Math.max(w, h) > MAX_DIM) {
+        const scale = MAX_DIM / Math.max(w, h);
+        w = Math.max(1,Math.round(w*scale));
+        h = Math.max(1,Math.round(h*scale));
+      }
+      try {
         const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, w, h);
-        const normalizedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-        resolve({ element: img, canvas, ctx, width: w, height: h, dataUrl: normalizedDataUrl });
-      };
-      img.onerror = () => reject(new Error('Failed to decode image data'));
-      img.src = dataUrl;
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas could not be initialized on this device.');
+        ctx.drawImage(img,0,0,w,h);
+        const normalizedDataUrl = canvas.toDataURL('image/jpeg',0.92);
+        resolve({element:img,canvas,ctx,width:w,height:h,dataUrl:normalizedDataUrl});
+      } catch(error){reject(error);}
     };
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
+    img.onerror = () => {URL.revokeObjectURL(url);reject(new Error('Could not decode this image. Try JPEG, PNG or WebP.'));};
+    img.src=url;
   });
 }
 

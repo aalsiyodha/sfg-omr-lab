@@ -199,3 +199,20 @@ body{background:linear-gradient(160deg,#f8fafc 0%,#f5f8fb 48%,#f0f4f8 100%);colo
 .newAuthFooter a:hover{text-decoration:underline}
 @media(max-width:950px){.nav .links{gap:12px;flex-wrap:wrap}.newAuthShell{grid-template-columns:1fr 420px;gap:24px}.newAuthIntro h1{font-size:42px}}
 @media(max-width:760px){main{width:min(100% - 28px,1160px)}.nav{padding:12px 18px;align-items:flex-start;flex-wrap:wrap}.brand small{display:none}.nav .links{gap:9px;overflow-x:auto;max-width:100%;padding-bottom:3px}.nav .links>a{white-space:nowrap;font-size:11px}.newAuthShell{grid-template-columns:1fr;gap:0;padding:35px 0}.newAuthIntro{padding-bottom:15px}.newAuthIntro h1{font-size:39px}.newAuthIntro>p{font-size:14px}.newAuthPanel{padding:24px 20px}.newAuthHighlights{margin-top:14px}.home{padding-top:45px}}
+
+/* Camera capture & resilient OMR upload */
+.omrInputPanel{background:#f9fbfd;border:1px solid #dce6ef;border-radius:15px;padding:25px;margin:20px 0;display:grid;gap:19px}
+.omrInputHeader{display:flex;gap:17px;align-items:center}
+.omrInputHeader strong{font-size:17px;color:#163b58}
+.omrInputHeader p{font-size:12px;color:#74869a;margin:5px 0 0;line-height:1.6}
+.omrInputActions{display:flex;flex-wrap:wrap;gap:12px}
+.omrInputActions .button{min-width:170px}
+.omrHiddenInput{position:absolute!important;clip-path:inset(50%);height:1px;width:1px;opacity:0;pointer-events:none}
+.omrInputPanel>.muted{font-size:11px}
+.omrStage{background:#eff5fa;border-radius:10px;padding:15px 18px;display:flex;gap:5px;flex-direction:column;margin:12px 0}
+.omrStage strong{font-size:13px;color:#1e567b}.omrStage span{font-size:12px;color:#425d73}.omrStage small{font-size:11px;color:#7289a0}
+.omrDiagnostics{padding:12px 15px;border:1px solid #e4ecf2;border-radius:10px;margin:12px 0}
+.omrDiagnostics summary{font-size:12px;color:#436780;cursor:pointer;font-weight:700}
+.omrDiagnostics p,.omrDiagnostics li{font-size:11px;color:#74869a}
+.omrDiagnostics ol{max-height:200px;overflow:auto}
+@media(max-width:550px){.omrInputPanel{padding:17px}.omrInputActions{display:grid;grid-template-columns:1fr}.omrInputActions .button{width:100%}}
