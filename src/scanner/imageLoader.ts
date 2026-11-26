@@ -15,7 +15,7 @@ export interface ValidationResult {
   errors: string[];
 }
 
-export interface FileDecodeOptions { compact?: boolean }
+export interface FileDecodeOptions { compact?: boolean; experimentalExifSinglePass?: boolean }
 
 /** Browser-native bitmap decode avoids a multi-megabyte base64 FileReader
  * string plus a second HTMLImage decoder. In multi-photo mode, never JPEG-
@@ -80,9 +80,11 @@ export async function loadImageFromFile(
   });
   let bitmap:ImageBitmap|null=null;
   try {
-    const portraitExif=await jpegIsExifPortrait(file);
-    // The bitmap decoder honors EXIF. Resize its LONG side, not its raw
-    // landscape width, to avoid a second interpolation of portrait photos.
+    const portraitExif=options.experimentalExifSinglePass &&
+      await jpegIsExifPortrait(file);
+    // Preserve the proven 3.7.4 decode by default. Single-pass EXIF
+    // resizing is experimental because sampling shifts altered registration
+    // and broke an otherwise verified original photo in 3.7.5.
     bitmap=await Promise.race([
       createImageBitmap(file,portraitExif
         ?{resizeHeight:maxWidth,resizeQuality:'high'}
