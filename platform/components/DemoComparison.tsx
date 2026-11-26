@@ -5,8 +5,8 @@ export type DemoPeer={
  name:string;code:string;score:number;answers:(string|null)[];statuses:string[];
 };
 type Filter='all'|'wrong'|'correct'|'skipped';
-function statusOf(answer:string|null,key:string,status:string){
- if(key==='X')return 'cancelled';
+function statusOf(answer:string|null,key:string|null,status:string){
+ if(key==='X'||key===null)return 'cancelled';
  if(status==='multiple'||answer==='MULTIPLE')return 'wrong';
  if(answer===null||answer==='X'||answer==='')return 'skipped';
  return answer===key?'correct':'wrong';
