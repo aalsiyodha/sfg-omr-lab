@@ -15,12 +15,50 @@ export interface ValidationResult {
   errors: string[];
 }
 
-export interface FileDecodeOptions { compact?: boolean }
+export interface FileDecodeOptions { compact?: boolean; experimentalExifSinglePass?: boolean }
 
 /** Browser-native bitmap decode avoids a multi-megabyte base64 FileReader
  * string plus a second HTMLImage decoder. In multi-photo mode, never JPEG-
  * serialize the normalized source again merely for an unused preview.
  */
+/** Read only the JPEG APP1 header: EXIF orientation determines whether the
+ * decoded bitmap is portrait. No full-size bitmap is ever allocated here.
+ * A rotated phone JPEG commonly stores landscape pixels with orientation 6.
+ */
+export async function jpegIsExifPortrait(file:File):Promise<boolean>{
+  if(!/image\/jpe?g/.test(file.type))return false;
+  try{
+    const bytes=new DataView(await file.slice(0,131072).arrayBuffer());
+    if(bytes.byteLength<16||bytes.getUint16(0)!==0xffd8)return false;
+    let i=2;
+    while(i+4<bytes.byteLength){
+      if(bytes.getUint8(i)!==0xff){i++;continue;}
+      const tag=bytes.getUint8(i+1);
+      if(tag===0xda||tag===0xd9)break;
+      if(tag===0xff||tag===0x00){i++;continue;}
+      const length=bytes.getUint16(i+2);
+      if(length<2||i+2+length>bytes.byteLength)break;
+      if(tag===0xe1&&length>=16&&bytes.getUint32(i+4)===0x45786966){
+        const tiff=i+10;
+        const little=bytes.getUint16(tiff)===0x4949;
+        if(!little&&bytes.getUint16(tiff)!==0x4d4d)return false;
+        const ifd=tiff+bytes.getUint32(tiff+4,little);
+        if(ifd+2>=bytes.byteLength)return false;
+        const count=bytes.getUint16(ifd,little);
+        for(let n=0;n<Math.min(count,128);n++){
+          const off=ifd+2+n*12;
+          if(off+12>bytes.byteLength)break;
+          if(bytes.getUint16(off,little)!==0x0112)continue;
+          const value=bytes.getUint16(off+8,little);
+          return value===5||value===6||value===7||value===8;
+        }
+      }
+      i+=2+length;
+    }
+  }catch{/* malformed EXIF: standard decoder fallback */}
+  return false;
+}
+
 export async function loadImageFromFile(
   file: File, options: FileDecodeOptions = {}
 ): Promise<LoadedImage> {
@@ -42,8 +80,15 @@ export async function loadImageFromFile(
   });
   let bitmap:ImageBitmap|null=null;
   try {
+    const portraitExif=options.experimentalExifSinglePass &&
+      await jpegIsExifPortrait(file);
+    // Preserve the proven 3.7.4 decode by default. Single-pass EXIF
+    // resizing is experimental because sampling shifts altered registration
+    // and broke an otherwise verified original photo in 3.7.5.
     bitmap=await Promise.race([
-      createImageBitmap(file,{resizeWidth:maxWidth,resizeQuality:'high'}),
+      createImageBitmap(file,portraitExif
+        ?{resizeHeight:maxWidth,resizeQuality:'high'}
+        :{resizeWidth:maxWidth,resizeQuality:'high'}),
       timeout
     ]);
     if(timedOut)throw new Error('Image decoding timed out');

@@ -26,6 +26,8 @@ import { warpBoundaryOrientation } from './omniBoundary';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { correctPerspectiveFromQrAruco } from './qrArucoRegistration';
+import { correctPerspectiveFromQrCorners } from './qrCornerRegistration';
+import { qrBoundaryPreflight, warpQrPaperJoint } from './qrPaperJointRegistration';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import { correctMildPageWarp, countHeldOutTimingMarks } from './mildCurveCorrection';
@@ -43,7 +45,7 @@ import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import { rescueTestIdOffset } from './testIdAlignment';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
-import { OMR_LAYOUT } from '../config/omrLayout';
+import { OMR_LAYOUT, mmToPx } from '../config/omrLayout';
 import { logger } from '../diagnostics/diagnosticLogger';
 import { generateBubbleOverlay, generateMarkerOverlay } from './overlayGenerator';
 
@@ -148,7 +150,9 @@ function evaluateHypothesis(
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers, !fastQrRoi)
       : hypothesis.kind === 'hybrid'
       ? hypothesis.qrLocated
-         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
+         ? hypothesis.name.startsWith('hybrid/qr-only')
+            ? correctPerspectiveFromQrCorners(source,hypothesis.qrLocated,!fastQrRoi)
+            : correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
          : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,!fastQrRoi)
       : hypothesis.kind === 'fusion'
       ? fitRobustSheetWarp(source,hypothesis.corners,hypothesis.midpoint,
@@ -160,6 +164,29 @@ function evaluateHypothesis(
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
+    if(hypothesis.kind==='hybrid' && hypothesis.qrLocated?.valid &&
+      hypothesis.qrLocated.center && persp.transform){
+      // Source QR projected into the candidate template: distinguishes
+      // unreadable QR from a correct source QR displaced by a poor warp.
+      const m=persp.transform.data64F as Float64Array;
+      const q=hypothesis.qrLocated.center;
+      if(m?.length>=9){
+        const d=m[6]*q.x+m[7]*q.y+m[8];
+        if(Math.abs(d)>1e-8){
+          const px=(m[0]*q.x+m[1]*q.y+m[2])/d;
+          const py=(m[3]*q.x+m[4]*q.y+m[5])/d;
+          const expectedX=mmToPx(OMR_LAYOUT.qr.xMm+OMR_LAYOUT.qr.sizeMm/2,dpi);
+          const expectedY=mmToPx(OMR_LAYOUT.qr.yMm+OMR_LAYOUT.qr.sizeMm/2,dpi);
+          logger.info('perspective','Exp3.7.3 source QR homography projection',{
+            hypothesis:hypothesis.name,
+            projectedPx:{x:Number(px.toFixed(1)),y:Number(py.toFixed(1))},
+            errorMm:{dx:Number(((px-expectedX)*25.4/dpi).toFixed(2)),
+              dy:Number(((py-expectedY)*25.4/dpi).toFixed(2))},
+            registrationAcceptanceUnchanged:true
+          });
+        }
+      }
+    }
     // Only Experimental 4's failure-only partial-ArUco candidates receive
     // this cheap preflight. A real verified 48+/50 timing lattice cannot
     // fail these deliberately permissive preliminary bounds.
@@ -224,13 +251,19 @@ function evaluateHypothesis(
         const strongTiming=timing.matched>=48 && timing.leftMatched>=23 && timing.rightMatched>=23;
         const stripValid=strip.status==='ok' && strip.ordered &&
           strip.patchMedians.length===7 && (strip.contrast??0)>=90;
+        const independentMarkers=hypothesis.kind==='aruco' && hypothesis.markers.found ||
+          hypothesis.kind==='midpoint' && hypothesis.markers.found ||
+          hypothesis.kind==='fusion' && hypothesis.aruco.count>=2;
+        const independentGeometry=strongTiming &&
+          (independentMarkers || (stripValid && timing.matched===50));
         logger.info('perspective',`${hypothesis.name}: QR-less provisional geometry evidence`,{
           timing:timing.matched,left:timing.leftMatched,right:timing.rightMatched,
           requiredTiming:48,requiredPerSide:23,stripStatus:strip.status,
           stripContrast:strip.contrast,stripOrdered:strip.ordered,
-          strongTiming,stripValid,accepted:strongTiming&&stripValid
+          strongTiming,stripValid,independentMarkers,independentGeometry,
+          accepted:independentGeometry
         });
-        if(strongTiming&&stripValid){
+        if(independentGeometry){
           gray=candidateGray;candidateGray=null;keep=true;
           logger.warning('perspective',`${hypothesis.name}: PROVISIONAL ONLY — QR not decoded; scoring prohibited`);
           cv.imshow(canvas,persp.corrected);
@@ -433,6 +466,10 @@ export interface ScanModeOptions {
   ttopProbe?: boolean;
   /** Avoid retaining PNG overlays and base64 originals in batch diagnostic scans. */
   compact?: boolean;
+  /** Exp3.7.2 only: QR-less geometry may produce non-scoring provisional data. */
+  qrOptionalExperiment?: boolean;
+  /** Disable ML document recovery to benchmark classical CV independently. */
+  disableAiRecovery?: boolean;
 }
 export async function runFullScan(
   file: File,
@@ -488,6 +525,9 @@ export async function runFullScan(
     onProgress?.({ stage: 'Finding reference markers (corner and edge midpoint)…', percent: 30 });
 
     const registrationStarted=Date.now();
+    let originalQrLocatorMs=0;
+    let boundaryQrMs=0;
+    let boundaryQrAttempts=0;
     const hypotheses: Hypothesis[] = [];
     let fastWarpAttempts=0;
     const usedGeometries=new Set<string>();
@@ -516,6 +556,7 @@ export async function runFullScan(
     let arucoAdaptive:ArucoRegistration={found:false,count:0,points:{}};
     let arucoOtsu:ArucoRegistration=arucoAdaptive;
     let cornerOtsuForHybrid:MarkerDetectionResult=primary;
+    const provisionalCandidates:Array<{source:HTMLCanvasElement;hypothesis:Hypothesis}>=[];
     const registrationAttempts:{
       method:string;source:string;durationMs:number;phase:string;reason:string;
       qrValid:boolean;timing:number;left:number;right:number;
@@ -544,6 +585,11 @@ export async function runFullScan(
         fusionEvidence:evidence.fusionEvidence
       };
       registrationAttempts.push(item);
+      if(options?.qrOptionalExperiment && !result && provisionalCandidates.length<32){
+        const already=provisionalCandidates.some(x=>x.source===source &&
+          x.hypothesis.kind===hypothesis.kind && x.hypothesis.name===hypothesis.name);
+        if(!already)provisionalCandidates.push({source,hypothesis});
+      }
       logger.info('perspective','v2.5.2 detailed registration candidate',item);
       return result;
     };
@@ -913,20 +959,37 @@ export async function runFullScan(
       }finally{rescueOtsu.delete();}
     }
 
+    let photoQr:ReturnType<typeof locateQRInPhoto>|null=null;
     // Geometric QR finder search on the ORIGINAL photo is independent of
     // a failed perspective warp. It is diagnostic evidence, not scan approval.
     if(!selected){
       const qrLocatorStart=Date.now();
       const located=locateQRInPhoto(loaded.canvas);
+      photoQr=located;
+      originalQrLocatorMs=Date.now()-qrLocatorStart;
       logger.info('qrDecoding','Independent original-photo QR locator',{
         found:located.found,valid:located.valid,center:located.center,
         corners:located.corners,raw:located.raw,attempts:located.attempts,
         error:located.error,durationMs:Date.now()-qrLocatorStart
       });
+      // Z.ai P-2: independent QR corners are four valid correspondences.
+      // They are spatially clustered and MUST pass the untouched full QR
+      // and two timing-track checks; never trust them as page proof alone.
+      if(located.valid){
+        const qrOnly:Hypothesis={kind:'hybrid',name:'hybrid/qr-only-landmark',
+          corners:primary,aruco:arucoAdaptive,qrLocated:located};
+        warpAttempts++;
+        const qrOnlyResult=traceRegistration(loaded.canvas,qrOnly,dpi,curveBudget);
+        logger.info('perspective','Exp3.7.3 QR-only landmark proposal',{
+          decodedInOriginal:true,accepted:Boolean(qrOnlyResult),
+          timing:qrOnlyResult?.check.matched??null,
+          note:'QR-corner extrapolation never bypasses timing verification'});
+        if(qrOnlyResult)selected=qrOnlyResult;
+      }
       // New v2.3.46 failure-only cross-family registration. It combines
       // independently located QR corners with two decoded bottom ArUco IDs.
       // evaluateHypothesis still enforces QR identity and both timing tracks.
-      if(located.valid){
+      if(located.valid && !selected){
         for(const source of [{name:'adaptive',aruco:arucoAdaptive},
           {name:'Otsu',aruco:arucoOtsu}]){
           if(!source.aruco.points[2]||!source.aruco.points[3])continue;
@@ -980,18 +1043,58 @@ export async function runFullScan(
           methods:pageCandidates.map(x=>x.method),
           mandatoryGates:'QR SFGOMR1 and independent left/right timing'
         });
+        // Preserve just one large source Mat and one output canvas through the
+        // failure-only orientation loop; no additional memory per unsuccessful turn.
+        let boundarySourceMat:any=null;
+        const boundaryOutputCanvas=document.createElement('canvas');
+        try{
+          boundarySourceMat=cv.imread(loaded.canvas);
         for(const [candidateIndex,page] of pageCandidates.entries()){
         if(selected)break;
+        // Z.ai P-3 conservative prefilter: the independently decoded source QR
+        // must lie inside the proposed physical paper quad. Reject only when
+        // it is definitely outside, leaving near-edge cases for full checks.
+        if(photoQr?.valid && photoQr.center){
+          const q=photoQr.center;
+          const cross=page.corners.map((p,i)=>{
+            const n=page.corners[(i+1)%4];
+            return (n.x-p.x)*(q.y-p.y)-(n.y-p.y)*(q.x-p.x);
+          });
+          const positive=cross.filter(v=>v>0).length;
+          const negative=cross.filter(v=>v<0).length;
+          if(positive>0&&negative>0){
+            logger.info('perspective','Exp3.7.3 boundary candidate rejected by source QR location',{
+              candidateIndex,method:page.method,qrCenter:q,reason:'located QR outside candidate quad'});
+            continue;
+          }
+        }
         for(const turn of [0,1,2,3] as const){
+          // The decoded source QR tells us which part of the sheet is its
+          // top-right corner. Most rotated assignments can be rejected by a
+          // tiny 3x3 projection before allocating/warping a full A4 image.
+          // 55mm is deliberately broad: never replace final QR+timing checks.
+          if(photoQr?.valid){
+            const pre=qrBoundaryPreflight(page.corners,turn,photoQr,dpi);
+            if(!pre.plausible){
+              logger.info('perspective','Classical source-QR orientation preflight',{
+                pageCandidate:candidateIndex,turnDegrees:turn*90,
+                errorMm:pre.errorMm,rejected:true,reason:pre.reason
+              });
+              continue;
+            }
+          }
           let candidateCanvas:HTMLCanvasElement|null=null;
           let candidateColor:any=null,candidateGray:any=null;
           let accepted=false;
           try{
             candidateCanvas=warpBoundaryOrientation(
-              loaded.canvas,page.corners,turn);
+              loaded.canvas,page.corners,turn,boundarySourceMat,boundaryOutputCanvas);
             if(!candidateCanvas)continue;
+            const qrStart=performance.now();
             const qr=decodeQRFromRegion(candidateCanvas,
               OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+            boundaryQrMs+=performance.now()-qrStart;
+            boundaryQrAttempts++;
             // QR-first short circuit avoids threshold scans on wrong orientations.
             if(!qr.valid){
               logger.info('perspective','Exp3.6 360-degree boundary orientation',{
@@ -1027,6 +1130,112 @@ export async function runFullScan(
           }
         }
         } // after all rotations, try next independent page candidate
+        // Joint paper+QR classical rescue: these independent landmarks span
+        // the complete page and local QR. Try only after plain boundary warps
+        // have failed. No neural model or relaxed scoring is involved.
+        if(!selected&&photoQr?.valid&&photoQr.corners.length===4){
+          for(const [candidateIndex,page] of pageCandidates.entries()){
+            if(selected)break;
+            for(const turn of [0,1,2,3] as const){
+              if(selected)break;
+              for(const qrWeight of [4,6] as const){
+              if(selected)break;
+              let color:any=null,gray:any=null,accepted=false;
+              try{
+                const pre=qrBoundaryPreflight(page.corners,turn,photoQr,dpi);
+                if(!pre.plausible){
+                  logger.info('perspective','Classical joint-fit candidate skipped',{
+                    pageCandidate:candidateIndex,turnDegrees:turn*90,
+                    qrWeight,stage:'preflight',errorMm:pre.errorMm,reason:pre.reason});
+                  continue;
+                }
+                const warped=warpQrPaperJoint(boundarySourceMat,page.corners,
+                  turn,photoQr,dpi,boundaryOutputCanvas,qrWeight);
+                if(!warped){
+                  logger.info('perspective','Classical joint-fit candidate skipped',{
+                    pageCandidate:candidateIndex,turnDegrees:turn*90,
+                    qrWeight,stage:'homography-or-QR-projection'});
+                  continue;
+                }
+                warpAttempts++;
+                const qr=decodeQRFromRegion(warped.canvas,
+                  OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+                if(!qr.valid||qr.raw!==photoQr.raw){
+                  logger.info('perspective','Classical joint-fit candidate skipped',{
+                    pageCandidate:candidateIndex,turnDegrees:turn*90,
+                    qrWeight,stage:'template-QR',decodeValid:qr.valid,
+                    qrEqual:qr.raw===photoQr.raw,qrErrorMm:warped.qrErrorMm});
+                  continue;
+                }
+                color=cv.imread(warped.canvas);
+                gray=new cv.Mat();
+                cv.cvtColor(color,gray,cv.COLOR_RGBA2GRAY);
+                let check=verifyTimingMarks(gray,dpi);
+                // A loosely correct joint fit can have a few millimetres of
+                // drift. Existing independent timing-square correction may
+                // improve it, but NEVER accept unless the exact source QR is
+                // still decoded and both timing tracks independently pass.
+                if(!check.passed && check.matched>=6 &&
+                  check.leftMatched>=2 && check.rightMatched>=2){
+                  const refined=refineByTimingSquares(color,dpi);
+                  if(refined){
+                    let refinedGray:any=null;
+                    let adopted=false;
+                    try{
+                      cv.imshow(warped.canvas,refined.corrected);
+                      const correctedQr=decodeQRFromRegion(warped.canvas,
+                        OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+                      if(correctedQr.valid&&correctedQr.raw===photoQr.raw){
+                        refinedGray=new cv.Mat();
+                        cv.cvtColor(refined.corrected,refinedGray,cv.COLOR_RGBA2GRAY);
+                        const correctedCheck=verifyTimingMarks(refinedGray,dpi);
+                        logger.info('perspective','Classical joint-fit timing refinement',{
+                          pageCandidate:candidateIndex,turnDegrees:turn*90,
+                          before:check.matched,after:correctedCheck.matched,
+                          left:correctedCheck.leftMatched,
+                          right:correctedCheck.rightMatched,
+                          qrIdentityUnchanged:true
+                        });
+                        if(shouldAdoptTimingRefinement(check,correctedCheck)){
+                          cleanupMats(color,gray);
+                          color=refined.corrected;
+                          gray=refinedGray;refinedGray=null;
+                          check=correctedCheck;
+                          adopted=true;
+                        }
+                      }
+                    }finally{
+                      if(!adopted)cleanupMats(refined.corrected);
+                      cleanupMats(refinedGray,refined.transform);
+                    }
+                  }
+                }
+                logger.info('perspective','Classical QR+paper joint-fit result',{
+                  pageCandidate:candidateIndex,method:page.method,qrWeight,
+                  turnDegrees:turn*90,preflightErrorMm:pre.errorMm,
+                  qrErrorMm:warped.qrErrorMm,timing:check.matched,
+                  left:check.leftMatched,right:check.rightMatched,
+                  accepted:check.passed
+                });
+                if(!check.passed)continue;
+                selected={
+                  hypothesis:{kind:'corner',name:'boundary/qr-paper-joint-'+
+                    candidateIndex+'-'+turn+'-w'+qrWeight,markers:primary},
+                  perspective:{corrected:color,correctedDataUrl:'',
+                    transform:null,success:true},
+                  gray,canvas:warped.canvas,qr,check,rotated:turn===2
+                };
+                color=null;gray=null;accepted=true;
+                break;
+              }catch(error){
+                logger.warning('perspective','Classical QR+paper joint-fit error',{
+                  candidateIndex,turn,error:String(error)});
+              }finally{if(!accepted)cleanupMats(color,gray);}
+              } // independent bounded QR-paper weight
+            }
+          }
+        }
+        }finally{cleanupMats(boundarySourceMat);}
       }
       if(rough && !selected){
         let rescueGray:any=null,rescueBlur:any=null,rescueThreshold:any=null;
@@ -1093,7 +1302,7 @@ export async function runFullScan(
     // deterministic registration and page-boundary methods have failed.
     // AI provides candidate geometry, never permission to grade. Every
     // candidate must pass the original QR identity and two timing-track gates.
-    if(!selected){
+    if(!selected && !options?.disableAiRecovery){
       const aiStart=Date.now();
       let aiAttempted=0;
       let aiStatus='not-started';
@@ -1270,7 +1479,64 @@ export async function runFullScan(
         });
       }
     }
+    if(!selected && options?.disableAiRecovery){
+      logger.info('perspective','Exp3.7.4 AI recovery deliberately disabled',{
+        aiModelLoaded:false,attempts:0,
+        classicalRegistrationOnly:true,
+        warning:'Only geometrically verified QR+timing registrations can be scored'});
+    }
+    // Only in the isolated 3.7.2 laboratory: fall back to independently
+    // verified timing + printed fiducials after ALL strict QR attempts fail.
+    // A QR-less result is PROVISIONAL, has no student identity, and cannot score.
+    if(options?.qrOptionalExperiment && !selected){
+      const ordered=provisionalCandidates.filter(x=>x.hypothesis.kind==='aruco'||
+        x.hypothesis.kind==='midpoint'||x.hypothesis.kind==='fusion')
+        .concat(provisionalCandidates.filter(x=>x.hypothesis.kind==='corner'));
+      logger.info('perspective','Exp3.7.2 QR-optional fallback started',{
+        available:ordered.length,limit:10,
+        requirement:'48/50 timing, at least 23 per side, independent geometric landmark evidence',
+        identity:'unverified',scoringAllowed:false});
+      for(const x of ordered.slice(0,10)){
+        const provisionalCandidate=traceRegistration(x.source,x.hypothesis,dpi,
+          {remaining:0},true);
+        if(!provisionalCandidate)continue;
+        if(!provisionalCandidate.provisional || provisionalCandidate.qr.valid){
+          disposeAlignment(provisionalCandidate);
+          continue;
+        }
+        selected=provisionalCandidate;
+        logger.warning('perspective','Exp3.7.2 QR-optional geometry accepted PROVISIONALLY',{
+          method:x.hypothesis.name,timing:selected.check.matched,
+          left:selected.check.leftMatched,right:selected.check.rightMatched,
+          studentIdentityVerified:false,scoringAllowed:false});
+        break;
+      }
+    }
     finishStage('registration');
+    logger.info('qrDecoding','Exp3.7.3 QR processing accounting',{
+      hypothesisQrMs:registrationAttempts.reduce((sum,a)=>sum+(a.qrMs??0),0),
+      hypothesisQrProbes:registrationAttempts.filter(a=>a.qrMs!==undefined).length,
+      originalQrLocatorMs,boundaryQrMs:Math.round(boundaryQrMs),
+      boundaryQrAttempts,
+      note:'Does not include AI direct-region and internal orientation probes; lower bound of QR processing time'
+    });
+    if(!selected){
+      const byPhase:Record<string,number>={};
+      for(const a of registrationAttempts){
+        const key=a.phase+':'+(a.qrValid?'qr-valid':'qr-invalid');
+        byPhase[key]=(byPhase[key]??0)+1;
+      }
+      logger.warning('perspective','Exp3.7.3 failed registration taxonomy',{
+        attempts:registrationAttempts.length,byPhase,
+        strongestTiming:[...registrationAttempts]
+          .sort((a,b)=>b.timing-a.timing).slice(0,8)
+          .map(a=>({method:a.method,phase:a.phase,reason:a.reason,
+            qrValid:a.qrValid,timing:a.timing,left:a.left,right:a.right,
+            qrMs:a.qrMs,warpMs:a.warpMs})),
+        sourceQrDecoded:photoQr?.valid??false,
+        rejectionNotAutomaticallyBlamedOnQr:true
+      });
+    }
     logger.info('perspective','v2.5.2 registration candidates complete',{
       total:registrationAttempts.length,
       accepted:registrationAttempts.filter(a=>a.accepted).length,
