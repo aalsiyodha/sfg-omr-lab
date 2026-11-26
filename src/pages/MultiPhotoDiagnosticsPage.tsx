@@ -110,7 +110,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
           // data are retained for the multi-photo comparison.
           result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
             log.level==='ERROR'||log.level==='WARNING'||
-            /registration performance|selected .* registration|timing-track|scan stage timings|calibration|original-photo QR locator|Sideways OMR orientation|recovery conclusion|registration candidates complete|outer-page boundary recovery|Exp3.7 alternative paper hypotheses|Exp3.6 360-degree boundary orientation|Exp3.6 verified all-angle|AI last-resort summary|AI document boundary recovery|AI first-warp independent landmark verification|AI orientation probe error|Exp3.7.4|Exp3.7.3|QR processing accounting/i.test(log.message)
+            /registration performance|selected .* registration|timing-track|scan stage timings|calibration|original-photo QR locator|Sideways OMR orientation|recovery conclusion|registration candidates complete|outer-page boundary recovery|Exp3.7 alternative paper hypotheses|Exp3.6 360-degree boundary orientation|Exp3.6 verified all-angle|AI last-resort summary|AI document boundary recovery|AI first-warp independent landmark verification|AI orientation probe error|Classical QR\+paper|Classical source-QR|Exp3.7.4|Exp3.7.3|QR processing accounting/i.test(log.message)
           ).slice(-75)};
           if(result.overallStatus==='failed')problem=result.errors.join('; ')||'Registration failed';
         }catch(e){
@@ -133,9 +133,9 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const comparison=comparePhotos(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 3.7.4 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.7.4 — Classical CV Only — No AI</h1>
-      <p className="small text-secondary">No neural document detector is executed in this experiment. Only conventional OpenCV, QR, ArUco, corner, midpoint, boundary and timing geometry operate. Full QR and dual-side timing validation remain required.</p>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.7.5 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.7.5 — Classical Geometry Consolidation — No AI</h1>
+      <p className="small text-secondary">This experiment additionally tests single-pass EXIF image decoding, source-QR orientation preflight and joint QR/paper homography with independent timing refinement. No neural document detector is executed. Only conventional OpenCV, QR, ArUco, corner, midpoint, boundary and timing geometry operate. Full QR and dual-side timing validation remain required.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
         No answer is silently combined or changed.</p>
