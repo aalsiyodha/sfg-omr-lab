@@ -43,14 +43,14 @@ export function qrBoundaryPreflight(
     const errorMm=Math.hypot(projected.x-expected.x,projected.y-expected.y)*25.4/dpi;
     // Just a loose preflight to eliminate 90/180-degree wrong page assignments.
     // Never use this as registration approval. Wider than any QR crop padding.
-    return {plausible:errorMm<=55,errorMm:Number(errorMm.toFixed(1)),
-      reason:errorMm<=55?'QR-centre-feasible':'source-QR-wrong-page-corner'};
+    return {plausible:errorMm<=85,errorMm:Number(errorMm.toFixed(1)),
+      reason:errorMm<=85?'QR-centre-feasible':'source-QR-wrong-page-corner'};
   }catch{return {plausible:true,errorMm:Infinity,reason:'preflight-unavailable'};}
   finally{for(const m of [src,dst,h])try{m?.delete?.()}catch{/*cleanup*/}}
 }
 export function warpQrPaperJoint(
   sourceMat:any,quad:PagePoint[],turn:0|1|2|3,qr:QR,
-  dpi:number,canvas:HTMLCanvasElement
+  dpi:number,canvas:HTMLCanvasElement,qrWeight:4|6=4
 ):{canvas:HTMLCanvasElement;qrErrorMm:number}|null{
   if(!qr.valid||qr.corners.length!==4||!qr.center||
     typeof cv.findHomography!=='function')return null;
@@ -70,9 +70,10 @@ export function warpQrPaperJoint(
     {x:q.xMm+q.sizeMm,y:q.yMm+q.sizeMm},{x:q.xMm,y:q.yMm+q.sizeMm}
   ].map(p=>({x:mmToPx(p.x,dpi),y:mmToPx(p.y,dpi)}));
   const from:Pt[]=[...fromPage],to:Pt[]=[...toPage];
-  // Equal measurements of the same tiny QR have correlated noise. Only
-  // double its weight: too many copies would revert to unstable QR-only fit.
-  for(let repeat=0;repeat<2;repeat++){
+  // QR corner localization is sharper than paper contours on patterned cloth.
+  // Use a bounded weight of four or six, NOT as extra independent anchors;
+  // final QR and both timing tracks must validate the fitted transform.
+  for(let repeat=0;repeat<qrWeight;repeat++){
     from.push(...qr.corners);to.push(...toQr);
   }
   let srcPts:any=null,dstPts:any=null,h:any=null,output:any=null;
