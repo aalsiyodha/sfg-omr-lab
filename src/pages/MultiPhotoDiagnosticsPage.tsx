@@ -105,7 +105,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
             setStep('Photo '+(i+1)+'/'+files.length+': '+p.stage),
             {fastQrRoi:true,coarseToFine:true,robustFusion:true,
               proofscan:false,proofmodel:false,proofmesh:false,
-              simdProbe:false,ttopProbe:false,compact:true});
+              simdProbe:false,ttopProbe:false,compact:true,qrOptionalExperiment:true});
           // Drop large image overlays; only the compact decision and optical
           // data are retained for the multi-photo comparison.
           result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
@@ -133,8 +133,9 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const comparison=comparePhotos(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 3.7.1 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.7.1 — Multi-Photo Diagnostics</h1>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.7.2 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.7.2 — QR-Optional Multi-Photo Diagnostics</h1>
+      <p className="small text-secondary">QR-less scans require independently verified geometry and are PROVISIONAL only — no student identity or automatic scoring. Only QR-verified scans enter student comparisons.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
         No answer is silently combined or changed.</p>

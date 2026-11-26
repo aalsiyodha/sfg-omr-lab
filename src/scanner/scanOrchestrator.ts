@@ -224,13 +224,19 @@ function evaluateHypothesis(
         const strongTiming=timing.matched>=48 && timing.leftMatched>=23 && timing.rightMatched>=23;
         const stripValid=strip.status==='ok' && strip.ordered &&
           strip.patchMedians.length===7 && (strip.contrast??0)>=90;
+        const independentMarkers=hypothesis.kind==='aruco' && hypothesis.markers.found ||
+          hypothesis.kind==='midpoint' && hypothesis.markers.found ||
+          hypothesis.kind==='fusion' && hypothesis.aruco.count>=2;
+        const independentGeometry=strongTiming &&
+          (independentMarkers || (stripValid && timing.matched===50));
         logger.info('perspective',`${hypothesis.name}: QR-less provisional geometry evidence`,{
           timing:timing.matched,left:timing.leftMatched,right:timing.rightMatched,
           requiredTiming:48,requiredPerSide:23,stripStatus:strip.status,
           stripContrast:strip.contrast,stripOrdered:strip.ordered,
-          strongTiming,stripValid,accepted:strongTiming&&stripValid
+          strongTiming,stripValid,independentMarkers,independentGeometry,
+          accepted:independentGeometry
         });
-        if(strongTiming&&stripValid){
+        if(independentGeometry){
           gray=candidateGray;candidateGray=null;keep=true;
           logger.warning('perspective',`${hypothesis.name}: PROVISIONAL ONLY — QR not decoded; scoring prohibited`);
           cv.imshow(canvas,persp.corrected);
@@ -433,6 +439,8 @@ export interface ScanModeOptions {
   ttopProbe?: boolean;
   /** Avoid retaining PNG overlays and base64 originals in batch diagnostic scans. */
   compact?: boolean;
+  /** Exp3.7.2 only: QR-less geometry may produce non-scoring provisional data. */
+  qrOptionalExperiment?: boolean;
 }
 export async function runFullScan(
   file: File,
@@ -516,6 +524,7 @@ export async function runFullScan(
     let arucoAdaptive:ArucoRegistration={found:false,count:0,points:{}};
     let arucoOtsu:ArucoRegistration=arucoAdaptive;
     let cornerOtsuForHybrid:MarkerDetectionResult=primary;
+    const provisionalCandidates:Array<{source:HTMLCanvasElement;hypothesis:Hypothesis}>=[];
     const registrationAttempts:{
       method:string;source:string;durationMs:number;phase:string;reason:string;
       qrValid:boolean;timing:number;left:number;right:number;
@@ -544,6 +553,11 @@ export async function runFullScan(
         fusionEvidence:evidence.fusionEvidence
       };
       registrationAttempts.push(item);
+      if(options?.qrOptionalExperiment && !result && provisionalCandidates.length<32){
+        const already=provisionalCandidates.some(x=>x.source===source &&
+          x.hypothesis.kind===hypothesis.kind && x.hypothesis.name===hypothesis.name);
+        if(!already)provisionalCandidates.push({source,hypothesis});
+      }
       logger.info('perspective','v2.5.2 detailed registration candidate',item);
       return result;
     };
@@ -1268,6 +1282,33 @@ export async function runFullScan(
           status:aiStatus,attempts:aiAttempted,verified:Boolean(selected),
           rejections:aiRejections,durationMs:Date.now()-aiStart
         });
+      }
+    }
+    // Only in the isolated 3.7.2 laboratory: fall back to independently
+    // verified timing + printed fiducials after ALL strict QR attempts fail.
+    // A QR-less result is PROVISIONAL, has no student identity, and cannot score.
+    if(options?.qrOptionalExperiment && !selected){
+      const ordered=provisionalCandidates.filter(x=>x.hypothesis.kind==='aruco'||
+        x.hypothesis.kind==='midpoint'||x.hypothesis.kind==='fusion')
+        .concat(provisionalCandidates.filter(x=>x.hypothesis.kind==='corner'));
+      logger.info('perspective','Exp3.7.2 QR-optional fallback started',{
+        available:ordered.length,limit:10,
+        requirement:'48/50 timing, at least 23 per side, independent geometric landmark evidence',
+        identity:'unverified',scoringAllowed:false});
+      for(const x of ordered.slice(0,10)){
+        const provisionalCandidate=traceRegistration(x.source,x.hypothesis,dpi,
+          {remaining:0},true);
+        if(!provisionalCandidate)continue;
+        if(!provisionalCandidate.provisional || provisionalCandidate.qr.valid){
+          disposeAlignment(provisionalCandidate);
+          continue;
+        }
+        selected=provisionalCandidate;
+        logger.warning('perspective','Exp3.7.2 QR-optional geometry accepted PROVISIONALLY',{
+          method:x.hypothesis.name,timing:selected.check.matched,
+          left:selected.check.leftMatched,right:selected.check.rightMatched,
+          studentIdentityVerified:false,scoringAllowed:false});
+        break;
       }
     }
     finishStage('registration');
