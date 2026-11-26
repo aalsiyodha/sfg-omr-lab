@@ -65,7 +65,7 @@ export default function App() {
           <div className="minimal-nav-links">
             <NavLink to="/scan">Scanner</NavLink>
             <NavLink to="/practice">Practice test</NavLink>
-            <NavLink to="/experiment-3-7">Experiment 3.7</NavLink>
+            <NavLink to="/experiment-3-7-1">Experiment 3.7.1</NavLink>
             <span className="v26-nav-status"><span className="v26-nav-status-dot"/> On-device processing</span>
             <button type="button" className="minimal-theme-switch"
               aria-label={theme==='dark'?'Use light appearance':'Use dark appearance'}
@@ -81,10 +81,11 @@ export default function App() {
             <Route path="/scan" element={<V26ScanPage appState={appState} />} />
             <Route path="/results" element={<ResultsPage appState={appState} />} />
             <Route path="/diagnostics" element={<DiagnosticsPage appState={appState} />} />
-            <Route path="/multi-scan" element={<Navigate to="/experiment-3-7" replace />} />
+            <Route path="/multi-scan" element={<Navigate to="/experiment-3-7-1" replace />} />
             <Route path="/experiment-3-5" element={<Navigate to="/experiment-3-6" replace />} />
-            <Route path="/experiment-3-6" element={<Navigate to="/experiment-3-7" replace />} />
-            <Route path="/experiment-3-7" element={<MultiPhotoDiagnosticsPage appState={appState} />} />
+            <Route path="/experiment-3-6" element={<Navigate to="/experiment-3-7-1" replace />} />
+            <Route path="/experiment-3-7" element={<Navigate to="/experiment-3-7-1" replace />} />
+            <Route path="/experiment-3-7-1" element={<MultiPhotoDiagnosticsPage appState={appState} />} />
           </Routes>
         </main>
 
