@@ -2304,3 +2304,22 @@ test('v2.7.1: no preview PNG encodes in the preprocessor fast path',()=>{
   assert.match(src,/grayDataUrl: ''/);
   assert.match(src,/thresholdedDataUrl: ''/);
 });
+
+
+test('v2.7.3 broad radial ink can override directional stroke false-negative',()=>{
+  const evidence={fill:75,quadrants:3,sectors:6,core:83,middle:75,outer:86,
+    horizontal:50,diagonal:80,axis:75,radial:'solid_like',hatch:false,competingFill:0};
+  assert.equal(bubbles.robustBroadFillCandidate(evidence),true);
+  // Identical fill percentage with incomplete outer ring is not solid.
+  assert.equal(bubbles.robustBroadFillCandidate({...evidence,outer:28}),false);
+  assert.equal(bubbles.robustBroadFillCandidate({...evidence,radial:'hollow_ring'}),false);
+  assert.equal(bubbles.robustBroadFillCandidate({...evidence,hatch:true}),false);
+  assert.equal(bubbles.robustBroadFillCandidate({...evidence,competingFill:48}),false);
+  assert.equal(bubbles.robustBroadFillCandidate({...evidence,core:12}),false);
+});
+
+test('v2.7.3 does not turn compressed hollow/partial evidence into an answer',()=>{
+  const weak={fill:52,quadrants:3,sectors:6,core:14,middle:67,outer:92,
+    horizontal:8,diagonal:30,axis:44,radial:'hollow_ring',hatch:true,competingFill:0};
+  assert.equal(bubbles.robustBroadFillCandidate(weak),false);
+});
