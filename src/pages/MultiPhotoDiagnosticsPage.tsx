@@ -110,8 +110,8 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
           // data are retained for the multi-photo comparison.
           result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
             log.level==='ERROR'||log.level==='WARNING'||
-            /registration performance|selected .* registration|timing-track|scan stage timings|calibration|original-photo QR locator|Sideways OMR orientation|recovery conclusion|registration candidates complete|outer-page boundary recovery|Exp3.7 alternative paper hypotheses|Exp3.6 360-degree boundary orientation|Exp3.6 verified all-angle|AI last-resort summary|AI document boundary recovery|AI first-warp independent landmark verification|AI orientation probe error/i.test(log.message)
-          ).slice(-48)};
+            /registration performance|selected .* registration|timing-track|scan stage timings|calibration|original-photo QR locator|Sideways OMR orientation|recovery conclusion|registration candidates complete|outer-page boundary recovery|Exp3.7 alternative paper hypotheses|Exp3.6 360-degree boundary orientation|Exp3.6 verified all-angle|AI last-resort summary|AI document boundary recovery|AI first-warp independent landmark verification|AI orientation probe error|Exp3.7.3|QR processing accounting/i.test(log.message)
+          ).slice(-75)};
           if(result.overallStatus==='failed')problem=result.errors.join('; ')||'Registration failed';
         }catch(e){
           problem=e instanceof Error?e.message:String(e);
@@ -133,9 +133,9 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const comparison=comparePhotos(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 3.7.2 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.7.2 — QR-Optional Multi-Photo Diagnostics</h1>
-      <p className="small text-secondary">QR-less scans require independently verified geometry and are PROVISIONAL only — no student identity or automatic scoring. Only QR-verified scans enter student comparisons.</p>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.7.3 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.7.3 — Z.ai CV Audit Multi-Photo Diagnostics</h1>
+      <p className="small text-secondary">QR-less scans require independently verified geometry and are PROVISIONAL only — no student identity or automatic scoring. Only QR-verified scans enter student comparisons. Z.ai changes: QR landmarks, boundary prefilter, timing/QR performance traces, hatch V2 shadow classifier.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
         No answer is silently combined or changed.</p>
