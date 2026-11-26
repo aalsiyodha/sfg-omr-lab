@@ -76,8 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     environment:
-      name: exp-3-7-3
-      url: https://aalsiyodha.github.io/sfg-omr-lab/experiments/3.7.5/#/experiment-3-7-3
+      name: exp-3-7-5
+      url: https://aalsiyodha.github.io/sfg-omr-lab/experiments/3.7.5/#/experiment-3-7-5
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
