@@ -89,6 +89,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         /Exp3.7.3 failed registration taxonomy/i,
         /Classical QR\\+paper joint-fit result/i,
         /Classical joint-fit timing refinement/i,
+        /Classical joint-fit candidate skipped/i,
         /Classical source-QR orientation preflight/i,
         /Exp3.7.4 AI recovery deliberately disabled/i,
       ];
