@@ -1,7 +1,7 @@
 name: Institute platform draft checks
 on:
   push:
-    branches: [feature/institute-platform-v0.1]
+    branches: [feature/institute-platform-v0.1, feature/neon-institute-platform]
     paths:
       - 'platform/**'
       - '.github/workflows/platform-preview-checks.yml'
