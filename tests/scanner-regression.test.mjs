@@ -2379,3 +2379,13 @@ test('Experiment 3.7.3 P-1 hatch shadow requires paper-bright internal gaps',()=
   assert.equal(grey.hatchLike,false);
   assert.equal(bright.hatchLike,true);
 });
+
+test('Experiment 3.7.4 classical-only mode guards neural document inference',()=>{
+  const orchestrator=readFileSync(resolve(process.cwd(),
+    'src/scanner/scanOrchestrator.ts'),'utf8');
+  assert.match(orchestrator,/if\(!selected && !options\?\.disableAiRecovery\)\{/);
+  assert.match(orchestrator,/disableAiRecovery\?: boolean/);
+  const page=readFileSync(resolve(process.cwd(),
+    'src/pages/MultiPhotoDiagnosticsPage.tsx'),'utf8');
+  assert.match(page,/disableAiRecovery:true/);
+});
