@@ -65,7 +65,7 @@ export default function App() {
           <div className="minimal-nav-links">
             <NavLink to="/scan">Scanner</NavLink>
             <NavLink to="/practice">Practice test</NavLink>
-            <NavLink to="/multi-scan">Multi-photo lab</NavLink>
+            <NavLink to="/multi-scan">Experiment 2</NavLink>
             <span className="v26-nav-status"><span className="v26-nav-status-dot"/> On-device processing</span>
             <button type="button" className="minimal-theme-switch"
               aria-label={theme==='dark'?'Use light appearance':'Use dark appearance'}
