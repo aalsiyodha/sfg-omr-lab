@@ -1099,6 +1099,44 @@ export async function runFullScan(
           durationMs:Date.now()-aiStart
         });
         if(ai){
+          // Experiment 3.6: AI is a geometry proposer only. Independently
+          // test all four physical A4 orientations using the detected corners
+          // on the ORIGINAL source. No second marker fit is needed for a good
+          // candidate, and every result must pass both QR and timing gates.
+          for(const turn of [0,1,2,3] as const){
+            let trial:HTMLCanvasElement|null=null;
+            let color:any=null,gray:any=null,keep=false;
+            try{
+              trial=warpBoundaryOrientation(loaded.canvas,ai.corners,turn);
+              if(!trial)continue;
+              const qr=decodeQRFromRegion(trial,
+                OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+              if(!qr.valid)continue;
+              color=cv.imread(trial);gray=new cv.Mat();
+              cv.cvtColor(color,gray,cv.COLOR_RGBA2GRAY);
+              const timing=verifyTimingMarks(gray,dpi);
+              logger.info('perspective','Exp3.6 AI 360-degree candidate',{
+                turnDegrees:turn*90,qrValid:true,timing:timing.matched,
+                left:timing.leftMatched,right:timing.rightMatched,
+                accepted:timing.passed});
+              if(!timing.passed)continue;
+              selected={
+                hypothesis:{kind:'corner',name:'ai-boundary/360-quad-'+turn*90,
+                  markers:primary},
+                perspective:{corrected:color,correctedDataUrl:'',
+                  transform:null,success:true},
+                gray,canvas:trial,qr,check:timing,rotated:turn===2
+              };
+              keep=true;aiStatus='verified-360-quad';
+              logger.info('perspective','Exp3.6 AI 360-degree verified',
+                {turnDegrees:turn*90,timing:timing.matched});
+              break;
+            }catch(error){
+              logger.warning('perspective','Exp3.6 AI orientation probe error',{
+                turnDegrees:turn*90,error:String(error)});
+            }finally{if(!keep)cleanupMats(color,gray);}
+          }
+          if(!selected){
           // Scanic returns an already rectified A4 canvas. Before attempting a
           // second fiducial homography, directly test its native printed QR
           // and two timing tracks. This prevents a good first warp being
@@ -1204,6 +1242,7 @@ export async function runFullScan(
             }
           }finally{cleanupMats(aiOtsu,processed.gray,processed.blurred,processed.thresholded);}
           }
+          } // Normal AI-first-warp checks skipped if 360° quad already verified.
         }
       }catch(error){
         aiStatus='runtime-or-inference-error';
