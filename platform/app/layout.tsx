@@ -7,8 +7,8 @@ export default function RootLayout({children}:{children:React.ReactNode}){
   <header className="nav pilotNav">
    <Link href="/" className="brand"><span className="mark">▦</span> omr<span>labs</span><small>ASSESSMENTS</small></Link>
    <nav className="links" aria-label="Main navigation">
-    <Link href="/sample">Demo dashboard</Link>
-    <Link href="/sample/scan">Scan & compare</Link>
+    <Link href="/sample">Try demo</Link>
+    <Link href="/sample/class">Sample class</Link>
     <Link href="/practice">Online practice</Link>
     <Link href="/login" className="navButton">Sign in</Link>
    </nav>

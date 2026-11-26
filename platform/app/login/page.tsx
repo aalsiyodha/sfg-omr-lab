@@ -12,7 +12,7 @@ export default function Login(){
     <section className="pilotLoginCard pilotLoginDemo">
       <div className="pilotLoginCardTop"><span className="pilotCardIcon">▥</span><span className="pilotPreviewPill">Recommended for testing</span></div>
       <h2>Explore the demo</h2>
-      <p>Compare an OMR score with four fictional students, browse charts, and try online practice. No real institute data.</p>
+      <p>Scan your OMR first, then see your rank and compare each answer with four fictional students. No real institute data.</p>
       <DemoAccess/>
     </section>
     <section className="pilotLoginCard">
@@ -26,6 +26,6 @@ export default function Login(){
       <p className="pilotLoginHint">For actual institute records. Not required to compare with the four demo students.</p>
     </section>
   </div>
-  <div className="pilotLoginBottom">Want to see the app first? <Link href="/sample">View sample analytics without signing in ↗</Link></div>
+  <div className="pilotLoginBottom">Want to see the app first? <Link href="/sample">Scan and compare without signing in ↗</Link></div>
  </div>;
 }

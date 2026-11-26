@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {saveReviewedSubmission} from '@/app/submit-actions';
+import DemoComparison,{type DemoPeer} from '@/components/DemoComparison';
 import type {ScanResult,IntermediateImages} from '../scanner-core/types';
 import type {Choice} from '@/lib/key';
 import {acceptedScan,gradeAnswers,initialResponse,needsManualReview,type Evaluation,type ResponseChoice} from '@/lib/evaluation';
@@ -10,7 +11,7 @@ type Props={
  onEvaluated?:(evaluation:Evaluation,studentId:string|null)=>void;
  testDbId?:string;
  ignoreTestIdForDemo?:boolean;
- demoPeers?:{name:string;score:number}[];
+ demoPeers?:DemoPeer[];
 };
 type CVRuntime={Mat?:unknown;onRuntimeInitialized?:(()=>void)|null;then?:((resolve:(value:CVRuntime)=>void,reject:(reason:unknown)=>void)=>void)};
 declare global {interface Window { cv?:CVRuntime; }}
@@ -72,6 +73,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const cameraRef=useRef<HTMLInputElement>(null);
  const startRef=useRef<number>(0);
  const timeoutRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+ const reportRef=useRef<HTMLDivElement|null>(null);
  const [elapsed,setElapsed]=useState(0);
  const [showDiagnostics,setShowDiagnostics]=useState(false);
  const [diagnostics,setDiagnostics]=useState<string[]>([]);
@@ -90,6 +92,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const [saveBusy,setSaveBusy]=useState(false);
  const [savedMessage,setSavedMessage]=useState('');
  const complete=published&&answerKey.length===50&&answerKey.every(x=>x!==null);
+ useEffect(()=>{if(score&&ignoreTestIdForDemo&&reportRef.current){reportRef.current.scrollIntoView({behavior:'smooth',block:'start'});}},[score,ignoreTestIdForDemo]);
  const blocked=scan?acceptedScan(scan,testNumber,ignoreTestIdForDemo):null;
  const flagged=scan?.answers.filter(needsManualReview)||[];
  const unreviewed=flagged.filter(r=>!confirmed[r.question]).length;
@@ -119,7 +122,18 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
    setOverlay(images.bubbleOverlay||images.perspectiveCorrected||null);
    const issue=acceptedScan(result,testNumber,ignoreTestIdForDemo);
    if(issue)setError(issue);
-   else setStage('Scan complete. Automatic decisions ready.');
+   else {
+    const exceptions=result.answers.filter(needsManualReview);
+    if(exceptions.length===0&&complete){
+     try{
+      const graded=gradeAnswers(answerKey,result.answers.map(initialResponse),
+       result.answers.map(row=>row.status),{correct:correctMarks,wrong:wrongMarks},
+       result.answers.map(()=>true));
+      setScore(graded);onEvaluated?.(graded,result.studentId);
+      setStage('Scan complete. Score and question comparison ready.');
+     }catch(e){setError(e instanceof Error?e.message:'Unable to calculate score.');}
+    }else setStage('Scan complete. Exceptional unreadable detections need confirmation.');
+   }
   }catch(e){setError(e instanceof Error?e.message:'Unexpected scanner error.');}
   finally{setBusy(false);if(timeoutRef.current)clearTimeout(timeoutRef.current);timeoutRef.current=null;if(fileRef.current)fileRef.current.value='';if(cameraRef.current)cameraRef.current.value='';}
  };
@@ -229,10 +243,11 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
       <p>{unreviewed?unreviewed+' exceptional detection(s) need a new photo or conservative blank confirmation.':
         'All automatic decisions are final. No candidate data is uploaded.'}</p></div>
      <button type="button" className="button primary" disabled={unreviewed>0}
-      onClick={calculate}>Calculate score ↗</button>
+      onClick={calculate}>{ignoreTestIdForDemo?'View score and compare all questions ↗':'Calculate score ↗'}</button>
     </div>
    </>}
-   {score&&<div className="scoreResult">
+   {score&&<div className="scoreResult" ref={reportRef}>
+     {ignoreTestIdForDemo?<DemoComparison score={score} peers={demoPeers}/>:<>
      <div className="scoreHero"><span>FINAL REVIEWED SCORE</span>
       <strong>{score.total.toFixed(2)} <small>/ {score.max.toFixed(2)}</small></strong>
       <p>Correct +{correctMarks} · Wrong {wrongMarks} · Blank 0 · Cancelled 0</p>
@@ -268,6 +283,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
        <td>{row.marks>0?'+':''}{row.marks.toFixed(2)}</td>
       </tr>)}</tbody></table></div>
      </details>
+     </>}
      {testDbId?<div className="notice">
        <strong>Submit verified result to Neon</strong>
        <p>Signed-in reviewer approval is required. The server recalculates all marks from the published key;
@@ -279,8 +295,8 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
          onClick={()=>void saveToNeon()}>{saveBusy?'Saving…':'Approve & save result to Neon'}</button>
        </div>:<p className="alert">QR identity missing: result cannot be persisted.</p>}
        {savedMessage&&<p role="status">{savedMessage}</p>}
-     </div>:<p className="notice">Demo result stays in this browser and is not stored in Neon.
-       Sign in to an institute account to save verified submissions.</p>}
+     </div>:!ignoreTestIdForDemo?<p className="notice">Demo result stays in this browser and is not stored in Neon.
+       Sign in to an institute account to save verified submissions.</p>:null}
    </div>}
   </>}
  </section>;
