@@ -63,6 +63,7 @@ export default function V26ScanPage({ appState }: Props) {
     if(cameraInput.current) cameraInput.current.value = '';
   };
   const showResult = () => {
+    if (opencv !== 'ready' || (error && !scanResult)) return;
     setReveal(true);
     if (file && opencv === 'ready' && !scanning && !scanResult && started.current !== file) {
       started.current = file;
@@ -97,6 +98,7 @@ export default function V26ScanPage({ appState }: Props) {
   };
   const status = scanning ? 'Scanning in progress' : scanResult
     ? verified ? flagged ? 'Verified · review required' : 'Verified scan' : 'Registration not verified'
+    : error ? 'Scan failed — select another photo to retry'
     : opencv==='error' ? 'Scanner could not load' : 'Preparing scanner';
   return <div className="v26-page">
     <header className="v26-intro">
@@ -146,7 +148,7 @@ export default function V26ScanPage({ appState }: Props) {
             <span style={{width:Math.max(4,progress?.percent??4)+'%'}}/>
           </div>}
           {scanning && <p className="v26-progress-label">{progress?.stage ?? 'Reading sheet…'}</p>}
-          <button type="button" className="v26-primary v26-start" onClick={showResult} disabled={opencv==='error'}>
+          <button type="button" className="v26-primary v26-start" onClick={showResult} disabled={opencv!=='ready'||(Boolean(error)&&!scanResult)||scanning}>
             <i className="bi bi-upc-scan"/> {scanResult?'View scan results':'Scan this image'}
             <i className="bi bi-arrow-right"/>
           </button>
@@ -156,14 +158,14 @@ export default function V26ScanPage({ appState }: Props) {
       </div>}
       {(error||submissionError||opencv==='error') &&
         <div className="v26-error" role="alert">{error||submissionError||
-          'OpenCV failed to initialize. Reload the page and try again.'}</div>}
+          'OpenCV failed to initialize. Reload the page and try again.'} <button type="button" className="v26-minor" onClick={()=>window.location.reload()}>Reload scanner</button></div>}
     </section>
     {reveal && file && <section className="v26-panel v26-results" aria-label="Scan results">
       <div className="v26-section-head">
         <div><span className="v26-step">REVIEW</span><h2>Your scan results</h2></div>
         <span className={'v26-pill '+(verified?'is-good':'')}>{scanResult?status:'Processing'}</span>
       </div>
-      {!scanResult ? <div className="v26-wait"><div className="v26-spinner"/> {error||progress?.stage||'Reading image and checking registration…'}</div> : <>
+      {!scanResult ? <div className="v26-wait">{scanning ? <><div className="v26-spinner"/> {progress?.stage||'Reading image and checking registration…'}</> : <span>{error|| (opencv==='error'?'OpenCV failed to initialize. Reload to retry.':opencv==='loading'?'Preparing scanner runtime…':'Select a new photo to retry scanning.')}</span>}</div> : <>
         <div className="v26-metrics">
           <div><span>Test ID</span><strong>{scanResult.testId==null?'—':String(scanResult.testId).padStart(2,'0')}</strong></div>
           <div><span>Timing</span><strong>{scanResult.alignmentMatched??0}<small>/50</small></strong></div>
