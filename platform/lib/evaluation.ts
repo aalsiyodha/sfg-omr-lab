@@ -10,11 +10,11 @@ export interface Evaluation{
  correct:number;incorrect:number;blank:number;cancelled:number;multiple:number;
  total:number;max:number;rows:EvaluatedRow[];
 }
-export function acceptedScan(result:ScanResult,testNumber:number):string|null {
+export function acceptedScan(result:ScanResult,testNumber:number,ignoreTestId=false):string|null {
  if(!result.qrValid) return 'The QR code was not verified. Scoring is blocked.';
  if(!result.perspectiveCorrected||result.alignmentVerified!==true||result.alignmentMatched!==50)
    return 'All 50 timing marks and page geometry must be verified before scoring.';
- if(result.testId!==testNumber)
+ if(!ignoreTestId && result.testId!==testNumber)
    return 'Sheet Test ID '+(result.testId??'unknown')+' does not match the selected Test '+testNumber+'.';
  if(result.overallStatus==='failed'||result.errors.length)
    return 'The scanner reported a failed scan. Upload a clearer photo.';

@@ -9,6 +9,7 @@ type Props={
  correctMarks?:number;wrongMarks?:number;
  onEvaluated?:(evaluation:Evaluation,studentId:string|null)=>void;
  testDbId?:string;
+ ignoreTestIdForDemo?:boolean;
 };
 const ANSWERS:ResponseChoice[]=['A','B','C','D',null,'MULTIPLE'];
 declare global {interface Window{cv?:{Mat?:unknown;onRuntimeInitialized?:()=>void};}}
@@ -38,7 +39,7 @@ function loadOpenCV():Promise<void>{
 }
 function formatResponse(v:ResponseChoice):string{return v==='MULTIPLE'?'Multiple':v??'Blank';}
 export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
- correctMarks=2,wrongMarks=-0.66,onEvaluated,testDbId}:Props){
+ correctMarks=2,wrongMarks=-0.66,onEvaluated,testDbId,ignoreTestIdForDemo=false}:Props){
  const fileRef=useRef<HTMLInputElement>(null);
  const [busy,setBusy]=useState(false);
  const [stage,setStage]=useState('');
@@ -54,7 +55,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const [saveBusy,setSaveBusy]=useState(false);
  const [savedMessage,setSavedMessage]=useState('');
  const complete=published&&answerKey.length===50&&answerKey.every(x=>x!==null);
- const blocked=scan?acceptedScan(scan,testNumber):null;
+ const blocked=scan?acceptedScan(scan,testNumber,ignoreTestIdForDemo):null;
  const flagged=scan?.answers.filter(needsManualReview)||[];
  const unreviewed=flagged.filter(r=>!confirmed[r.question]).length;
  const scanImage=async(file?:File)=>{
@@ -77,7 +78,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
      });
    setScan(result);
    setOverlay(images.bubbleOverlay||images.perspectiveCorrected||null);
-   const issue=acceptedScan(result,testNumber);
+   const issue=acceptedScan(result,testNumber,ignoreTestIdForDemo);
    if(issue)setError(issue);
    else setStage('Scan complete. Review flagged responses before grading.');
   }catch(e){setError(e instanceof Error?e.message:'Unexpected scanner error.');}
@@ -128,6 +129,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
     <p>Test {testNumber} · {testTitle}. The scanner checks QR, geometry and 50 timing marks before any score is calculated.</p>
    </div><span className="pill">Scanner v2.7.1</span>
   </div>
+  {ignoreTestIdForDemo&&<div className="notice"><strong>Demo-only Test ID bypass:</strong> a mismatched printed Test ID does not block local score calculation. QR and geometry verification still apply. Results cannot be saved to Neon from this page.</div>}
   {!complete?<div className="notice">Publish the test's complete answer key first. Only published keys can be used for scoring.</div>:<>
    <label className={'omrDrop'+(busy?' busy':'')}>
     <span className="omrDropIcon">▣</span>
