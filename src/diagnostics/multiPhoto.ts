@@ -85,12 +85,14 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         /Registration performance summary/i,
         /Exp3.7.3 QR-only landmark proposal/i,
         /Exp3.7.3 QR processing accounting/i,
+        /Exp3.7.3 failed registration taxonomy/i,
       ];
       const events=r?.stageLogs??[];
       for(const pattern of stages){
         const item=[...events].reverse().find(e=>pattern.test(e.message));
         if(item)out.push('  '+item.message+': '+
-          (item.data?JSON.stringify(item.data).slice(0,550):'recorded'));
+          (item.data?JSON.stringify(item.data).slice(0,
+            /failed registration taxonomy/i.test(item.message)?2300:800):'recorded'));
       }
       if(s.error)out.push('  Error: '+s.error);
     }
