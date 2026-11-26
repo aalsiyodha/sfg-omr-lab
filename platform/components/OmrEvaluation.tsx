@@ -28,38 +28,42 @@ function loadOpenCV():Promise<void>{
  if(window.cv?.Mat)return Promise.resolve();
  if(cvLoading)return cvLoading;
  cvLoading=new Promise<void>((resolve,reject)=>{
-  let settled=false;
-  const started=Date.now();
-  const cleanup=()=>{clearInterval(pollId);clearTimeout(timeoutId);};
-  const fail=(reason:string)=>{if(settled)return;settled=true;cleanup();reject(new Error(reason));};
-  const finish=()=>{if(settled)return;settled=true;cleanup();resolve();};
-  const probe=()=>{
-   const current=window.cv;
-   if(current?.Mat){finish();return;}
-   if(current&&typeof current.then==='function'){
-    Promise.resolve(current).then((loaded:CVRuntime)=>{
-     if(loaded?.Mat){window.cv=loaded;finish();}
-     else fail('OpenCV module resolved without the Mat API. Please report this engine compatibility issue.');
-    }).catch(e=>fail('OpenCV initialization failed: '+String(e)));
+  let settled=false,attached=false;
+  let timer:number|undefined;
+  const finish=()=>{if(settled)return;settled=true;window.clearTimeout(timer);resolve();};
+  const fail=(message:string)=>{if(settled)return;settled=true;window.clearTimeout(timer);reject(new Error(message));};
+  const attach=()=>{
+   const module=window.cv;
+   if(module?.Mat){finish();return;}
+   if(!module||attached)return;
+   if(typeof module.then==='function'){
+    attached=true;
+    // CRITICAL: Do not use Promise.resolve(module) or await module here.
+    // Older OpenCV's thenable returns itself, triggering recursive promise
+    // resolution and a completely blocked browser main thread.
+    try{
+     module.then((ready:CVRuntime)=>{
+      if(ready?.Mat){window.cv=ready;finish();}
+      else fail('OpenCV initialized without cv.Mat. Please report this compatibility issue.');
+     },(reason:unknown)=>fail('OpenCV initialization failed: '+String(reason)));
+    }catch(e){fail('OpenCV could not initialize: '+String(e));}
     return;
    }
-   if(current && typeof current.onRuntimeInitialized!=='function'){
-    current.onRuntimeInitialized=()=>{if(window.cv?.Mat)finish();};
+   if(typeof module.onRuntimeInitialized!=='function'){
+    module.onRuntimeInitialized=()=>{if(module.Mat)finish();};
+    attached=true;
    }
   };
-  const pollId=window.setInterval(probe,150);
-  const timeoutId=window.setTimeout(()=>fail('Local OpenCV engine did not initialize within 35 seconds. Please refresh and try another browser.'),35000);
+  timer=window.setTimeout(()=>fail('OpenCV did not become ready within 35 seconds. Please reload the page.'),35000);
   const existing=document.getElementById('omrlab-cv-runtime') as HTMLScriptElement|null;
-  if(existing){probe();return;}
+  if(existing){attach();return;}
   const script=document.createElement('script');
-  script.id='omrlab-cv-runtime';script.async=true;
-  script.src=OPENCV_LOCAL_URL;
-  script.onload=probe;
-  script.onerror=()=>fail('Local OpenCV asset failed to load from '+OPENCV_LOCAL_URL+'. Please refresh; if this persists report a deployment asset error.');
+  script.id='omrlab-cv-runtime';script.src=OPENCV_LOCAL_URL;script.async=true;
+  script.onload=attach;
+  script.onerror=()=>fail('Could not load local OpenCV asset /opencv/opencv.js.');
   document.head.appendChild(script);
-  probe();
  });
- return cvLoading.catch(e=>{cvLoading=null;throw e;});
+ return cvLoading.catch(err=>{cvLoading=null;throw err;});
 }
 function formatResponse(v:ResponseChoice):string{return v==='MULTIPLE'?'Multiple':v??'Blank';}
 export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
