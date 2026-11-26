@@ -26,6 +26,7 @@ import { warpBoundaryOrientation } from './omniBoundary';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { correctPerspectiveFromQrAruco } from './qrArucoRegistration';
+import { correctPerspectiveFromQrCorners } from './qrCornerRegistration';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import { correctMildPageWarp, countHeldOutTimingMarks } from './mildCurveCorrection';
@@ -148,7 +149,9 @@ function evaluateHypothesis(
       ? correctPerspectiveFromMidpoints(source, hypothesis.markers, !fastQrRoi)
       : hypothesis.kind === 'hybrid'
       ? hypothesis.qrLocated
-         ? correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
+         ? hypothesis.name.startsWith('hybrid/qr-only')
+            ? correctPerspectiveFromQrCorners(source,hypothesis.qrLocated,!fastQrRoi)
+            : correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
          : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,!fastQrRoi)
       : hypothesis.kind === 'fusion'
       ? fitRobustSheetWarp(source,hypothesis.corners,hypothesis.midpoint,
@@ -937,10 +940,24 @@ export async function runFullScan(
         corners:located.corners,raw:located.raw,attempts:located.attempts,
         error:located.error,durationMs:Date.now()-qrLocatorStart
       });
+      // Z.ai P-2: independent QR corners are four valid correspondences.
+      // They are spatially clustered and MUST pass the untouched full QR
+      // and two timing-track checks; never trust them as page proof alone.
+      if(located.valid){
+        const qrOnly:Hypothesis={kind:'hybrid',name:'hybrid/qr-only-landmark',
+          corners:primary,aruco:arucoAdaptive,qrLocated:located};
+        warpAttempts++;
+        const qrOnlyResult=traceRegistration(loaded.canvas,qrOnly,dpi,curveBudget);
+        logger.info('perspective','Exp3.7.3 QR-only landmark proposal',{
+          decodedInOriginal:true,accepted:Boolean(qrOnlyResult),
+          timing:qrOnlyResult?.check.matched??null,
+          note:'QR-corner extrapolation never bypasses timing verification'});
+        if(qrOnlyResult)selected=qrOnlyResult;
+      }
       // New v2.3.46 failure-only cross-family registration. It combines
       // independently located QR corners with two decoded bottom ArUco IDs.
       // evaluateHypothesis still enforces QR identity and both timing tracks.
-      if(located.valid){
+      if(located.valid && !selected){
         for(const source of [{name:'adaptive',aruco:arucoAdaptive},
           {name:'Otsu',aruco:arucoOtsu}]){
           if(!source.aruco.points[2]||!source.aruco.points[3])continue;
