@@ -1143,14 +1143,30 @@ export async function runFullScan(
               let color:any=null,gray:any=null,accepted=false;
               try{
                 const pre=qrBoundaryPreflight(page.corners,turn,photoQr,dpi);
-                if(!pre.plausible)continue;
+                if(!pre.plausible){
+                  logger.info('perspective','Classical joint-fit candidate skipped',{
+                    pageCandidate:candidateIndex,turnDegrees:turn*90,
+                    qrWeight,stage:'preflight',errorMm:pre.errorMm,reason:pre.reason});
+                  continue;
+                }
                 const warped=warpQrPaperJoint(boundarySourceMat,page.corners,
                   turn,photoQr,dpi,boundaryOutputCanvas,qrWeight);
-                if(!warped)continue;
+                if(!warped){
+                  logger.info('perspective','Classical joint-fit candidate skipped',{
+                    pageCandidate:candidateIndex,turnDegrees:turn*90,
+                    qrWeight,stage:'homography-or-QR-projection'});
+                  continue;
+                }
                 warpAttempts++;
                 const qr=decodeQRFromRegion(warped.canvas,
                   OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
-                if(!qr.valid||qr.raw!==photoQr.raw)continue;
+                if(!qr.valid||qr.raw!==photoQr.raw){
+                  logger.info('perspective','Classical joint-fit candidate skipped',{
+                    pageCandidate:candidateIndex,turnDegrees:turn*90,
+                    qrWeight,stage:'template-QR',decodeValid:qr.valid,
+                    qrEqual:qr.raw===photoQr.raw,qrErrorMm:warped.qrErrorMm});
+                  continue;
+                }
                 color=cv.imread(warped.canvas);
                 gray=new cv.Mat();
                 cv.cvtColor(color,gray,cv.COLOR_RGBA2GRAY);
