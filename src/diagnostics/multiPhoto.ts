@@ -41,12 +41,13 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
   const c=comparePhotos(scans);
   const provisionalCount=scans.filter(s=>s.result?.provisional).length;
   const out=[
-    'SFG OMR Lab — Experiment 3.7.3 — Multi-photo diagnostic (same physical OMR)',
+    'SFG OMR Lab — Experiment 3.7.4 — Multi-photo diagnostic (same physical OMR)',
     'Generated: '+new Date().toISOString(),
     'Scanner runs: '+scans.length+' | Verified same-identity scans: '+c.same.length,
     'Reference: '+(c.reference??'unverified'),
     'PROVISIONAL QR-LESS GEOMETRY: '+provisionalCount+' scan(s); no student identity, not scored, excluded from same-identity comparison.',
     'NOTE: Each photo is scanned independently. No answers are merged or changed.',
+    'EXPERIMENT MODE: Classical CV ONLY. Neural document detector skipped. Strict QR and timing verification retained.',
     'NOTE: Luminance/edge metrics are estimates from downsampled source pixels, not calibrated light measurements.',
     '',
     'PER-PHOTO SUMMARY'
@@ -86,6 +87,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         /Exp3.7.3 QR-only landmark proposal/i,
         /Exp3.7.3 QR processing accounting/i,
         /Exp3.7.3 failed registration taxonomy/i,
+        /Exp3.7.4 AI recovery deliberately disabled/i,
       ];
       const events=r?.stageLogs??[];
       for(const pattern of stages){
