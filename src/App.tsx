@@ -4,6 +4,7 @@ import PracticeTestPage from './pages/PracticeTestPage';
 import V26ScanPage from './pages/V26ScanPage';
 import ResultsPage from './pages/ResultsPage';
 import DiagnosticsPage from './pages/DiagnosticsPage';
+import MultiPhotoDiagnosticsPage from './pages/MultiPhotoDiagnosticsPage';
 import { usePracticeTest } from './hooks/usePracticeTest';
 import { useScanResult } from './hooks/useScanResult';
 
@@ -64,6 +65,7 @@ export default function App() {
           <div className="minimal-nav-links">
             <NavLink to="/scan">Scanner</NavLink>
             <NavLink to="/practice">Practice test</NavLink>
+            <NavLink to="/multi-scan">Multi-photo lab</NavLink>
             <span className="v26-nav-status"><span className="v26-nav-status-dot"/> On-device processing</span>
             <button type="button" className="minimal-theme-switch"
               aria-label={theme==='dark'?'Use light appearance':'Use dark appearance'}
@@ -79,6 +81,7 @@ export default function App() {
             <Route path="/scan" element={<V26ScanPage appState={appState} />} />
             <Route path="/results" element={<ResultsPage appState={appState} />} />
             <Route path="/diagnostics" element={<DiagnosticsPage appState={appState} />} />
+            <Route path="/multi-scan" element={<MultiPhotoDiagnosticsPage appState={appState} />} />
           </Routes>
         </main>
 
