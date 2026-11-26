@@ -174,6 +174,7 @@ export function locateQRInPhoto(source:HTMLCanvasElement):{
   try{
     const decoder=getJsQR();
     let attempts=0;
+    let invalidCandidate:ReturnType<typeof absent>|null=null;
     // A QR can occupy <1% of a photograph. Downsampling the entire image
     // destroys its modules; keep native pixels when searching likely areas.
     // These are discovery-only crops, NEVER a substitute for page verification.
@@ -181,6 +182,9 @@ export function locateQRInPhoto(source:HTMLCanvasElement):{
     const regions=[
       {x:0,y:0,w:W,h:H,max:900,label:'full-downsampled'},
       {x:Math.floor(W*.42),y:0,w:Math.ceil(W*.58),h:Math.ceil(H*.47),max:1400,label:'upper-right-native'},
+      {x:0,y:0,w:Math.ceil(W*.58),h:Math.ceil(H*.55),max:1400,label:'upper-left-native'},
+      {x:Math.floor(W*.42),y:Math.floor(H*.45),w:Math.ceil(W*.58),h:Math.ceil(H*.55),max:1400,label:'lower-right-native'},
+      {x:0,y:Math.floor(H*.45),w:Math.ceil(W*.58),h:Math.ceil(H*.55),max:1400,label:'lower-left-native'},
       {x:0,y:0,w:W,h:Math.ceil(H*.45),max:1600,label:'upper-strip-native'},
       {x:0,y:0,w:W,h:H,max:1600,label:'full-native'},
     ];
@@ -204,12 +208,15 @@ export function locateQRInPhoto(source:HTMLCanvasElement):{
           .map(p=>({x:Number((area.x+p.x/scale).toFixed(1)),
             y:Number((area.y+p.y/scale).toFixed(1))}));
         const parsed=parseQRData(code.data);
-        return {found:true,valid:parsed.valid,raw:parsed.raw,
+        const discovered={found:true,valid:parsed.valid,raw:parsed.raw,
           center:{x:Number((coords.reduce((sum,p)=>sum+p.x,0)/4).toFixed(1)),
             y:Number((coords.reduce((sum,p)=>sum+p.y,0)/4).toFixed(1))},
           corners:coords,attempts};
+        // Background QR codes cannot override the expected student identity.
+        if(parsed.valid)return discovered;
+        invalidCandidate??={...discovered,error:'decoded-unexpected-qr-prefix'};
       }
     }
-    return absent('not-decoded-in-full-or-targeted-photo-regions',attempts);
+    return invalidCandidate??absent('not-decoded-in-full-or-targeted-photo-regions',attempts);
   }catch(error){return absent('locator-error: '+String(error));}
 }
