@@ -1,5 +1,6 @@
 import type { ScanResult, IntermediateImages, QuestionResult, MarkerDetectionResult } from '../types';
 import { loadImageFromFile, validateImage } from './imageLoader';
+import { orientLandscapePhoto } from './pageOrientation';
 import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
 import { detectCoarseToFineCorners } from './coarseToFineCorners';
@@ -451,6 +452,15 @@ export async function runFullScan(
 
   const loaded = await loadImageFromFile(file);
   finishStage('imageDecode');
+  // A horizontal camera capture can contain a vertically printed sheet
+  // turned 90°. Normalize before all existing reference detectors run.
+  // Landmark hints never bypass QR and 50 timing-mark verification.
+  const landscape=orientLandscapePhoto(loaded);
+  if(landscape.rotation!=='none')
+    logger.info('loading','Sideways OMR orientation recovery',{
+      ...landscape,sourceQrIdentityOnlyHint:true,
+      strictRegisteredQrAndTimingStillRequired:true
+    });
   images.original = loaded.dataUrl;
   const validation = validateImage(loaded);
   if (!validation.valid) throw new Error(validation.errors.join('\n'));

@@ -55,7 +55,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
       {} as Record<string,number>)??{};
     out.push(
       '#'+(i+1)+' '+s.filename+' | '+round(s.size/1024)+' KB | '+s.mime,
-      '  Source '+p.width+'x'+p.height+' ('+(p.landscape?'landscape':'portrait')+')'+
+      '  Metric sample '+p.width+'x'+p.height+' ('+(p.landscape?'landscape':'portrait')+')'+
       ' | mean luminance '+p.mean+'/255 | grayscale contrast (SD) '+p.contrast+
       ' | dark pixels '+p.shadows+'% | clipped highlights '+p.highlights+'% | edge score '+p.edge,
       '  '+(r?'Status '+r.overallStatus+' | '+(scanIdentity(r)??'identity not verified')+
@@ -69,6 +69,14 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         ' | calibration '+(r.grayCalibration?.status??'not available')
         :'FAILED: '+(s.error??'unknown error'))
     );
+    if(!r||r.overallStatus==='failed'){
+      const notable=(r?.stageLogs??[]).filter(e=>
+        /Sideways OMR orientation|original-photo QR locator|QR missing|QR-failed timing evidence|registration candidates complete|registration performance|boundary recovery|recovery conclusion/i.test(e.message)
+      ).slice(-5);
+      notable.forEach(e=>out.push('  Registration evidence: '+e.message+
+        (e.data?' '+JSON.stringify(e.data).slice(0,400):'')));
+      if(s.error)out.push('  Error: '+s.error);
+    }
   });
   out.push('','IDENTITY VALIDATION');
   out.push(c.reference?'Reference '+c.reference:'No verified QR/student/test ID was established.');
