@@ -40,7 +40,7 @@ export function comparePhotos(scans:PhotoScan[]) {
 export function buildCombinedReport(scans:PhotoScan[]):string {
   const c=comparePhotos(scans);
   const out=[
-    'SFG OMR Lab — Experiment 3.6 — Multi-photo diagnostic (same physical OMR)',
+    'SFG OMR Lab — Experiment 3.7 — Multi-photo diagnostic (same physical OMR)',
     'Generated: '+new Date().toISOString(),
     'Scanner runs: '+scans.length+' | Verified same-identity scans: '+c.same.length,
     'Reference: '+(c.reference??'unverified'),
