@@ -14,7 +14,8 @@ export function cyclicCornerOrder(points:PagePoint[],turn:0|1|2|3):PagePoint[] {
 }
 
 export function warpBoundaryOrientation(
-  source:HTMLCanvasElement,corners:PagePoint[],turn:0|1|2|3
+  source:HTMLCanvasElement,corners:PagePoint[],turn:0|1|2|3,
+  reusedSourceMat?:any,reusedOutputCanvas?:HTMLCanvasElement
 ):HTMLCanvasElement|null {
   const ordered=orderPageCorners(corners);
   if(!ordered)return null;
@@ -24,19 +25,19 @@ export function warpBoundaryOrientation(
   const h=Math.round(mmToPx(OMR_LAYOUT.page.heightMm,dpi));
   let src:any=null,from:any=null,to:any=null,transform:any=null,output:any=null;
   try {
-    src=cv.imread(source);
+    src=reusedSourceMat ?? cv.imread(source);
     from=cv.matFromArray(4,1,cv.CV_32FC2,p.flatMap(pt=>[pt.x,pt.y]));
     to=cv.matFromArray(4,1,cv.CV_32FC2,[0,0,w-1,0,w-1,h-1,0,h-1]);
     transform=cv.getPerspectiveTransform(from,to);
     output=new cv.Mat();
     cv.warpPerspective(src,output,transform,new cv.Size(w,h),
       cv.INTER_LINEAR,cv.BORDER_CONSTANT,new cv.Scalar(255,255,255,255));
-    const canvas=document.createElement('canvas');
+    const canvas=reusedOutputCanvas ?? document.createElement('canvas');
     canvas.width=w;canvas.height=h;
     cv.imshow(canvas,output);
     return canvas;
   } finally {
-    for(const m of [src,from,to,transform,output])
+    for(const m of [reusedSourceMat?null:src,from,to,transform,output])
       try{m?.delete?.();}catch{/* resource cleanup */}
   }
 }
