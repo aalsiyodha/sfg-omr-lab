@@ -174,7 +174,7 @@ export function locateQRInPhoto(source:HTMLCanvasElement):{
   try{
     const decoder=getJsQR();
     let attempts=0;
-    let invalidCandidate:ReturnType<typeof absent>|null=null;
+    let invalidCandidate:ReturnType<typeof locateQRInPhoto>|null=null;
     // A QR can occupy <1% of a photograph. Downsampling the entire image
     // destroys its modules; keep native pixels when searching likely areas.
     // These are discovery-only crops, NEVER a substitute for page verification.
