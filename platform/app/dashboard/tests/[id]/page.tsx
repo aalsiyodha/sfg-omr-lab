@@ -2,7 +2,7 @@ import Link from 'next/link';
 import {notFound,redirect} from 'next/navigation';
 import {requireUser} from '@/lib/auth';
 import {isConfigured} from '@/lib/env';
-import type {TestRecord} from '@/lib/types';
+import {authorizedTest} from '@/lib/repository';
 import {validKey} from '@/lib/key';
 import AnswerKeyEditor from '@/components/AnswerKeyEditor';
 import OmrEvaluation from '@/components/OmrEvaluation';
@@ -10,15 +10,13 @@ export default async function TestDetail({params,searchParams}:{
  params:Promise<{id:string}>;searchParams:Promise<{error?:string;saved?:string;published?:string}>
 }){
  if(!isConfigured())redirect('/demo');
- const {db,user}=await requireUser();
+ const {user}=await requireUser();
  const {id}=await params;
  if(!/^[0-9a-f-]{36}$/i.test(id))notFound();
- const {data}=await db.from('tests').select('*').eq('id',id).single();
- if(!data)notFound();
- const test=data as TestRecord;
- const {data:org}=await db.from('institutes').select('name').eq('id',test.institute_id).single();
- const {data:membership}=await db.from('institute_members').select('role')
-   .eq('institute_id',test.institute_id).eq('user_id',user.id).single();
+ const test=await authorizedTest(user.id,id);
+ if(!test)notFound();
+ const org={name:test.institute_name};
+ const membership={role:test.role};
  const mayEdit=membership?.role==='owner'||membership?.role==='admin';
  const paramsQuery=await searchParams;
  return <div className="keyPage">
