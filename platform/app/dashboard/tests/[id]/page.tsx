@@ -33,7 +33,7 @@ export default async function TestDetail({params,searchParams}:{
    {paramsQuery.published&&<div className="successBox">Official answer key published and locked.</div>}
    <AnswerKeyEditor testId={test.id} initial={validKey(test.answer_key)?test.answer_key:Array(50).fill(null)}
      published={test.status==='published'} mayEdit={mayEdit}/>
-   <OmrEvaluation key={test.id} testNumber={test.sheet_test_number} testTitle={test.title}
+   <OmrEvaluation key={test.id} testDbId={test.id} testNumber={test.sheet_test_number} testTitle={test.title}
      answerKey={test.answer_key} published={test.status==='published'}
      correctMarks={Number(test.correct_marks)} wrongMarks={Number(test.wrong_marks)}/>
    <div className="notice">Publishing locks the official answer key. Versioned corrections and rescoring will be added in a later release.</div>

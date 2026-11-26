@@ -2,18 +2,17 @@ import Link from 'next/link';
 import {notFound,redirect} from 'next/navigation';
 import {requireUser} from '@/lib/auth';
 import {isConfigured} from '@/lib/env';
+import {authorizedTest,analysisForTest} from '@/lib/repository';
 type Item={question:number;correct_answer:string;total_attempts:number;correct_count:number;option_a:number;option_b:number;option_c:number;option_d:number;blank_count:number;multiple_count:number;correct_percent:number};
 export default async function QuestionAnalysis({params}:{params:Promise<{id:string}>}){
  if(!isConfigured())redirect('/demo');
- const {db}=await requireUser();
+ const {user}=await requireUser();
  const {id}=await params;
  if(!/^[0-9a-f-]{36}$/i.test(id))notFound();
- const {data:test}=await db.from('tests').select('title,institute_id,status').eq('id',id).single();
+ const test=await authorizedTest(user.id,id);
  if(!test)notFound();
- const {data,error}=await db.from('question_analytics').select('*')
-   .eq('test_id',id).eq('institute_id',test.institute_id)
-   .order('question',{ascending:true});
- const rows=(data||[]) as Item[];
+ const rows=await analysisForTest(user.id,id);
+ const error=null;
  return <div className="dashboard">
   <Link className="backLink" href={'/dashboard/tests/'+id}>← Back to answer key</Link>
   <div className="dashTop"><div><span className="miniEyebrow">INSTITUTE ANALYTICS</span>

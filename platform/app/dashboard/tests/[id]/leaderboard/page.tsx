@@ -2,20 +2,18 @@ import Link from 'next/link';
 import {notFound,redirect} from 'next/navigation';
 import {requireUser} from '@/lib/auth';
 import {isConfigured} from '@/lib/env';
+import {authorizedTest,leaderboardForTest} from '@/lib/repository';
 type Row={candidate_code:string;display_name:string;rank:number;total_score:number;
  correct_count:number;incorrect_count:number;blank_count:number;multiple_count:number};
 export default async function Leaderboard({params}:{params:Promise<{id:string}>}){
  if(!isConfigured())redirect('/demo');
- const {db}=await requireUser();
+ const {user}=await requireUser();
  const {id}=await params;
  if(!/^[0-9a-f-]{36}$/i.test(id))notFound();
- const {data:test}=await db.from('tests').select('id,title,institute_id').eq('id',id).single();
+ const test=await authorizedTest(user.id,id);
  if(!test)notFound();
- const {data, error}=await db.from('institute_leaderboard')
-  .select('candidate_code,display_name,rank,total_score,correct_count,incorrect_count,blank_count,multiple_count')
-  .eq('test_id',id).eq('institute_id',test.institute_id)
-  .order('rank',{ascending:true}).order('candidate_code',{ascending:true}).limit(500);
- const rows=(data||[]) as Row[];
+ const rows=await leaderboardForTest(user.id,id);
+ const error=null;
  return <div className="dashboard">
  <Link href={'/dashboard/tests/'+id} className="backLink">← Back to answer key</Link>
  <div className="dashTop"><div><span className="miniEyebrow">RESULTS AND COMPARISONS</span>

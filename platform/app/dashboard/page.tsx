@@ -3,22 +3,17 @@ import {redirect} from 'next/navigation';
 import { requireUser } from '@/lib/auth';
 import { isConfigured } from '@/lib/env';
 import { createTest } from '@/app/actions';
-import type { TestRecord,Institute } from '@/lib/types';
+import {institutesForUser,testsForInstitute} from '@/lib/repository';
 export default async function Dashboard({searchParams}:{searchParams:Promise<{org?:string;error?:string}>}){
  if(!isConfigured())redirect('/demo');
- const {db,user}=await requireUser();
- const memberships=await db.from('institute_members').select('institute_id,role').eq('user_id',user.id);
- const ids=(memberships.data||[]).map(m=>m.institute_id);
- if(!ids.length)redirect('/setup');
- const orgs=await db.from('institutes').select('id,name,slug').in('id',ids);
- const list=(orgs.data||[]) as Institute[];
+ const {user}=await requireUser();
+ const list=await institutesForUser(user.id);
  if(!list.length)redirect('/setup');
  const p=await searchParams;
  const selected=list.find(o=>o.id===p.org)||list[0];
- const role=memberships.data?.find(m=>m.institute_id===selected.id)?.role||'reviewer';
+ const role=selected.role;
  const mayEdit=role==='owner'||role==='admin';
- const {data}=await db.from('tests').select('*').eq('institute_id',selected.id).order('created_at',{ascending:false});
- const tests=(data||[]) as TestRecord[];
+ const tests=await testsForInstitute(user.id,selected.id);
  const draft=tests.filter(t=>t.status==='draft').length;
  const published=tests.filter(t=>t.status==='published').length;
  return <div className="dashboard">

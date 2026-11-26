@@ -1,5 +1,6 @@
 'use client';
 import {useRef,useState} from 'react';
+import {saveReviewedSubmission} from '@/app/submit-actions';
 import type {ScanResult,IntermediateImages} from '../scanner-core/types';
 import type {Choice} from '@/lib/key';
 import {acceptedScan,gradeAnswers,initialResponse,needsManualReview,type Evaluation,type ResponseChoice} from '@/lib/evaluation';
@@ -7,6 +8,7 @@ type Props={
  testNumber:number;testTitle:string;answerKey:Choice[];published:boolean;
  correctMarks?:number;wrongMarks?:number;
  onEvaluated?:(evaluation:Evaluation,studentId:string|null)=>void;
+ testDbId?:string;
 };
 const ANSWERS:ResponseChoice[]=['A','B','C','D',null,'MULTIPLE'];
 declare global {interface Window{cv?:{Mat?:unknown;onRuntimeInitialized?:()=>void};}}
@@ -36,7 +38,7 @@ function loadOpenCV():Promise<void>{
 }
 function formatResponse(v:ResponseChoice):string{return v==='MULTIPLE'?'Multiple':v??'Blank';}
 export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
- correctMarks=2,wrongMarks=-0.66,onEvaluated}:Props){
+ correctMarks=2,wrongMarks=-0.66,onEvaluated,testDbId}:Props){
  const fileRef=useRef<HTMLInputElement>(null);
  const [busy,setBusy]=useState(false);
  const [stage,setStage]=useState('');
@@ -48,13 +50,16 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const [score,setScore]=useState<Evaluation|null>(null);
  const [showAll,setShowAll]=useState(false);
  const [fileName,setFileName]=useState('');
+ const [candidateName,setCandidateName]=useState('');
+ const [saveBusy,setSaveBusy]=useState(false);
+ const [savedMessage,setSavedMessage]=useState('');
  const complete=published&&answerKey.length===50&&answerKey.every(x=>x!==null);
  const blocked=scan?acceptedScan(scan,testNumber):null;
  const flagged=scan?.answers.filter(needsManualReview)||[];
  const unreviewed=flagged.filter(r=>!confirmed[r.question]).length;
  const scanImage=async(file?:File)=>{
   if(!file)return;
-  setError('');setScore(null);setScan(null);setOverlay(null);
+  setError('');setScore(null);setScan(null);setOverlay(null);setSavedMessage('');
   setEdits({});setConfirmed({});setFileName(file.name);
   if(!complete){setError('Publish a complete answer key for this test before evaluating sheets.');return;}
   if(!['image/jpeg','image/png','image/webp'].includes(file.type)){
@@ -81,10 +86,10 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const review=(question:number,value:ResponseChoice)=>{
   setEdits(old=>({...old,[question]:value}));
   setConfirmed(old=>({...old,[question]:true}));
-  setScore(null);
+  setScore(null);setSavedMessage('');
  };
  const markAsSeen=(question:number)=>{
-  setConfirmed(old=>({...old,[question]:true}));setScore(null);
+  setConfirmed(old=>({...old,[question]:true}));setScore(null);setSavedMessage('');
  };
  const calculate=()=>{
   if(!scan||blocked||unreviewed||!complete)return;
@@ -100,9 +105,25 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
    onEvaluated?.(graded,scan.studentId);
   }catch(e){setError(e instanceof Error?e.message:'Cannot calculate score.');}
  };
+ const saveToNeon=async()=>{
+  if(!testDbId||!scan||!score||!scan.studentId||!candidateName.trim()||saveBusy)return;
+  setSaveBusy(true);setSavedMessage('');
+  try{
+   const response=await saveReviewedSubmission({
+    testId:testDbId,printedTestId:scan.testId||0,candidateCode:scan.studentId,
+    candidateName:candidateName.trim(),qrVerified:scan.qrValid,
+    alignmentVerified:scan.alignmentVerified===true,
+    timingMatched:scan.alignmentMatched||0,scannerVersion:'v2.7.1',
+    responses:score.rows.map(row=>row.response),statuses:score.rows.map(row=>row.status),
+    confirmed:score.rows.map(row=>row.reviewed)
+   });
+   setSavedMessage(response.message);
+  }catch(e){setSavedMessage(e instanceof Error?e.message:'Saving failed.');}
+  finally{setSaveBusy(false);}
+ };
  return <section className="surface evaluateSection">
   <div className="sectionHeading">
-   <div><span className="miniEyebrow">OPTICAL SCORING · BROWSER-LOCAL</span>
+   <div><span className="miniEyebrow">OPTICAL SCORING · REVIEWED SUBMISSIONS</span>
     <h2>Upload an OMR sheet to evaluate</h2>
     <p>Test {testNumber} · {testTitle}. The scanner checks QR, geometry and 50 timing marks before any score is calculated.</p>
    </div><span className="pill">Scanner v2.7.1</span>
@@ -189,7 +210,19 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
        <td>{row.marks>0?'+':''}{row.marks.toFixed(2)}</td>
       </tr>)}</tbody></table></div>
      </details>
-     <p className="notice">Preview result: this calculation stays in your browser. It does not yet create an official database submission or institute leaderboard entry.</p>
+     {testDbId?<div className="notice">
+       <strong>Submit verified result to Neon</strong>
+       <p>Signed-in reviewer approval is required. The server recalculates all marks from the published key;
+         it does not trust the score displayed by the browser. Candidate's QR ID: <strong>{scan?.studentId||'Unknown'}</strong>.</p>
+       {scan?.studentId?<div className="toolActions">
+        <input maxLength={120} value={candidateName} onChange={e=>setCandidateName(e.target.value)}
+          placeholder="Candidate full name" aria-label="Candidate full name"/>
+        <button type="button" className="button primary" disabled={saveBusy||!candidateName.trim()}
+         onClick={()=>void saveToNeon()}>{saveBusy?'Saving…':'Approve & save result to Neon'}</button>
+       </div>:<p className="alert">QR identity missing: result cannot be persisted.</p>}
+       {savedMessage&&<p role="status">{savedMessage}</p>}
+     </div>:<p className="notice">Demo result stays in this browser and is not stored in Neon.
+       Sign in to an institute account to save verified submissions.</p>}
    </div>}
   </>}
  </section>;

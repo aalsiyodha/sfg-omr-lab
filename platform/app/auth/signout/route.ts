@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
+import {NextRequest,NextResponse} from 'next/server';
+import {auth} from '@/lib/auth/server';
 export async function POST(request:NextRequest){
-  const client=await supabaseServer();
-  await client.auth.signOut();
-  return NextResponse.redirect(new URL('/',request.url),303);
+ await auth.signOut();
+ return NextResponse.redirect(new URL('/',request.url),303);
 }

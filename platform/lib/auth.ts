@@ -1,9 +1,10 @@
-import { redirect } from 'next/navigation';
-import { supabaseServer } from './supabase/server';
+import {redirect} from 'next/navigation';
+import {auth} from './auth/server';
+import {isConfigured} from './env';
 export async function requireUser(){
-  const db=await supabaseServer();
-  // getUser validates the access token with Supabase Auth.
-  const {data:{user},error}=await db.auth.getUser();
-  if(error||!user)redirect('/login');
-  return {db,user};
+ if(!isConfigured())redirect('/login');
+ const {data}=await auth.getSession();
+ const user=data?.user;
+ if(!user?.id)redirect('/login');
+ return {user};
 }
