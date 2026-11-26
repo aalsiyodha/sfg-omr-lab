@@ -1137,12 +1137,15 @@ export async function runFullScan(
           for(const [candidateIndex,page] of pageCandidates.entries()){
             if(selected)break;
             for(const turn of [0,1,2,3] as const){
+              if(selected)break;
+              for(const qrWeight of [4,6] as const){
+              if(selected)break;
               let color:any=null,gray:any=null,accepted=false;
               try{
                 const pre=qrBoundaryPreflight(page.corners,turn,photoQr,dpi);
                 if(!pre.plausible)continue;
                 const warped=warpQrPaperJoint(boundarySourceMat,page.corners,
-                  turn,photoQr,dpi,boundaryOutputCanvas);
+                  turn,photoQr,dpi,boundaryOutputCanvas,qrWeight);
                 if(!warped)continue;
                 warpAttempts++;
                 const qr=decodeQRFromRegion(warped.canvas,
@@ -1192,7 +1195,7 @@ export async function runFullScan(
                   }
                 }
                 logger.info('perspective','Classical QR+paper joint-fit result',{
-                  pageCandidate:candidateIndex,method:page.method,
+                  pageCandidate:candidateIndex,method:page.method,qrWeight,
                   turnDegrees:turn*90,preflightErrorMm:pre.errorMm,
                   qrErrorMm:warped.qrErrorMm,timing:check.matched,
                   left:check.leftMatched,right:check.rightMatched,
@@ -1201,7 +1204,7 @@ export async function runFullScan(
                 if(!check.passed)continue;
                 selected={
                   hypothesis:{kind:'corner',name:'boundary/qr-paper-joint-'+
-                    candidateIndex+'-'+turn,markers:primary},
+                    candidateIndex+'-'+turn+'-w'+qrWeight,markers:primary},
                   perspective:{corrected:color,correctedDataUrl:'',
                     transform:null,success:true},
                   gray,canvas:warped.canvas,qr,check,rotated:turn===2
@@ -1212,6 +1215,7 @@ export async function runFullScan(
                 logger.warning('perspective','Classical QR+paper joint-fit error',{
                   candidateIndex,turn,error:String(error)});
               }finally{if(!accepted)cleanupMats(color,gray);}
+              } // independent bounded QR-paper weight
             }
           }
         }
