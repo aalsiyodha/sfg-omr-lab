@@ -1392,6 +1392,23 @@ export async function runFullScan(
       boundaryQrAttempts,
       note:'Does not include AI direct-region and internal orientation probes; lower bound of QR processing time'
     });
+    if(!selected){
+      const byPhase:Record<string,number>={};
+      for(const a of registrationAttempts){
+        const key=a.phase+':'+(a.qrValid?'qr-valid':'qr-invalid');
+        byPhase[key]=(byPhase[key]??0)+1;
+      }
+      logger.warning('perspective','Exp3.7.3 failed registration taxonomy',{
+        attempts:registrationAttempts.length,byPhase,
+        strongestTiming:[...registrationAttempts]
+          .sort((a,b)=>b.timing-a.timing).slice(0,8)
+          .map(a=>({method:a.method,phase:a.phase,reason:a.reason,
+            qrValid:a.qrValid,timing:a.timing,left:a.left,right:a.right,
+            qrMs:a.qrMs,warpMs:a.warpMs})),
+        sourceQrDecoded:photoQr?.valid??false,
+        rejectionNotAutomaticallyBlamedOnQr:true
+      });
+    }
     logger.info('perspective','v2.5.2 registration candidates complete',{
       total:registrationAttempts.length,
       accepted:registrationAttempts.filter(a=>a.accepted).length,
