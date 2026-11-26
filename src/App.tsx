@@ -33,12 +33,23 @@ export default function App() {
   const scanning = useScanResult();
 
   useEffect(() => {
-    if ((window as any).opencvReady) { setOpencvStatus('ready'); return; }
-    const onReady = () => setOpencvStatus('ready');
-    const onError = () => setOpencvStatus('error');
-    window.addEventListener('opencv-ready', onReady);
-    window.addEventListener('opencv-error', onError);
-    return () => { window.removeEventListener('opencv-ready', onReady); window.removeEventListener('opencv-error', onError); };
+    // Events may fire before React mounts. Read the actual runtime state
+    // first, then subscribe, then read it again to close the mount race.
+    const reconcile = () => {
+      const engine = (window as any).cv;
+      if ((window as any).opencvReady && typeof engine?.Mat === 'function') {
+        setOpencvStatus('ready');
+      } else if ((window as any).opencvError) {
+        setOpencvStatus('error');
+      }
+    };
+    window.addEventListener('opencv-ready', reconcile);
+    window.addEventListener('opencv-error', reconcile);
+    reconcile();
+    return () => {
+      window.removeEventListener('opencv-ready', reconcile);
+      window.removeEventListener('opencv-error', reconcile);
+    };
   }, []);
 
   const appState: AppState = { opencv: opencvStatus, practice, scanning };
