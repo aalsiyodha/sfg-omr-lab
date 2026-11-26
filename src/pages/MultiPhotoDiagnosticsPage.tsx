@@ -12,7 +12,7 @@ const round=(n:number)=>Math.round(n*10)/10;
 
 async function imageMetrics(file:File):Promise<PhotoMetrics>{
   // Request a small decode so photo statistics don't allocate another 12MP bitmap.
-  const bitmap=await createImageBitmap(file,{resizeWidth:256,resizeHeight:256,resizeQuality:'medium'});
+  const bitmap=await createImageBitmap(file,{resizeWidth:256,resizeQuality:'medium'});
   try {
     const width=bitmap.width,height=bitmap.height;
     const scale=256/Math.max(width,height);
