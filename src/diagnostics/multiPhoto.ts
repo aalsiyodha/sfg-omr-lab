@@ -41,7 +41,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
   const c=comparePhotos(scans);
   const provisionalCount=scans.filter(s=>s.result?.provisional).length;
   const out=[
-    'SFG OMR Lab — Experiment 3.7.2 — Multi-photo diagnostic (same physical OMR)',
+    'SFG OMR Lab — Experiment 3.7.3 — Multi-photo diagnostic (same physical OMR)',
     'Generated: '+new Date().toISOString(),
     'Scanner runs: '+scans.length+' | Verified same-identity scans: '+c.same.length,
     'Reference: '+(c.reference??'unverified'),
@@ -83,6 +83,8 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         /AI document boundary recovery/i,
         /AI last-resort summary/i,
         /Registration performance summary/i,
+        /Exp3.7.3 QR-only landmark proposal/i,
+        /Exp3.7.3 QR processing accounting/i,
       ];
       const events=r?.stageLogs??[];
       for(const pattern of stages){
@@ -103,6 +105,15 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
   c.differences.forEach(d=>{
     out.push('Q'+String(d.question).padStart(2,'0')+': '+
       c.same.map((s,i)=>s.filename+'='+d.answers[i]+' ['+d.fills[i]+']').join(' | '));
+  });
+  out.push('','HATCH V2 SHADOW CLASSIFIER — diagnostic only; no scoring changes');
+  c.same.forEach(scan=>{
+    const diffs=scan.result?.answers.flatMap(row=>row.measurements.filter(m=>
+      m.hatchLike!==undefined&&m.hatchV2!==undefined&&m.hatchLike!==m.hatchV2)
+      .map(m=>'Q'+row.question+' '+m.option+' existing='+m.hatchLike+
+        ' new='+m.hatchV2+' fill='+round(m.fillPercent)+'%'))??[];
+    out.push(scan.filename+': '+diffs.length+' changed hatch flags'+
+      (diffs.length?' | '+diffs.slice(0,15).join('; '):''));
   });
   out.push('','High-ink rejected marks (selected diagnostic evidence)');
   c.same.forEach(s=>{
