@@ -27,6 +27,7 @@ import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { correctPerspectiveFromQrAruco } from './qrArucoRegistration';
 import { correctPerspectiveFromQrCorners } from './qrCornerRegistration';
+import { qrBoundaryPreflight, warpQrPaperJoint } from './qrPaperJointRegistration';
 import { registrationScore, skipRedundantFallback, shouldAdoptTimingRefinement } from './alignmentPolicy';
 import { refineByTimingSquares } from './timingRefinement';
 import { correctMildPageWarp, countHeldOutTimingMarks } from './mildCurveCorrection';
@@ -1115,6 +1116,52 @@ export async function runFullScan(
           }
         }
         } // after all rotations, try next independent page candidate
+        // Joint paper+QR classical rescue: these independent landmarks span
+        // the complete page and local QR. Try only after plain boundary warps
+        // have failed. No neural model or relaxed scoring is involved.
+        if(!selected&&photoQr?.valid&&photoQr.corners.length===4){
+          for(const [candidateIndex,page] of pageCandidates.entries()){
+            if(selected)break;
+            for(const turn of [0,1,2,3] as const){
+              let color:any=null,gray:any=null,accepted=false;
+              try{
+                const pre=qrBoundaryPreflight(page.corners,turn,photoQr,dpi);
+                if(!pre.plausible)continue;
+                const warped=warpQrPaperJoint(boundarySourceMat,page.corners,
+                  turn,photoQr,dpi,boundaryOutputCanvas);
+                if(!warped)continue;
+                warpAttempts++;
+                const qr=decodeQRFromRegion(warped.canvas,
+                  OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+                if(!qr.valid||qr.raw!==photoQr.raw)continue;
+                color=cv.imread(warped.canvas);
+                gray=new cv.Mat();
+                cv.cvtColor(color,gray,cv.COLOR_RGBA2GRAY);
+                const check=verifyTimingMarks(gray,dpi);
+                logger.info('perspective','Classical QR+paper joint-fit result',{
+                  pageCandidate:candidateIndex,method:page.method,
+                  turnDegrees:turn*90,preflightErrorMm:pre.errorMm,
+                  qrErrorMm:warped.qrErrorMm,timing:check.matched,
+                  left:check.leftMatched,right:check.rightMatched,
+                  accepted:check.passed
+                });
+                if(!check.passed)continue;
+                selected={
+                  hypothesis:{kind:'corner',name:'boundary/qr-paper-joint-'+
+                    candidateIndex+'-'+turn,markers:primary},
+                  perspective:{corrected:color,correctedDataUrl:'',
+                    transform:null,success:true},
+                  gray,canvas:warped.canvas,qr,check,rotated:turn===2
+                };
+                color=null;gray=null;accepted=true;
+                break;
+              }catch(error){
+                logger.warning('perspective','Classical QR+paper joint-fit error',{
+                  candidateIndex,turn,error:String(error)});
+              }finally{if(!accepted)cleanupMats(color,gray);}
+            }
+          }
+        }
         }finally{cleanupMats(boundarySourceMat);}
       }
       if(rough && !selected){
