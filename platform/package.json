@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prebuild": "node scripts/stage-opencv.mjs",
+    "predev": "node scripts/stage-opencv.mjs"
   },
   "dependencies": {
     "next": "^16.2.6",
@@ -17,7 +19,8 @@
     "scanic": "1.8.0",
     "@banou/opencv-wasm": "0.0.6",
     "@neondatabase/serverless": "^1.0.0",
-    "@neondatabase/auth": "0.7.0-beta"
+    "@neondatabase/auth": "0.7.0-beta",
+    "@techstark/opencv-js": "4.8.0-release.10"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

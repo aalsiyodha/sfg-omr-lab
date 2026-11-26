@@ -1,0 +1,13 @@
+import { copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
+const require=createRequire(import.meta.url);
+const packagePath=require.resolve('@techstark/opencv-js/package.json');
+const source=join(dirname(packagePath),'dist','opencv.js');
+if(!existsSync(source))throw Error('The installed OpenCV.js npm package is missing dist/opencv.js');
+const dest=resolve(process.cwd(),'public','opencv','opencv.js');
+mkdirSync(dirname(dest),{recursive:true});
+copyFileSync(source,dest);
+const bytes=statSync(dest).size;
+if(bytes<1_000_000)throw Error('Unexpectedly small OpenCV.js asset: '+bytes+' bytes');
+console.log('[OMRLabs] Self-hosted OpenCV.js ready: /opencv/opencv.js ('+(bytes/1024/1024).toFixed(2)+' MiB)');

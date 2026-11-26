@@ -12,32 +12,52 @@ type Props={
  ignoreTestIdForDemo?:boolean;
 };
 const ANSWERS:ResponseChoice[]=['A','B','C','D',null,'MULTIPLE'];
-declare global {interface Window{cv?:{Mat?:unknown;onRuntimeInitialized?:()=>void};}}
+type CVRuntime={Mat?:unknown;onRuntimeInitialized?:(()=>void)|null;then?:((resolve:(value:CVRuntime)=>void,reject:(reason:unknown)=>void)=>void)};
+declare global {interface Window { cv?:CVRuntime; }}
 let cvLoading:Promise<void>|null=null;
 const SCAN_LIMIT_MS=120_000;
 const MAX_SOURCE_MB=80;
+const OPENCV_LOCAL_URL='/opencv/opencv.js';
 function normalizeMime(file:File){return ['image/jpeg','image/png','image/webp'].includes(file.type)||/\.(jpe?g|png|webp)$/i.test(file.name);}
 
+/** The npm-pinned OpenCV 4.8.0 asset is copied into Next public/ during build.
+ * OpenCV 4.x returns a Promise on some builds and an initialized module on others.
+ * Normalize both before handing control to the scanner's global 'cv' consumers.
+ */
 function loadOpenCV():Promise<void>{
  if(window.cv?.Mat)return Promise.resolve();
  if(cvLoading)return cvLoading;
  cvLoading=new Promise<void>((resolve,reject)=>{
-  let done=false;
-  const fail=(msg:string)=>{if(done)return;done=true;reject(new Error(msg));};
-  const finish=()=>{if(done)return;done=true;resolve();};
+  let settled=false;
   const started=Date.now();
-  const poll=()=>{
-   if(window.cv?.Mat){finish();return;}
-   if(Date.now()-started>30000){fail('OpenCV initialization timed out. Check the network and reload.');return;}
-   window.setTimeout(poll,120);
+  const cleanup=()=>{clearInterval(pollId);clearTimeout(timeoutId);};
+  const fail=(reason:string)=>{if(settled)return;settled=true;cleanup();reject(new Error(reason));};
+  const finish=()=>{if(settled)return;settled=true;cleanup();resolve();};
+  const probe=()=>{
+   const current=window.cv;
+   if(current?.Mat){finish();return;}
+   if(current&&typeof current.then==='function'){
+    Promise.resolve(current).then((loaded:CVRuntime)=>{
+     if(loaded?.Mat){window.cv=loaded;finish();}
+     else fail('OpenCV module resolved without the Mat API. Please report this engine compatibility issue.');
+    }).catch(e=>fail('OpenCV initialization failed: '+String(e)));
+    return;
+   }
+   if(current && typeof current.onRuntimeInitialized!=='function'){
+    current.onRuntimeInitialized=()=>{if(window.cv?.Mat)finish();};
+   }
   };
+  const pollId=window.setInterval(probe,150);
+  const timeoutId=window.setTimeout(()=>fail('Local OpenCV engine did not initialize within 35 seconds. Please refresh and try another browser.'),35000);
   const existing=document.getElementById('omrlab-cv-runtime') as HTMLScriptElement|null;
-  if(existing){poll();return;}
-  const script=document.createElement('script');script.id='omrlab-cv-runtime';
-  script.src='https://docs.opencv.org/4.8.0/opencv.js';script.async=true;
-  script.onload=()=>poll();
-  script.onerror=()=>fail('OpenCV.js could not load. Check internet access.');
+  if(existing){probe();return;}
+  const script=document.createElement('script');
+  script.id='omrlab-cv-runtime';script.async=true;
+  script.src=OPENCV_LOCAL_URL;
+  script.onload=probe;
+  script.onerror=()=>fail('Local OpenCV asset failed to load from '+OPENCV_LOCAL_URL+'. Please refresh; if this persists report a deployment asset error.');
   document.head.appendChild(script);
+  probe();
  });
  return cvLoading.catch(e=>{cvLoading=null;throw e;});
 }
@@ -83,7 +103,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
   setBusy(true);startRef.current=Date.now();
   try{
    setDiagnostics(old=>[...old,`Source: ${file.name}, ${(file.size/1024/1024).toFixed(2)} MB, ${file.type||'unknown type'}`]);
-   setStage('Loading OpenCV.js engine (first load may require downloading WASM)…');
+   setStage('Loading local OpenCV 4.8 engine from OMRLabs…');
    await loadOpenCV();
    setStage('Preparing image and scanner modules…');
    setDiagnostics(old=>[...old,'OpenCV.js loaded successfully']);
