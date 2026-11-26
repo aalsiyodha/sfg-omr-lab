@@ -11,7 +11,6 @@ type Props={
  testDbId?:string;
  ignoreTestIdForDemo?:boolean;
 };
-const ANSWERS:ResponseChoice[]=['A','B','C','D',null,'MULTIPLE'];
 type CVRuntime={Mat?:unknown;onRuntimeInitialized?:(()=>void)|null;then?:((resolve:(value:CVRuntime)=>void,reject:(reason:unknown)=>void)=>void)};
 declare global {interface Window { cv?:CVRuntime; }}
 let cvLoading:Promise<void>|null=null;
@@ -82,7 +81,6 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const [error,setError]=useState('');
  const [scan,setScan]=useState<ScanResult|null>(null);
  const [overlay,setOverlay]=useState<string|null>(null);
- const [edits,setEdits]=useState<Record<number,ResponseChoice>>({});
  const [confirmed,setConfirmed]=useState<Record<number,boolean>>({});
  const [score,setScore]=useState<Evaluation|null>(null);
  const [showAll,setShowAll]=useState(false);
@@ -97,7 +95,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const scanImage=async(file?:File)=>{
   if(!file)return;
   setError('');setScore(null);setScan(null);setOverlay(null);setSavedMessage('');
-  setEdits({});setConfirmed({});setFileName(file.name);
+  setConfirmed({});setFileName(file.name);
   setDiagnostics([]);setElapsed(0);
   if(!complete){setError('Publish a complete answer key for this test before evaluating sheets.');return;}
   if(!normalizeMime(file)){
@@ -120,24 +118,21 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
    setOverlay(images.bubbleOverlay||images.perspectiveCorrected||null);
    const issue=acceptedScan(result,testNumber,ignoreTestIdForDemo);
    if(issue)setError(issue);
-   else setStage('Scan complete. Review flagged responses before grading.');
+   else setStage('Scan complete. Automatic decisions ready.');
   }catch(e){setError(e instanceof Error?e.message:'Unexpected scanner error.');}
   finally{setBusy(false);if(timeoutRef.current)clearTimeout(timeoutRef.current);timeoutRef.current=null;if(fileRef.current)fileRef.current.value='';if(cameraRef.current)cameraRef.current.value='';}
  };
- const review=(question:number,value:ResponseChoice)=>{
-  setEdits(old=>({...old,[question]:value}));
+ // Exception handling is limited to actual scanner uncertainty/errors.
+ // Ordinary blanks, strict-policy rejects, detected marks and multiple marks
+ // are final automatic decisions; users cannot overwrite those answers.
+ const acceptUnreadableBlank=(question:number)=>{
   setConfirmed(old=>({...old,[question]:true}));
   setScore(null);setSavedMessage('');
  };
- const markAsSeen=(question:number)=>{
-  setConfirmed(old=>({...old,[question]:true}));setScore(null);setSavedMessage('');
- };
  const calculate=()=>{
   if(!scan||blocked||unreviewed||!complete)return;
-  const response=scan.answers.map(r=>
-   Object.prototype.hasOwnProperty.call(edits,r.question)?edits[r.question]:initialResponse(r));
-  const states=scan.answers.map(r=>Object.prototype.hasOwnProperty.call(edits,r.question)?
-    (edits[r.question]==='MULTIPLE'?'multiple':'manual'):r.status);
+  const response=scan.answers.map(initialResponse);
+  const states=scan.answers.map(r=>r.status);
   const approvals=scan.answers.map(r=>!needsManualReview(r)||Boolean(confirmed[r.question]));
   try{
    const graded=gradeAnswers(answerKey,response,states,
@@ -197,42 +192,41 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
    </div>}
    {scan&&!blocked&&<>
     <div className="reviewHeading">
-      <div><h3>Review responses</h3>
-       <p>{flagged.length} flagged · {unreviewed} awaiting confirmation.
-       Incomplete fills, multiple marks and uncertain detections require review.</p></div>
-      <button type="button" className="textButton" onClick={()=>setShowAll(v=>!v)}>
-        {showAll?'Show flagged only':'Show all 50 answers'}
-      </button>
+     <div><h3>{flagged.length?'Exceptional scan decisions':'Automatic evaluation ready'}</h3>
+      <p>{flagged.length?
+       flagged.length+' unresolved detection(s). Routine blanks, multiple marks and partial fills are handled automatically.':
+       'All 50 responses have automatic final decisions. No manual marking is required.'}</p></div>
+     <button type="button" className="textButton" onClick={()=>setShowAll(v=>!v)}>
+      {showAll?'Hide detected answers':'View all 50 read-only decisions'}
+     </button>
     </div>
     {(showAll?scan.answers:flagged).map(r=>{
-      const current=Object.prototype.hasOwnProperty.call(edits,r.question)?
-        edits[r.question]:initialResponse(r);
-      const needs=needsManualReview(r);
-      return <div className="reviewRow" key={r.question}>
-        <div className="reviewInfo"><strong>Q{String(r.question).padStart(2,'0')}</strong>
-         <span>{needs?'Review required':'Scanned'} · {r.status}
-           {r.policyRejectedBlank?' · non-solid ink':''}</span>
-         {needs&&confirmed[r.question]&&<span className="reviewDone">Reviewed ✓</span>}
-        </div>
-        <div className="reviewOptions">
-         {ANSWERS.map(v=><button type="button" key={String(v)}
-          className={'reviewChoice'+(current===v?' picked':'')}
-          onClick={()=>review(r.question,v)} title={formatResponse(v)}>
-          {v==='MULTIPLE'?'Multi':v??'Blank'}</button>)}
-        </div>
-        {needs&&!confirmed[r.question]&&
-         <button className="button secondary compact" onClick={()=>markAsSeen(r.question)}>
-          Confirm current</button>}
-      </div>;
+     const needs=needsManualReview(r);
+     const current=initialResponse(r);
+     return <div className="reviewRow" key={r.question}>
+      <div className="reviewInfo"><strong>Q{String(r.question).padStart(2,'0')}</strong>
+       <span>{needs?'Exceptional detection':'Automatic decision'} · {r.status}
+        {r.policyRejectedBlank?' · incomplete mark rejected as blank':''}</span>
+       {needs&&confirmed[r.question]&&<span className="reviewDone">Exception recorded as blank ✓</span>}
+      </div>
+      <div className="omrReadOnlyAnswer"><strong>{formatResponse(current)}</strong><small>Read-only</small></div>
+      {needs&&!confirmed[r.question]&&<div className="omrExceptionActions">
+       <button type="button" className="button secondary compact" onClick={()=>cameraRef.current?.click()}>Retake photo</button>
+       <button type="button" className="button secondary compact"
+        onClick={()=>{if(window.confirm('Treat this unreadable response as blank? No answer option will be selected.'))acceptUnreadableBlank(r.question);}}>
+        Confirm unreadable → blank
+       </button>
+      </div>}
+     </div>;
     })}
-    {!flagged.length&&<p className="successBox">No flagged marks. You can calculate the score directly.</p>}
+    {!flagged.length&&<p className="successBox">All scanner decisions accepted automatically. Blanks remain blank; multiple marks retain the strict penalty.</p>}
     {overlay&&<details className="omrOverlay"><summary>Inspect corrected OMR image and markings</summary>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={overlay} alt="Registered scanned sheet with marked bubble overlay"/></details>}
     <div className="editorBottom">
      <div><strong>Ready to evaluate</strong>
-      <p>{unreviewed?unreviewed+' flagged question(s) require confirmation.':
-        'Scoring uses the published answer key. No candidate data is uploaded.'}</p></div>
+      <p>{unreviewed?unreviewed+' exceptional detection(s) need a new photo or conservative blank confirmation.':
+        'All automatic decisions are final. No candidate data is uploaded.'}</p></div>
      <button type="button" className="button primary" disabled={unreviewed>0}
       onClick={calculate}>Calculate score ↗</button>
     </div>

@@ -216,3 +216,11 @@ body{background:linear-gradient(160deg,#f8fafc 0%,#f5f8fb 48%,#f0f4f8 100%);colo
 .omrDiagnostics p,.omrDiagnostics li{font-size:11px;color:#74869a}
 .omrDiagnostics ol{max-height:200px;overflow:auto}
 @media(max-width:550px){.omrInputPanel{padding:17px}.omrInputActions{display:grid;grid-template-columns:1fr}.omrInputActions .button{width:100%}}
+
+/* Strict OMR decisions: no editable answers; only exceptional unreadable marks */
+.omrReadOnlyAnswer{display:flex;flex-direction:column;align-items:flex-end;gap:1px;min-width:75px;margin-left:auto}
+.omrReadOnlyAnswer strong{font-size:13px;color:#1f425d;background:#eaf1f7;padding:5px 10px;border-radius:8px}
+.omrReadOnlyAnswer small{font-size:10px;color:#8a9bae}
+.omrExceptionActions{display:flex;flex-wrap:wrap;gap:7px}
+.omrExceptionActions .button{font-size:11px}
+@media(max-width:650px){.omrReadOnlyAnswer{align-items:flex-start}.omrExceptionActions{width:100%}}

@@ -22,8 +22,7 @@ export function acceptedScan(result:ScanResult,testNumber:number,ignoreTestId=fa
  return null;
 }
 export function needsManualReview(row:QuestionResult):boolean {
- return row.status==='multiple'||row.status==='uncertain'||row.status==='error'
-    ||Boolean(row.policyRejectedBlank);
+ return row.status==='uncertain'||row.status==='error';
 }
 export function initialResponse(row:QuestionResult):ResponseChoice {
  if(row.status==='multiple')return 'MULTIPLE';
