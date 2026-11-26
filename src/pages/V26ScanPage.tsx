@@ -106,7 +106,7 @@ export default function V26ScanPage({ appState }: Props) {
     : opencv==='error' ? 'Scanner could not load' : opencv==='loading' ? 'Initializing OpenCV engine' : file ? 'Starting scan' : 'Ready to scan';
   return <div className="v26-page">
     <header className="v26-intro">
-      <div className="v26-eyebrow"><span className="v26-indicator"/> SFG OMR LAB <span className="v26-version">V2.7.2</span></div>
+      <div className="v26-eyebrow"><span className="v26-indicator"/> SFG OMR LAB <span className="v26-version">V2.7.3 EXPERIMENTAL</span></div>
       <h1>OMR scanning,<br/><span>made simple.</span></h1>
       <p>Upload or photograph an answer sheet. We'll verify its QR identity and alignment,
         read the responses and highlight anything needing review.</p>
