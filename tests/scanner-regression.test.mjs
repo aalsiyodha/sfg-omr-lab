@@ -2323,3 +2323,14 @@ test('v2.7.3 does not turn compressed hollow/partial evidence into an answer',()
     horizontal:8,diagonal:30,axis:44,radial:'hollow_ring',hatch:true,competingFill:0};
   assert.equal(bubbles.robustBroadFillCandidate(weak),false);
 });
+
+test('sideways normalization is evidence-gated, not blindly applied',()=>{
+  const orientation=loadTS('src/scanner/pageOrientation.ts',{
+    './qrDecoder':{locateQRInPhoto:()=>({found:false,valid:false,center:null,attempts:0})}
+  });
+  assert.equal(orientation.landscapeRotation(1600,1100,{x:200,y:210}),'cw');
+  assert.equal(orientation.landscapeRotation(1600,1100,{x:1400,y:900}),'ccw');
+  assert.equal(orientation.landscapeRotation(1600,1100,{x:1400,y:200}),'none');
+  assert.equal(orientation.landscapeRotation(1600,1100,null),'none');
+  assert.equal(orientation.landscapeRotation(1000,1500,{x:300,y:200}),'none');
+});
