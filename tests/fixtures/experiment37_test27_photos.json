@@ -1,166 +1,58 @@
 {
-  "description": "Ten user-designated original camera photographs of Test 27; only the original variants are the authoritative regression inputs. Chat-uploaded copies are 1537×2048 and may be resized by upload infrastructure. Older scanner results refer to different uploaded/optimized variants and are historical comparison only. Images are not committed.",
+  "description": "Ten photographs of same Test 27 sheet. Source camera files not committed. Statuses transcribed from the two supplied exported diagnostics (not ground-truth answer labels).",
   "studentId": "DEMO-STUDENT-0001",
   "testId": 27,
   "images": [
     {
       "filename": "IMG_20261127_022138.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "640c47909c40ef42fc414f5fdadc4abc04c231c30a163e12ff702dcf727bf10d",
-        "bytes": 949416,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "partial",
-        "experiment36": "partial"
-      }
+      "experiment35": "partial",
+      "experiment36": "partial"
     },
     {
       "filename": "IMG_20261127_022141.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "62769cd4048ed752494a38afc01b1e3ae0f8224bd36a1f91cc1c5aac344cdd33",
-        "bytes": 1135976,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "failed",
-        "experiment36": "partial"
-      }
+      "experiment35": "failed",
+      "experiment36": "partial"
     },
     {
       "filename": "IMG_20261127_022145.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "d81787b9c4a435aeb8fc8d7175050653cedb3bfb3ce91cd71a991be7cd5bc8a9",
-        "bytes": 953796,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "partial",
-        "experiment36": "failed"
-      }
+      "experiment35": "partial",
+      "experiment36": "failed"
     },
     {
       "filename": "IMG_20261127_022148.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "58f267359d00ffde25e1f82053c11801316ed693c07dae909fb5d93708fd001d",
-        "bytes": 1014790,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "failed",
-        "experiment36": "failed"
-      }
+      "experiment35": "failed",
+      "experiment36": "failed"
     },
     {
       "filename": "IMG_20261127_022152.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "25c971314c0208e7d20b231869efa217ca71c9ae0fe31b05ecbc37d6a257198b",
-        "bytes": 1095349,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "partial",
-        "experiment36": "partial"
-      }
+      "experiment35": "partial",
+      "experiment36": "partial"
     },
     {
       "filename": "IMG_20261127_022155.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "ac060c817fbe8a35bee4ceca6e1721368786a036c8b919669ac76c391fc5cd27",
-        "bytes": 1317245,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "failed",
-        "experiment36": "failed"
-      }
+      "experiment35": "failed",
+      "experiment36": "failed"
     },
     {
       "filename": "IMG_20261127_022200.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "4bfa567155745ad752b6c4eca21d8f6e1e310278fad5baa8d1732975720b3480",
-        "bytes": 1199304,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "partial",
-        "experiment36": "partial"
-      }
+      "experiment35": "partial",
+      "experiment36": "partial"
     },
     {
       "filename": "IMG_20261127_022209.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "db93b39389d379293c0eaa35292fed90bba56ba5fb6e0b5f0318d13ee6c84593",
-        "bytes": 1135634,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "partial",
-        "experiment36": "partial"
-      }
+      "experiment35": "partial",
+      "experiment36": "partial"
     },
     {
       "filename": "IMG_20261127_022214.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "7faa9dea61a64e4455440619e135cd58c55a02d3acf522fb9e1b662e77834021",
-        "bytes": 1069233,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "partial",
-        "experiment36": "partial"
-      }
+      "experiment35": "partial",
+      "experiment36": "partial"
     },
     {
       "filename": "IMG_20261127_022220.jpg",
-      "originalDesignatedCopy": {
-        "sha256": "65800d8f18a0f733b1f8cdca5bd6b4a6fb1669002b439c0ab047431045ec726a",
-        "bytes": 1309595,
-        "width": 1537,
-        "height": 2048,
-        "orientation": "portrait",
-        "exifOrientation": null
-      },
-      "legacyOptimizedResults": {
-        "experiment35": "partial",
-        "experiment36": "partial"
-      }
+      "experiment35": "partial",
+      "experiment36": "partial"
     }
   ],
-  "important": "Original-only files for future tests. Prior runs on other variants must NOT be compared as controlled scanner-version tests. Do not use classifier consensus as ground-truth labels.",
-  "datasetPolicy": {
-    "authoritative": "original-only",
-    "doNotUseForFutureBaseline": "previously JPEG-optimized or EXIF-rotated copies",
-    "identityMethod": "canonical filename and SHA-256 of chat-uploaded original-designated copy",
-    "caution": "SHA-256 values identify chat-uploaded copies only, not necessarily byte-identical high-resolution camera files",
-    "groundTruth": "not yet manually independently labeled",
-    "preprocessing": "No external rotation, compression, enhancement, or resizing before browser scanner upload"
-  }
+  "important": "A verified QR/timing registration does not guarantee each individual bubble classification. Do not use majority vote as ground truth."
 }
