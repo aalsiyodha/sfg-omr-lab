@@ -18,3 +18,5 @@ export default async function ScanSample(){
   published={true} ignoreTestIdForDemo={true}/>:
   <div className="alert">The synthetic demo answer key was not found in the Neon development database.</div>}
  </div>;
+
+}
