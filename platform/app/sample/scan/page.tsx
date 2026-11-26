@@ -23,10 +23,10 @@ export default async function ScanSample(){
  <div className="pilotBreadcrumb">DEMO WORKSPACE <span>›</span> SCAN & COMPARE</div>
  <div className="dashTop pilotPageHeader"><div><span className="miniEyebrow">START HERE · SCAN FIRST</span>
   <h1>Scan your OMR. Compare every answer.</h1>
-  <p>Upload your sheet to see your score, rank, and a question-by-question comparison with four fictional students.</p></div></div>
+  <p>Upload your sheet to see your score, rank, and a question-by-question comparison with other saved submissions for this test.</p></div></div>
  <div className="pilotInfoLine"><span>1 · Upload or photograph your OMR</span><span>2 · Automatic scoring</span><span>3 · Compare every question</span></div>
- <div className="notice"><strong>Demo-only rule:</strong> a printed Test ID mismatch is allowed for comparison, but valid QR, sheet alignment and all 50 timing marks are still required. Your score is not saved to Neon.</div>
- {peers.length>0&&<div className="demoComparePrompt"><strong>Four sample students are ready for comparison.</strong><span>We'll show their selected choices beside yours for every question once your scan passes validation.</span></div>}
+ <div className="notice"><strong>Demo-only rule:</strong> a printed Test ID mismatch is allowed for comparison, but valid QR, sheet alignment and all 50 timing marks are still required. Verified answers are saved anonymously in Neon for this development test.</div>
+ {peers.length>0&&<div className="demoComparePrompt"><strong>Existing submissions are ready for comparison.</strong><span>After your scan, see correct, wrong and skipped percentages for every question.</span></div>}
  {key.length===50?<OmrEvaluation testNumber={27} testTitle="Synthetic Geography Practice" answerKey={key}
   published={true} ignoreTestIdForDemo={true} demoPeers={peers}/>:
   <div className="alert">The synthetic demo answer key was not found in the Neon development database.</div>}
