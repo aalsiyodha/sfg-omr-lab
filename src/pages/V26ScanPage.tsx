@@ -30,6 +30,8 @@ export default function V26ScanPage({ appState }: Props) {
   const [filter, setFilter] = useState<'flagged' | 'all'>('flagged');
   const [fullReport, setFullReport] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [inputSource, setInputSource] = useState<'camera' | 'upload' | 'drop'>('upload');
+  const diagnosticHeader = `Input Source: ${inputSource === 'camera' ? 'Take Photo' : inputSource === 'drop' ? 'Drag and Drop' : 'Upload Image'}\nOriginal Filename: ${file?.name ?? 'none'}\nOriginal Size: ${file ? (file.size / 1024).toFixed(1) + ' KB' : 'unavailable'}\nImage MIME: ${file?.type || 'unknown'}\n`;
   useEffect(() => {
     if (!file || opencv !== 'ready' || started.current === file || scanning) return;
     started.current = file;
@@ -45,7 +47,7 @@ export default function V26ScanPage({ appState }: Props) {
   useEffect(() => {
     return () => { if (preview) URL.revokeObjectURL(preview); };
   }, [preview]);
-  const chooseFile = (next?: File) => {
+  const chooseFile = (next?: File, source: 'camera' | 'upload' | 'drop' = 'upload') => {
     if (!next) return;
     if (!next.type.startsWith('image/') && !/\.(png|jpe?g|webp)$/i.test(next.name)) {
       setSubmissionError('Choose a JPG, PNG or WebP image.'); return;
@@ -53,6 +55,7 @@ export default function V26ScanPage({ appState }: Props) {
     if (next.size > 25 * 1024 * 1024) {
       setSubmissionError('Image exceeds 25 MB. Use a smaller photo.'); return;
     }
+    setInputSource(source);
     reset(); started.current = null; setReveal(false); setTab('answers');
     setFilter('flagged'); setFullReport(false); setSubmissionError(null);
     setPreview(URL.createObjectURL(next)); setFile(next);
@@ -78,10 +81,10 @@ export default function V26ScanPage({ appState }: Props) {
   const answers = filterReviewAnswers(scanResult?.answers ?? [],filter);
   const counts = scanResult?.answers.reduce((acc,a) => {acc[a.status]=(acc[a.status]||0)+1;return acc;},
     {} as Record<string,number>) ?? {};
-  const report = scanResult ? (fullReport
+  const report = scanResult ? diagnosticHeader + '\n' + (fullReport
     ? generateLLMDiagnosticPrompt({scanResult,file,activeTestId:practice.activeTest?.testId,
         answerKey:practice.activeTest?.answerKey})
-    : generateBetaFeedbackPrompt({scanResult,file,activeTestId:practice.activeTest?.testId})) : '';
+    : generateBetaFeedbackPrompt({scanResult,file,activeTestId:practice.activeTest?.testId})) : diagnosticHeader + `\nScanner: v${APP_BUILD_META.version}\nCommit: ${APP_BUILD_META.sha}\nOpenCV: ${opencv}\nScan error: ${error ?? submissionError ?? 'No completed scan'}\n`;
   const submit = () => {
     if (!scanResult || !practice.activeTest) return;
     if (!verified || scanResult.testId===null) {
@@ -119,12 +122,12 @@ export default function V26ScanPage({ appState }: Props) {
         {file && <button className="v26-minor" type="button" disabled={scanning} onClick={newScan}>Start over</button>}
       </div>
       <input ref={fileInput} type="file" hidden accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp"
-        onChange={e=>chooseFile(e.target.files?.[0])}/>
+        onChange={e=>chooseFile(e.target.files?.[0], 'upload')}/>
       <input ref={cameraInput} type="file" hidden accept="image/*" capture="environment"
-        onChange={e=>chooseFile(e.target.files?.[0])}/>
+        onChange={e=>chooseFile(e.target.files?.[0], 'camera')}/>
       {!file ? <div className="v26-drop"
         onDragOver={e=>e.preventDefault()}
-        onDrop={e=>{e.preventDefault();chooseFile(e.dataTransfer.files[0]);}}>
+        onDrop={e=>{e.preventDefault();chooseFile(e.dataTransfer.files[0], 'drop');}}>
         <div className="v26-drop-icon"><i className="bi bi-file-earmark-image"/></div>
         <h3>Drop an image here, or select a file</h3>
         <p>JPG, PNG, WebP · Up to 25 MB · All corners and QR code visible</p>
@@ -139,7 +142,7 @@ export default function V26ScanPage({ appState }: Props) {
         <div className="v26-selected-info">
           <span className="v26-step">SELECTED IMAGE</span>
           <h3 title={file.name}>{file.name}</h3>
-          <p>{(file.size/1024/1024).toFixed(2)} MB · Local processing</p>
+          <p>{(file.size/1024/1024).toFixed(2)} MB · {inputSource === 'camera' ? 'Camera capture' : inputSource === 'drop' ? 'Dropped image' : 'Uploaded file'} · Local processing</p>
           <div className="v26-status" role="status" aria-live="polite">
             <span className={scanning?'v26-status-dot is-active':'v26-status-dot'}/>
             {status}
@@ -159,7 +162,7 @@ export default function V26ScanPage({ appState }: Props) {
       </div>}
       {(error||submissionError||opencv==='error') &&
         <div className="v26-error" role="alert">{error||submissionError||
-          'OpenCV failed to initialize. Reload the page and try again.'} <button type="button" className="v26-minor" onClick={()=>window.location.reload()}>Reload scanner</button></div>}
+          'OpenCV failed to initialize. Reload the page and try again.'} <button type="button" className="v26-minor" onClick={()=>window.location.reload()}>Reload scanner</button> <button type="button" className="v26-minor" onClick={()=>download('sfg-omr-failure-diagnostic.txt',report)}>Download error report</button></div>}
     </section>
     {reveal && file && <section className="v26-panel v26-results" aria-label="Scan results">
       <div className="v26-section-head">
