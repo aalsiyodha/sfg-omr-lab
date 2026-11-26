@@ -1,0 +1,58 @@
+{
+  "description": "Ten photographs of same Test 27 sheet. Source camera files not committed. Statuses transcribed from the two supplied exported diagnostics (not ground-truth answer labels).",
+  "studentId": "DEMO-STUDENT-0001",
+  "testId": 27,
+  "images": [
+    {
+      "filename": "IMG_20261127_022138.jpg",
+      "experiment35": "partial",
+      "experiment36": "partial"
+    },
+    {
+      "filename": "IMG_20261127_022141.jpg",
+      "experiment35": "failed",
+      "experiment36": "partial"
+    },
+    {
+      "filename": "IMG_20261127_022145.jpg",
+      "experiment35": "partial",
+      "experiment36": "failed"
+    },
+    {
+      "filename": "IMG_20261127_022148.jpg",
+      "experiment35": "failed",
+      "experiment36": "failed"
+    },
+    {
+      "filename": "IMG_20261127_022152.jpg",
+      "experiment35": "partial",
+      "experiment36": "partial"
+    },
+    {
+      "filename": "IMG_20261127_022155.jpg",
+      "experiment35": "failed",
+      "experiment36": "failed"
+    },
+    {
+      "filename": "IMG_20261127_022200.jpg",
+      "experiment35": "partial",
+      "experiment36": "partial"
+    },
+    {
+      "filename": "IMG_20261127_022209.jpg",
+      "experiment35": "partial",
+      "experiment36": "partial"
+    },
+    {
+      "filename": "IMG_20261127_022214.jpg",
+      "experiment35": "partial",
+      "experiment36": "partial"
+    },
+    {
+      "filename": "IMG_20261127_022220.jpg",
+      "experiment35": "partial",
+      "experiment36": "partial"
+    }
+  ],
+  "important": "A verified QR/timing registration does not guarantee each individual bubble classification. Do not use majority vote as ground truth."
+}

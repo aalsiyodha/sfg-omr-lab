@@ -13,6 +13,8 @@ export interface BoundaryEvidence {
   reason:string;
   contourAreaRatio?:number;
   quadrilateral?:PagePoint[];
+  /** Other plausible paper quads; never independently accepted without QR+timing. */
+  alternativeQuads?:Array<{corners:PagePoint[];method:string;score:number}>;
   candidates?:number;
   rejectedBorder?:number;
   rejectedImageCorner?:number;
@@ -185,6 +187,19 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
     }
     const best=candidates[0];
     const corners=best.corners;
+    // Preserve a few genuinely different page candidates for failure-only
+    // verification. The old code discarded every candidate except #1.
+    const separation=Math.min(source.width,source.height)*.014;
+    const alternates:typeof candidates=[];
+    for(const candidate of candidates.slice(1)){
+      if(alternates.length>=3)break;
+      const different=[best,...alternates].every(previous=>
+        previous.corners.some((point,i)=>Math.hypot(point.x-candidate.corners[i].x,
+          point.y-candidate.corners[i].y)>separation));
+      if(different)alternates.push(candidate);
+    }
+    const alternativeQuads=alternates.map(c=>({corners:c.corners,
+      method:c.method,score:Number(c.score.toFixed(4))}));
     const dpi=getSettings().scanDpi;
     const w=Math.round(mmToPx(OMR_LAYOUT.page.widthMm,dpi));
     const h=Math.round(mmToPx(OMR_LAYOUT.page.heightMm,dpi));
@@ -200,11 +215,12 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
     report({reason:'outer-page-rough-warp-created-not-verified',
       ...diagnostics,candidateSummary,
       method:best.method,contourAreaRatio:best.area/(small.cols*small.rows),
-      quadrilateral:corners});
+      quadrilateral:corners,alternativeQuads});
     return {canvas,evidence:{
       reason:'outer-page-rough-warp-created-not-verified',
       ...diagnostics,method:best.method,candidateSummary,
-      contourAreaRatio:best.area/(small.cols*small.rows),quadrilateral:corners}};
+      contourAreaRatio:best.area/(small.cols*small.rows),quadrilateral:corners,
+      alternativeQuads}};
   }catch(error){
     report({reason:'boundary-recovery-opencv-error: '+String(error),...diagnostics});
     return null;

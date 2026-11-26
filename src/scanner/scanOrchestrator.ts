@@ -971,20 +971,31 @@ export async function runFullScan(
       // Cheap QR/geometry-verified fast registrations never enter this path.
       // A white-page contour alone is NEVER accepted as an OMR identity.
       if(rough?.evidence.quadrilateral && !selected){
+        const pageCandidates=[
+          {corners:rough.evidence.quadrilateral,method:rough.evidence.method??'primary'},
+          ...(rough.evidence.alternativeQuads??[])
+        ];
+        logger.info('perspective','Exp3.7 alternative paper hypotheses',{
+          alternatives:pageCandidates.length-1,
+          methods:pageCandidates.map(x=>x.method),
+          mandatoryGates:'QR SFGOMR1 and independent left/right timing'
+        });
+        for(const [candidateIndex,page] of pageCandidates.entries()){
+        if(selected)break;
         for(const turn of [0,1,2,3] as const){
           let candidateCanvas:HTMLCanvasElement|null=null;
           let candidateColor:any=null,candidateGray:any=null;
           let accepted=false;
           try{
             candidateCanvas=warpBoundaryOrientation(
-              loaded.canvas,rough.evidence.quadrilateral,turn);
+              loaded.canvas,page.corners,turn);
             if(!candidateCanvas)continue;
             const qr=decodeQRFromRegion(candidateCanvas,
               OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
             // QR-first short circuit avoids threshold scans on wrong orientations.
             if(!qr.valid){
               logger.info('perspective','Exp3.6 360-degree boundary orientation',{
-                turnDegrees:turn*90,qrValid:false,timing:0,accepted:false});
+                pageCandidate:candidateIndex,method:page.method,turnDegrees:turn*90,qrValid:false,timing:0,accepted:false});
               continue;
             }
             candidateColor=cv.imread(candidateCanvas);
@@ -992,12 +1003,12 @@ export async function runFullScan(
             cv.cvtColor(candidateColor,candidateGray,cv.COLOR_RGBA2GRAY);
             const check=verifyTimingMarks(candidateGray,dpi);
             logger.info('perspective','Exp3.6 360-degree boundary orientation',{
-              turnDegrees:turn*90,qrValid:true,
+              pageCandidate:candidateIndex,method:page.method,turnDegrees:turn*90,qrValid:true,
               timing:check.matched,left:check.leftMatched,right:check.rightMatched,
               accepted:check.passed});
             if(!check.passed)continue;
             selected={
-              hypothesis:{kind:'corner',name:'boundary/360-quad-'+(turn*90),
+              hypothesis:{kind:'corner',name:'boundary/360-quad-'+candidateIndex+'-'+(turn*90),
                 markers:primary},
               perspective:{corrected:candidateColor,correctedDataUrl:'',
                 transform:null,success:true},
@@ -1005,7 +1016,7 @@ export async function runFullScan(
             };
             candidateColor=null;candidateGray=null;accepted=true;
             logger.info('perspective','Exp3.6 verified all-angle geometry recovery',{
-              turnDegrees:turn*90,qrIdentityVerified:true,
+              pageCandidate:candidateIndex,method:page.method,turnDegrees:turn*90,qrIdentityVerified:true,
               timing:check.matched,note:'Both printed timing tracks mandatory'});
             break;
           }catch(error){
@@ -1015,6 +1026,7 @@ export async function runFullScan(
             if(!accepted)cleanupMats(candidateColor,candidateGray);
           }
         }
+        } // after all rotations, try next independent page candidate
       }
       if(rough && !selected){
         let rescueGray:any=null,rescueBlur:any=null,rescueThreshold:any=null;
