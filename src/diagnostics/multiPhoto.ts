@@ -71,7 +71,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
     );
     if(!r||r.overallStatus==='failed'){
       const notable=(r?.stageLogs??[]).filter(e=>
-        /Sideways OMR orientation|original-photo QR locator|QR missing|QR-failed timing evidence|registration candidates complete|registration performance|boundary recovery|recovery conclusion/i.test(e.message)
+        /Sideways OMR orientation|original-photo QR locator|QR missing|QR-failed timing evidence|registration candidates complete|registration performance|boundary recovery|recovery conclusion|Exp3.7 alternative paper hypotheses|Exp3.6 360-degree boundary orientation/i.test(e.message)
       ).slice(-5);
       notable.forEach(e=>out.push('  Registration evidence: '+e.message+
         (e.data?' '+JSON.stringify(e.data).slice(0,400):'')));
