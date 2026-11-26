@@ -58,7 +58,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
       '  Source '+p.width+'x'+p.height+' ('+(p.landscape?'landscape':'portrait')+')'+
       ' | mean luminance '+p.mean+'/255 | grayscale contrast (SD) '+p.contrast+
       ' | dark pixels '+p.shadows+'% | clipped highlights '+p.highlights+'% | edge score '+p.edge,
-      '  '+(r?'Status +r.overallStatus+' | '+(scanIdentity(r)??'identity not verified')+
+      '  '+(r?'Status '+r.overallStatus+' | '+(scanIdentity(r)??'identity not verified')+
         ' | QR '+(r.qrValid?'valid':'invalid')+
         ' | timing '+(r.alignmentMatched??'unknown')+'/50 | registration '+(r.registrationMethod??'none')+
         ' | rotated180 '+Boolean(r.orientationRotated)+
