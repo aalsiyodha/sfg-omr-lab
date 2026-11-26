@@ -10,6 +10,7 @@ type Props={
  onEvaluated?:(evaluation:Evaluation,studentId:string|null)=>void;
  testDbId?:string;
  ignoreTestIdForDemo?:boolean;
+ demoPeers?:{name:string;score:number}[];
 };
 type CVRuntime={Mat?:unknown;onRuntimeInitialized?:(()=>void)|null;then?:((resolve:(value:CVRuntime)=>void,reject:(reason:unknown)=>void)=>void)};
 declare global {interface Window { cv?:CVRuntime; }}
@@ -66,7 +67,7 @@ function loadOpenCV():Promise<void>{
 }
 function formatResponse(v:ResponseChoice):string{return v==='MULTIPLE'?'Multiple':v??'Blank';}
 export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
- correctMarks=2,wrongMarks=-0.66,onEvaluated,testDbId,ignoreTestIdForDemo=false}:Props){
+ correctMarks=2,wrongMarks=-0.66,onEvaluated,testDbId,ignoreTestIdForDemo=false,demoPeers=[]}:Props){
  const fileRef=useRef<HTMLInputElement>(null);
  const cameraRef=useRef<HTMLInputElement>(null);
  const startRef=useRef<number>(0);
@@ -243,6 +244,20 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
       <div><span>Multiple</span><strong>{score.multiple}</strong></div>
       <div><span>Cancelled</span><strong>{score.cancelled}</strong></div>
      </div>
+     {ignoreTestIdForDemo&&demoPeers.length>0&&<div className="pilotCompare" aria-label="Compare your scanned score with the fictional demo students">
+      <div className="pilotCompareTop"><div><span className="miniEyebrow">YOUR RESULT VS THE DEMO CLASS</span>
+       <h3>How did this sheet perform?</h3>
+       <p>The comparison uses the same synthetic answer key and the four fictional student records in Neon.</p></div>
+       <span className="pilotRank">#{1+demoPeers.filter(p=>p.score>score.total).length} of {demoPeers.length+1}</span>
+      </div>
+      <div className="pilotCompareBars">
+       {[...demoPeers.map(p=>({name:p.name,score:p.score,isYou:false})),{name:'Your uploaded OMR',score:score.total,isYou:true}]
+        .sort((a,b)=>b.score-a.score).map(p=><div className={'pilotCompareRow'+(p.isYou?' current':'')} key={p.name}>
+        <span>{p.name}</span><div className="sampleTrack"><span style={{width:Math.max(0,Math.min(100,p.score))+'%'}}/></div>
+        <strong>{p.score.toFixed(2)}</strong></div>)}
+      </div>
+      <p className="pilotFootnote">Practice comparison only. Your scanned result stays in this browser and is not saved to Neon or added to the institute leaderboard.</p>
+     </div>}
      <details className="omrResults"><summary>View question-by-question evaluation</summary>
       <div className="tableScroll"><table className="scoreTable"><thead><tr>
        <th>Q</th><th>Key</th><th>Student</th><th>Decision</th><th>Marks</th>

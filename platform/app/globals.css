@@ -224,3 +224,122 @@ body{background:linear-gradient(160deg,#f8fafc 0%,#f5f8fb 48%,#f0f4f8 100%);colo
 .omrExceptionActions{display:flex;flex-wrap:wrap;gap:7px}
 .omrExceptionActions .button{font-size:11px}
 @media(max-width:650px){.omrReadOnlyAnswer{align-items:flex-start}.omrExceptionActions{width:100%}}
+
+/* ==== OMRLabs polished pilot experience: visually coherent, mobile first ==== */
+:root{--pilot-ink:#10283d;--pilot-blue:#163b59;--pilot-sea:#14736c;--pilot-border:#e2e9ef;--pilot-muted:#63778b}
+.site{min-height:100dvh}
+.pilotNav{position:sticky;top:0;z-index:30;backdrop-filter:blur(18px);background:rgba(255,255,255,.94);border-bottom:1px solid #e6edf2}
+.pilotNav .brand{letter-spacing:-.065em}
+.pilotNav .links{gap:23px}
+.pilotNav .links>a:not(.navButton){color:#617388;transition:color .15s}
+.pilotNav .links>a:not(.navButton):hover{color:#173a56}
+.pilotNav .navButton{min-width:87px;text-align:center}
+.pilotHome{padding:76px 0 30px}
+.pilotHero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(380px,.95fr);gap:clamp(30px,5vw,84px);align-items:center;min-height:550px}
+.pilotHeroContent{padding-bottom:26px}
+.pilotEyebrow{display:inline-flex;align-items:center;gap:9px;color:#3e677f;font-size:11px;font-weight:800;letter-spacing:.14em}
+.pilotStatusDot{height:8px;width:8px;border-radius:50%;background:#168569;box-shadow:0 0 0 4px #dff3eb}
+.pilotHeroContent h1{font-size:clamp(47px,5.5vw,77px);letter-spacing:-.078em;line-height:1.09;margin:26px 0 22px;max-width:760px}
+.pilotHeroContent h1 em{font-style:normal;color:#6b91a8}
+.pilotHeroContent>p{font-size:16px;color:#687e91;line-height:1.85;max-width:620px}
+.pilotHeroActions{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin:28px 0 25px}
+.pilotHeroActions .button{min-height:48px}
+.pilotHeroMeta{display:flex;gap:12px 18px;flex-wrap:wrap;font-size:11px;font-weight:650;color:#74889a;max-width:650px}
+.pilotHeroPreview{background:#fff;border:1px solid #dae5ed;border-radius:20px;padding:25px;box-shadow:0 28px 80px rgba(21,53,78,.10),0 3px 14px rgba(21,53,78,.04);transform:translateY(-5px);min-width:0}
+.pilotPreviewTop{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:18px;border-bottom:1px solid #edf2f6;font-size:11px;font-weight:800;color:#3e5870}
+.pilotPreviewTop>div{display:flex;align-items:center;gap:7px}
+.pilotPreviewDot{display:inline-block;background:#1a986f;height:8px;width:8px;border-radius:99px}
+.pilotPreviewPill{border:1px solid #cde9dd;background:#edf8f2;color:#27775c;border-radius:99px;padding:6px 10px;font-size:10px;font-weight:800;white-space:nowrap}
+.pilotPreviewTitle{display:grid;gap:3px;padding:21px 0 15px}
+.pilotPreviewTitle>span{font-size:11px;color:#7a8ea1}
+.pilotPreviewTitle>strong{font-size:20px;letter-spacing:-.045em}
+.pilotPreviewKpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-bottom:18px}
+.pilotPreviewKpis>div{padding:15px;background:#f5f9fc;border:1px solid #eaf0f4;border-radius:12px}
+.pilotPreviewKpis span{font-size:11px;display:block;color:#788a9c}
+.pilotPreviewKpis strong{font-size:24px;letter-spacing:-.055em;display:block;margin-top:6px}
+.pilotPreviewRanks{border-top:1px solid #edf2f6}
+.pilotPreviewRank{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid #edf2f6}
+.pilotPreviewRank>span{font-size:11px;color:#8395a4;min-width:12px;font-weight:800}
+.pilotPreviewRank>b{width:35px;height:35px;display:grid;place-items:center;background:#e9f1f8;color:#466b85;border-radius:10px;font-size:10px}
+.pilotPreviewRank>div{min-width:0;flex:1}
+.pilotPreviewRank>div strong{display:block;font-size:12px}
+.pilotPreviewRank>div small{display:block;font-size:10px;color:#8ca0b0}
+.pilotPreviewRank>em{font-size:14px;font-weight:800;font-style:normal;color:#163c5a;font-variant-numeric:tabular-nums}
+.pilotPreviewBottom{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:15px;color:#44778a;font-size:11px;font-weight:750}
+.pilotFeatureIntro{display:flex;justify-content:space-between;align-items:end;gap:30px;padding:70px 0 25px;border-top:1px solid var(--pilot-border)}
+.pilotFeatureIntro h2{font-size:clamp(25px,3.5vw,38px);letter-spacing:-.055em;margin:10px 0 0;line-height:1.25}
+.pilotFeatureIntro>p{max-width:360px;color:#74869a;font-size:13px;line-height:1.8}
+.pilotFeatureGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.pilotFeature{padding:25px 24px;background:#fff;border:1px solid #e0e9ef;border-radius:15px;transition:transform .18s,border-color .18s,box-shadow .18s;display:flex;flex-direction:column}
+.pilotFeature:hover{transform:translateY(-3px);border-color:#b8ccd9;box-shadow:0 12px 30px rgba(25,61,86,.06)}
+.pilotFeatureIcon{display:grid;place-items:center;background:#edf5f8;color:#1e6073;font-size:22px;border-radius:12px;height:45px;width:45px}
+.pilotFeature h3{font-size:18px;letter-spacing:-.04em;margin:23px 0 8px}
+.pilotFeature p{color:#75889a;font-size:13px;line-height:1.75;flex:1}
+.pilotFeature>strong{font-size:12px;color:#1b5c7f;margin-top:6px}
+.pilotHomeFoot{font-size:11px;color:#8da0af;margin:24px 0 0;line-height:1.7}
+.pilotBreadcrumb{display:flex;align-items:center;gap:10px;color:#8295a8;font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:24px}
+.pilotBreadcrumb span{color:#b5c3cc}
+.pilotBreadcrumb a:hover{color:#214c69}
+.pilotLogin{padding:52px 0 54px;max-width:1060px;margin:auto}
+.pilotLoginHead{text-align:center;max-width:630px;margin:0 auto 32px}
+.pilotLoginHead h1{font-size:clamp(32px,4.2vw,46px);margin:8px 0 12px;letter-spacing:-.06em;line-height:1.2}
+.pilotLoginHead p{color:#72879a;font-size:14px;line-height:1.8}
+.pilotLoginGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:stretch}
+.pilotLoginCard{background:#fff;border:1px solid #dfe8ef;border-radius:18px;padding:30px;box-shadow:0 12px 40px rgba(20,58,80,.04)}
+.pilotLoginDemo{border-color:#bed8e1;box-shadow:0 15px 50px rgba(20,78,102,.08)}
+.pilotLoginCardTop{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:25px}
+.pilotCardIcon{height:44px;width:44px;border-radius:12px;display:grid;place-items:center;background:#eaf2f6;color:#23556c;font-size:24px}
+.pilotLoginCard h2{font-size:22px;letter-spacing:-.05em;margin-bottom:9px}
+.pilotLoginCard>p{font-size:13px;color:#75889a;line-height:1.75;min-height:60px}
+.pilotSmallTag{font-size:10px;font-weight:800;border:1px solid #dfe9ef;background:#f7fafc;border-radius:99px;padding:6px 9px;color:#668297}
+.pilotDemoForm{display:flex;flex-direction:column;gap:9px;margin-top:23px}
+.pilotDemoForm label{font-size:12px;font-weight:700;color:#405c73;margin:6px 0 -3px}
+.pilotDemoForm input{height:44px;border:1px solid #dbe5ed!important;background:#fbfcfd!important;border-radius:9px!important;padding:11px 12px!important;margin:0!important}
+.pilotDemoForm input:focus{outline:2px solid #9ec1d4;outline-offset:1px}
+.pilotDemoForm button{margin-top:11px!important;min-height:46px}
+.pilotDemoHelper{color:#50718a;font-size:11px!important;font-weight:700;margin:7px 0 0!important}
+.pilotLoginHint{color:#95a4b0!important;font-size:11px!important;line-height:1.65;margin:7px 0 0!important;min-height:0!important}
+.pilotGoogleFoot{border-top:1px solid #ebf1f6;margin-top:25px;padding-top:20px;display:grid;gap:10px}
+.pilotGoogleFoot strong{font-size:12px;color:#355268;margin-bottom:4px}
+.pilotGoogleFoot span{font-size:12px;color:#74899c}
+.pilotGoogleFoot span:before{content:'✓';color:#0e8872;margin-right:10px}
+.pilotLoginBottom{text-align:center;font-size:12px;color:#70879b;margin-top:28px}
+.pilotLoginBottom a{font-weight:800;color:#1f6384}
+.pilotPageHeader{margin-bottom:16px}
+.pilotPageHeader h1{font-size:clamp(29px,4vw,42px)!important;letter-spacing:-.06em}
+.pilotPageHeader p{max-width:700px;line-height:1.7}
+.pilotDemoNotice{display:flex;gap:14px;align-items:center;background:#ecf6f3;border:1px solid #d8eae4;border-radius:11px;padding:13px 17px;color:#5e7e76;font-size:12px;margin:17px 0}
+.pilotDemoNotice strong{background:#d7eee6;color:#226956;padding:6px 10px;border-radius:8px;font-size:11px;white-space:nowrap}
+.pilotStepGuide{display:flex;align-items:center;gap:17px;background:#fff;border:1px solid #e5edf2;border-radius:13px;padding:16px 19px;margin:17px 0 23px}
+.pilotStepGuide>div{display:flex;gap:11px;align-items:center;flex:1}
+.pilotStepGuide b{display:grid;place-items:center;background:#e9f2f7;width:32px;height:32px;border-radius:10px;color:#3e7690;font-size:12px}
+.pilotStepGuide>div span{display:grid;gap:2px}
+.pilotStepGuide strong{font-size:12px}
+.pilotStepGuide small{font-size:10px;color:#8a9aab}
+.pilotStepArrow{color:#a7b8c6}
+.pilotQuestionDetails{overflow:hidden;margin-bottom:22px}
+.pilotQuestionDetails>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:21px 24px}
+.pilotQuestionDetails>summary::-webkit-details-marker{display:none}
+.pilotQuestionDetails>summary>span{display:grid;gap:4px}
+.pilotQuestionDetails>summary strong{font-size:19px;letter-spacing:-.035em}
+.pilotQuestionDetails>summary small{font-size:11px;color:#8c9bab}
+.pilotQuestionDetails>summary b{font-size:11px;color:#35627d}
+.pilotQuestionDetailsBody{border-top:1px solid #edf2f6;padding:22px 24px}
+.pilotInfoLine{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 20px}
+.pilotInfoLine span{font-size:11px;font-weight:650;background:#ecf5f6;border:1px solid #daeaeb;border-radius:99px;padding:8px 11px;color:#316e75}
+.pilotCompare{border:1px solid #ccdfeb;border-radius:15px;padding:24px;background:linear-gradient(135deg,#f8fcff,#f0f7fc);margin:23px 0}
+.pilotCompareTop{display:flex;align-items:start;justify-content:space-between;gap:15px;margin-bottom:20px}
+.pilotCompareTop h3{font-size:21px;margin:6px 0 5px}
+.pilotCompareTop p{font-size:12px;color:#738a9e;max-width:500px;line-height:1.7}
+.pilotRank{border:1px solid #cfe3ed;border-radius:13px;background:#fff;padding:11px 15px;font-size:18px;color:#1f5671;font-weight:800;white-space:nowrap}
+.pilotCompareBars{display:grid;gap:10px}
+.pilotCompareRow{display:flex;align-items:center;gap:12px;padding:10px 13px;border-radius:8px;background:rgba(255,255,255,.55);font-size:12px}
+.pilotCompareRow span:first-child{width:145px;max-width:38%;font-weight:650;color:#38566e}
+.pilotCompareRow strong{min-width:47px;text-align:right;font-variant-numeric:tabular-nums}
+.pilotCompareRow.current{background:#e0f4ea;border:1px solid #b9dfcf}
+.pilotCompareRow.current .sampleTrack>span{background:#128872}
+.pilotFootnote{font-size:11px;color:#8194a5;margin:17px 0 0;line-height:1.65}
+@media(max-width:1060px){.pilotHero{grid-template-columns:minmax(0,1fr) 420px;gap:30px}.pilotNav .links{gap:14px}}
+@media(max-width:850px){.pilotHero{grid-template-columns:1fr;gap:25px;min-height:0}.pilotHeroContent{padding:0}.pilotHeroPreview{transform:none;max-width:650px;width:100%}.pilotHome{padding-top:46px}.pilotFeatureIntro{padding-top:50px}.pilotLoginGrid{gap:14px}.pilotLoginCard{padding:22px}}
+@media(max-width:720px){.pilotNav{position:relative}.pilotNav .links{gap:8px;justify-content:flex-start;flex-wrap:wrap}.pilotNav .links>a{font-size:11px!important}.pilotNav .navButton{min-width:0;padding:8px 12px}.pilotHome{padding-top:32px}.pilotHeroContent h1{font-size:clamp(42px,10vw,64px)}.pilotFeatureGrid,.pilotLoginGrid{grid-template-columns:1fr}.pilotFeatureIntro{display:block}.pilotFeatureIntro>p{max-width:none;margin:14px 0}.pilotFeature{padding:20px}.pilotLogin{padding-top:30px}.pilotLoginCard>p{min-height:0}.pilotStepGuide{flex-wrap:wrap}.pilotStepGuide .button{width:100%}.pilotStepGuide>div{flex:1 1 35%}.pilotStepArrow{display:none}.pilotDemoNotice{align-items:flex-start;flex-direction:column;gap:8px}.pilotCompareTop{flex-direction:column}.pilotRank{align-self:flex-start}}
+@media(max-width:420px){.pilotHeroPreview{padding:16px}.pilotHeroActions{display:grid}.pilotHeroActions .button{width:100%}.pilotPreviewBottom{font-size:10px}.pilotStepGuide>div{flex:1 1 100%}.pilotCompareRow span:first-child{width:115px;max-width:38%;font-size:11px}.pilotCompareRow{gap:7px;padding:9px 7px}}

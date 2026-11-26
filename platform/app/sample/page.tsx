@@ -47,13 +47,15 @@ export default async function SampleAnalytics(){
  const bars=[['A','option_a'],['B','option_b'],['C','option_c'],['D','option_d'],['Blank','blank_count'],['Multiple','multiple_count']] as const;
  const ranked=[...details].sort((a,b)=>percent(a.correct_count,a.total_attempts)-percent(b.correct_count,b.total_attempts)).slice(0,6);
  return <div className="dashboard sampleDashboard">
-  <div className="dashTop"><div><span className="miniEyebrow">OMRLABS · DATABASE-BACKED ANALYTICS</span>
-    <h1>Institute performance overview</h1>
-    <p>Live Neon development data, populated with four fictional student attempts and one synthetic 50-question key.</p></div>
-    <div className="toolActions"><Link className="button secondary" href="/sample/scan">Try an OMR photo</Link>
-    <Link className="button primary" href="/practice">Try an online test ↗</Link></div>
+  <div className="pilotBreadcrumb"><Link href="/">HOME</Link> <span>›</span> DEMO DASHBOARD</div>
+  <div className="dashTop pilotPageHeader"><div><span className="miniEyebrow">OMRLABS / DEMO WORKSPACE</span>
+    <h1>Your sample classroom, at a glance.</h1>
+    <p>Explore the class results below, then scan your own OMR sheet to see how it compares.</p></div>
+    <div className="toolActions"><Link className="button primary" href="/sample/scan">Scan & compare ↗</Link>
+    <Link className="button secondary" href="/practice">Try online practice</Link></div>
   </div>
-  <div className="notice"><strong>Synthetic data only.</strong> These students and OMR responses were generated for interface testing. No real student scans have been evaluated. The page reads only the seeded demo dataset.</div>
+  <div className="pilotDemoNotice"><strong>Demo workspace</strong><span>All 4 students and their responses are fictional, stored in Neon for testing. Your own uploaded scans stay on your device.</span></div>
+  <div className="pilotStepGuide"><div><b>01</b><span><strong>View class results</strong><small>Sample scores, rankings and analytics</small></span></div><span className="pilotStepArrow">→</span><div><b>02</b><span><strong>Scan your sheet</strong><small>Get your score and comparison</small></span></div><Link href="/sample/scan" className="button secondary compact">Start scan ↗</Link></div>
   {error&&<p role="alert" className="alert">{error}</p>}
   <div className="sampleStats">
     <div className="sampleMetric"><span>Students</span><strong>{attempts}</strong><small>Demo submissions</small></div>
@@ -81,7 +83,7 @@ export default async function SampleAnalytics(){
     </div>)}
    </section>
   </div>
-  <section className="surface"><div className="sectionHeading"><div>
+  <details className="surface pilotQuestionDetails"><summary><span><span className="miniEyebrow">DETAILED ANALYTICS</span><strong>View all 50 question charts</strong><small>Optional deeper dive into responses and difficulty.</small></span><b>Expand ↘</b></summary><div className="pilotQuestionDetailsBody"><div className="sectionHeading"><div>
    <span className="miniEyebrow">QUESTION ANALYTICS</span><h2>Choice distribution — every question</h2>
    <p>The charts below use actual answer arrays stored in Neon, not preset frontend percentages.</p></div>
    <span className="pill">{details.length} questions</span></div>
@@ -95,6 +97,6 @@ export default async function SampleAnalytics(){
       <strong>{d[k]}</strong>
     </div>)}
    </article>)}</div>
-  </section>
+  </div></details>
  </div>;
 }

@@ -1,34 +1,26 @@
 'use client';
 import {useState} from 'react';
 import {useRouter} from 'next/navigation';
-
-/** Demo only. This form NEVER authenticates to Neon and grants no database access. */
+/** Guided demo entry only. This is NOT Neon authentication and creates no session. */
 export default function DemoAccess(){
  const router=useRouter();
  const [username,setUsername]=useState('');
  const [password,setPassword]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
- const signIn=(e:React.FormEvent<HTMLFormElement>)=>{
-  e.preventDefault();setError('');
-  if(username.trim()==='push'&&password==='12345678a'){
-   setBusy(true);router.push('/sample');return;
-  }
-  setError('Demo username or password is incorrect.');
+ const submit=(event:React.FormEvent<HTMLFormElement>)=>{
+  event.preventDefault();setError('');
+  if(username.trim()==='push'&&password==='12345678a'){setBusy(true);router.push('/sample');}
+  else setError('Check your demo username and password.');
  };
- return <form onSubmit={signIn} className="previewAuthForm">
-  <div className="previewAuthHead"><span className="miniEyebrow">SANDBOX ACCESS</span><h2>Explore with demo credentials</h2>
-   <p>View real Neon-backed sample analytics and test the OMR scanner without creating an account.</p></div>
-  <label htmlFor="preview-user">Demo username</label>
-  <input id="preview-user" autoComplete="username" value={username}
-   onChange={e=>setUsername(e.target.value)} placeholder="push" required/>
-  <label htmlFor="preview-pass">Demo password</label>
-  <input id="preview-pass" type="password" autoComplete="off" value={password}
-   onChange={e=>setPassword(e.target.value)} placeholder="12345678a" required/>
-  {error&&<p role="alert" className="alert">{error}</p>}
-  <button type="submit" className="button secondary block" disabled={busy}>
-   {busy?'Opening sandbox…':'Explore sandbox dashboard'} <span aria-hidden="true">↗</span>
-  </button>
-  <p className="previewAuthHint">Testing only. These shared credentials do not create a real sign-in session or provide access to private institute data.</p>
+ return <form className="pilotDemoForm" onSubmit={submit}>
+  <label htmlFor="pilot-demo-user">Demo username</label>
+  <input id="pilot-demo-user" value={username} onChange={e=>setUsername(e.target.value)} placeholder="push" autoComplete="username" required/>
+  <label htmlFor="pilot-demo-pass">Demo password</label>
+  <input id="pilot-demo-pass" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="12345678a" autoComplete="off" required/>
+  {error&&<div className="alert" role="alert">{error}</div>}
+  <button className="button primary block" type="submit" disabled={busy}>{busy?'Opening demo…':'Enter demo workspace'} <span aria-hidden="true">↗</span></button>
+  <p className="pilotDemoHelper">Shared testing credentials · push / 12345678a</p>
+  <p className="pilotLoginHint">Demo credentials only guide you to public synthetic data; they do not create an account or authorize private database access.</p>
  </form>;
 }
