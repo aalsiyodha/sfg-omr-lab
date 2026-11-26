@@ -44,7 +44,7 @@ import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import { rescueTestIdOffset } from './testIdAlignment';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
-import { OMR_LAYOUT } from '../config/omrLayout';
+import { OMR_LAYOUT, mmToPx } from '../config/omrLayout';
 import { logger } from '../diagnostics/diagnosticLogger';
 import { generateBubbleOverlay, generateMarkerOverlay } from './overlayGenerator';
 
@@ -163,6 +163,28 @@ function evaluateHypothesis(
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
+    if(hypothesis.qrLocated?.valid && hypothesis.qrLocated.center && persp.transform){
+      // Source QR projected into the candidate template: distinguishes
+      // unreadable QR from a correct source QR displaced by a poor warp.
+      const m=persp.transform.data64F as Float64Array;
+      const q=hypothesis.qrLocated.center;
+      if(m?.length>=9){
+        const d=m[6]*q.x+m[7]*q.y+m[8];
+        if(Math.abs(d)>1e-8){
+          const px=(m[0]*q.x+m[1]*q.y+m[2])/d;
+          const py=(m[3]*q.x+m[4]*q.y+m[5])/d;
+          const expectedX=mmToPx(OMR_LAYOUT.qr.xMm+OMR_LAYOUT.qr.sizeMm/2,dpi);
+          const expectedY=mmToPx(OMR_LAYOUT.qr.yMm+OMR_LAYOUT.qr.sizeMm/2,dpi);
+          logger.info('perspective','Exp3.7.3 source QR homography projection',{
+            hypothesis:hypothesis.name,
+            projectedPx:{x:Number(px.toFixed(1)),y:Number(py.toFixed(1))},
+            errorMm:{dx:Number(((px-expectedX)*25.4/dpi).toFixed(2)),
+              dy:Number(((py-expectedY)*25.4/dpi).toFixed(2))},
+            registrationAcceptanceUnchanged:true
+          });
+        }
+      }
+    }
     // Only Experimental 4's failure-only partial-ArUco candidates receive
     // this cheap preflight. A real verified 48+/50 timing lattice cannot
     // fail these deliberately permissive preliminary bounds.
