@@ -467,6 +467,8 @@ export interface ScanModeOptions {
   compact?: boolean;
   /** Exp3.7.2 only: QR-less geometry may produce non-scoring provisional data. */
   qrOptionalExperiment?: boolean;
+  /** Disable ML document recovery to benchmark classical CV independently. */
+  disableAiRecovery?: boolean;
 }
 export async function runFullScan(
   file: File,
@@ -1180,7 +1182,7 @@ export async function runFullScan(
     // deterministic registration and page-boundary methods have failed.
     // AI provides candidate geometry, never permission to grade. Every
     // candidate must pass the original QR identity and two timing-track gates.
-    if(!selected){
+    if(!selected && !options?.disableAiRecovery){
       const aiStart=Date.now();
       let aiAttempted=0;
       let aiStatus='not-started';
@@ -1356,6 +1358,12 @@ export async function runFullScan(
           rejections:aiRejections,durationMs:Date.now()-aiStart
         });
       }
+    }
+    if(!selected && options?.disableAiRecovery){
+      logger.info('perspective','Exp3.7.4 AI recovery deliberately disabled',{
+        aiModelLoaded:false,attempts:0,
+        classicalRegistrationOnly:true,
+        warning:'Only geometrically verified QR+timing registrations can be scored'});
     }
     // Only in the isolated 3.7.2 laboratory: fall back to independently
     // verified timing + printed fiducials after ALL strict QR attempts fail.
