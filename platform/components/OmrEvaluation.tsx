@@ -51,8 +51,9 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const [elapsed,setElapsed]=useState(0);
  const [showDiagnostics,setShowDiagnostics]=useState(false);
  const [diagnostics,setDiagnostics]=useState<string[]>([]);
- useEffect(()=>{if(!busy)return;const timer=setInterval(()=>setElapsed(Math.floor((Date.now()-startRef.current)/1000)),500);return()=>clearInterval(timer);},[busy]);
+
  const [busy,setBusy]=useState(false);
+ useEffect(()=>{if(!busy)return;const timer=setInterval(()=>setElapsed(Math.floor((Date.now()-startRef.current)/1000)),500);return()=>clearInterval(timer);},[busy]);
  const [stage,setStage]=useState('');
  const [error,setError]=useState('');
  const [scan,setScan]=useState<ScanResult|null>(null);
