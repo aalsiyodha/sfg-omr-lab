@@ -499,6 +499,9 @@ export async function runFullScan(
     onProgress?.({ stage: 'Finding reference markers (corner and edge midpoint)…', percent: 30 });
 
     const registrationStarted=Date.now();
+    let originalQrLocatorMs=0;
+    let boundaryQrMs=0;
+    let boundaryQrAttempts=0;
     const hypotheses: Hypothesis[] = [];
     let fastWarpAttempts=0;
     const usedGeometries=new Set<string>();
@@ -937,6 +940,7 @@ export async function runFullScan(
       const qrLocatorStart=Date.now();
       const located=locateQRInPhoto(loaded.canvas);
       photoQr=located;
+      originalQrLocatorMs=Date.now()-qrLocatorStart;
       logger.info('qrDecoding','Independent original-photo QR locator',{
         found:located.found,valid:located.valid,center:located.center,
         corners:located.corners,raw:located.raw,attempts:located.attempts,
@@ -1046,8 +1050,11 @@ export async function runFullScan(
             candidateCanvas=warpBoundaryOrientation(
               loaded.canvas,page.corners,turn,boundarySourceMat,boundaryOutputCanvas);
             if(!candidateCanvas)continue;
+            const qrStart=performance.now();
             const qr=decodeQRFromRegion(candidateCanvas,
               OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+            boundaryQrMs+=performance.now()-qrStart;
+            boundaryQrAttempts++;
             // QR-first short circuit avoids threshold scans on wrong orientations.
             if(!qr.valid){
               logger.info('perspective','Exp3.6 360-degree boundary orientation',{
@@ -1355,6 +1362,13 @@ export async function runFullScan(
       }
     }
     finishStage('registration');
+    logger.info('qrDecoding','Exp3.7.3 QR processing accounting',{
+      hypothesisQrMs:registrationAttempts.reduce((sum,a)=>sum+(a.qrMs??0),0),
+      hypothesisQrProbes:registrationAttempts.filter(a=>a.qrMs!==undefined).length,
+      originalQrLocatorMs,boundaryQrMs:Math.round(boundaryQrMs),
+      boundaryQrAttempts,
+      note:'Does not include AI direct-region and internal orientation probes; lower bound of QR processing time'
+    });
     logger.info('perspective','v2.5.2 registration candidates complete',{
       total:registrationAttempts.length,
       accepted:registrationAttempts.filter(a=>a.accepted).length,
