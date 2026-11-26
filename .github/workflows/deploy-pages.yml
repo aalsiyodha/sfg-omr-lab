@@ -25,6 +25,13 @@ jobs:
           npm run typecheck
           npm run lint
           npm run test:scanner
+      - name: Pin and verify same-origin OpenCV.js
+        run: |
+          mkdir -p public/opencv
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 180 \
+            https://docs.opencv.org/4.8.0/opencv.js -o public/opencv/opencv.js
+          test "$(wc -c < public/opencv/opencv.js)" -gt 1000000
+          grep -q 'Mat' public/opencv/opencv.js
       - name: Build the public scanner
         run: GITHUB_PAGES=true npm run build
       - name: Include the document-boundary recovery assets
@@ -32,6 +39,7 @@ jobs:
           mkdir -p dist/ai-model/scanic
           cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
           test -s dist/index.html
+          test -s dist/opencv/opencv.js
           test ! -d dist/rescue-lab
           test ! -d dist/cv-bench
           test ! -d dist/opt-lab
