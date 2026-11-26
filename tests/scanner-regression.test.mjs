@@ -2389,3 +2389,21 @@ test('Experiment 3.7.4 classical-only mode guards neural document inference',()=
     'src/pages/MultiPhotoDiagnosticsPage.tsx'),'utf8');
   assert.match(page,/disableAiRecovery:true/);
 });
+
+test('Original JPEG EXIF orientation 6/8 selects one-pass portrait image decoding',async()=>{
+  const loader=loadTS('src/scanner/imageLoader.ts');
+  const example=orientation=>{
+    const arr=new Uint8Array(40);const v=new DataView(arr.buffer);
+    v.setUint16(0,0xffd8);v.setUint16(2,0xffe1);
+    v.setUint16(4,34);arr.set([69,120,105,102,0,0],6);
+    arr.set([73,73,42,0,8,0,0,0],12);
+    v.setUint16(20,1,true);v.setUint16(22,0x0112,true);
+    v.setUint16(24,3,true);v.setUint32(26,1,true);
+    v.setUint16(30,orientation,true);
+    return {type:'image/jpeg',slice:()=>({arrayBuffer:async()=>arr.buffer})};
+  };
+  assert.equal(await loader.jpegIsExifPortrait(example(6)),true);
+  assert.equal(await loader.jpegIsExifPortrait(example(8)),true);
+  assert.equal(await loader.jpegIsExifPortrait(example(1)),false);
+  assert.equal(await loader.jpegIsExifPortrait({type:'image/png'}),false);
+});
