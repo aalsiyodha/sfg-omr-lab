@@ -294,6 +294,24 @@ export function interiorHatchEvidence(
   return {gapRows:rows,hatchLike:rows>=Math.max(4,Math.round(r*.6))};
 }
 
+/**
+ * Experimental v2.7.3: recover only broad, centre-and-edge-supported ink
+ * that was rejected by a directional stroke test. A high fill percentage
+ * by itself is NEVER sufficient, especially on compressed photos.
+ * Work from the same normalized grayscale and independent radial witness.
+ */
+export function robustBroadFillCandidate(e:{
+  fill:number; quadrants:number; sectors:number; core:number; middle:number;
+  outer:number; horizontal:number; diagonal:number; axis:number;
+  radial:string; hatch:boolean; competingFill:number;
+}):boolean {
+  return e.competingFill<12 && e.fill>=70 && e.fill<=96 &&
+    e.quadrants>=3 && e.sectors>=6 &&
+    e.core>=65 && e.middle>=65 && e.outer>=65 &&
+    e.horizontal<=55 && e.diagonal<=85 && e.axis>=60 &&
+    e.radial==='solid_like' && !e.hatch;
+}
+
 export function detectQuestion(
   correctedGray: any,  // grayscale cv.Mat of perspective-corrected image
   question: number,    // 1-based
@@ -397,6 +415,33 @@ export function detectQuestion(
     };
   });
 
+  // Experimental pilot: reconcile a directional stroke veto against an
+  // independent dense radial signature. This specifically targets cases
+  // like sideways Q4 while protecting crescents, dots and hollow rings.
+  // Never override an explicitly hatched bubble or a second marked option.
+  rawMeasurements.forEach((item, idx) => {
+    if (!item.detail.strokeLike || item.detail.isValid) return;
+    const m=item.measurement;
+    const competing=Math.max(0,...rawMeasurements.filter((_,j)=>j!==idx)
+      .map(v=>v.measurement.fillPercent));
+    const qualifies=robustBroadFillCandidate({
+      fill:m.fillPercent,quadrants:m.filledQuadrants??0,
+      sectors:m.filledSectors??0,core:m.radialCore??0,
+      middle:m.radialMiddle??0,outer:m.radialOuter??0,
+      horizontal:m.horizontalDisparity??999,
+      diagonal:m.diagonalDisparity??999,axis:m.axisCoverage??0,
+      radial:m.radialShape??'no_ink',hatch:m.hatchLike===true,
+      competingFill:competing
+    });
+    if(qualifies) {
+      item.detail.isValid=true;
+      item.detail.strokeLike=false;
+      item.detail.rejectReason=undefined;
+      m.validMark=true;
+      m.strokeLike=false;
+      m.rejectReason=undefined;
+    }
+  });
   const measurements = rawMeasurements.map(r => r.measurement);
   // Hybrid: inspect the outer paper only when the row lacks a confident
   // answer. An optional very faint second mark is handled separately below.
