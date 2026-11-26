@@ -18,13 +18,83 @@
     </script>
     <title>SFG OMR Lab — Scan and Review Answer Sheets</title>
     <script>
-      // OpenCV.js loading state
+      // A downloaded script is not necessarily an initialized WebAssembly runtime.
+      // Prefer the build-pinned, same-origin OpenCV asset and never signal "ready"
+      // until cv.Mat is usable. Local development can fall back to upstream.
       window.opencvReady = false;
       window.opencvError = null;
-    </script>
-    <script async src="https://docs.opencv.org/4.8.0/opencv.js"
-      onload="window.opencvReady = true; window.dispatchEvent(new Event('opencv-ready'));"
-      onerror="window.opencvError = 'Failed to load OpenCV.js'; window.dispatchEvent(new Event('opencv-error'));">
+      (() => {
+        const local = '%BASE_URL%opencv/opencv.js';
+        const fallback = 'https://docs.opencv.org/4.8.0/opencv.js';
+        const deadlineMs = 45000;
+        const startedAt = Date.now();
+        let done = false, fallbackStarted = false, handledThenable = false;
+        let interval, timer;
+        const ready = (instance) => {
+          if (done || !instance || typeof instance.Mat !== 'function') return false;
+          window.cv = instance;
+          done = true;
+          window.opencvReady = true;
+          window.opencvError = null;
+          clearInterval(interval);
+          clearTimeout(timer);
+          window.dispatchEvent(new Event('opencv-ready'));
+          return true;
+        };
+        const fail = (message) => {
+          if (done) return;
+          done = true;
+          window.opencvError = message;
+          clearInterval(interval);
+          clearTimeout(timer);
+          window.dispatchEvent(new Event('opencv-error'));
+        };
+        const probe = () => {
+          if (done) return;
+          if (ready(window.cv)) return;
+          const candidate = window.cv;
+          if (candidate && typeof candidate.then === 'function' && !handledThenable) {
+            handledThenable = true;
+            try {
+              // Do not Promise.resolve or await an OpenCV thenable that returns itself.
+              candidate.then((instance) => {
+                if (!ready(instance) && !ready(window.cv)) {
+                  handledThenable = false;
+                }
+              }, () => {
+                handledThenable = false;
+              });
+            } catch { handledThenable = false; }
+          }
+        };
+        const load = (src, upstream) => {
+          const script = document.createElement('script');
+          script.async = true;
+          script.src = src;
+          script.onload = probe;
+          script.onerror = () => {
+            if (done) return;
+            if (!upstream && !fallbackStarted) {
+              fallbackStarted = true;
+              load(fallback, true);
+            } else {
+              fail('OpenCV could not be downloaded. Check connectivity and reload.');
+            }
+          };
+          document.head.appendChild(script);
+        };
+        interval = setInterval(probe, 100);
+        timer = setTimeout(() => {
+          if (!done && !fallbackStarted) {
+            fallbackStarted = true;
+            load(fallback, true);
+            timer = setTimeout(() => fail('OpenCV did not initialize. Reload to retry.'), 20000);
+          } else if (!done) {
+            fail('OpenCV did not initialize. Reload to retry.');
+          }
+        }, deadlineMs);
+        load(local, false);
+      })();
     </script>
   </head>
   <body>
