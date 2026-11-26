@@ -2334,3 +2334,19 @@ test('sideways normalization is evidence-gated, not blindly applied',()=>{
   assert.equal(orientation.landscapeRotation(1600,1100,null),'none');
   assert.equal(orientation.landscapeRotation(1000,1500,{x:300,y:200}),'none');
 });
+
+test('Experiment 3.6: 360-degree quad orientation covers each distinct corner assignment',()=>{
+  const omni=loadTS('src/scanner/omniBoundary.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{},mmToPx:v=>v},
+    '../config/scannerSettings':{getSettings:()=>({scanDpi:150})},
+    './pageBoundaryRecovery':{orderPageCorners:points=>points}
+  });
+  const corners=[{x:12,y:5},{x:97,y:27},{x:81,y:152},{x:4,y:124}];
+  const orders=([0,1,2,3]).map(turn=>omni.cyclicCornerOrder(corners,turn));
+  assert.equal(new Set(orders.map(points=>JSON.stringify(points))).size,4);
+  for(let turn=0;turn<4;turn++){
+    assert.deepEqual(orders[turn][0],corners[turn]);
+    assert.deepEqual(orders[turn][3],corners[(turn+3)%4]);
+  }
+  assert.deepEqual(corners,[{x:12,y:5},{x:97,y:27},{x:81,y:152},{x:4,y:124}]);
+});
