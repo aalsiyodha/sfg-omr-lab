@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {saveReviewedSubmission} from '@/app/submit-actions';
+import {saveReviewedSubmission,saveDemoSubmission} from '@/app/submit-actions';
 import DemoComparison,{type DemoPeer} from '@/components/DemoComparison';
 import type {ScanResult,IntermediateImages} from '../scanner-core/types';
 import type {Choice} from '@/lib/key';
@@ -91,14 +91,33 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  const [candidateName,setCandidateName]=useState('');
  const [saveBusy,setSaveBusy]=useState(false);
  const [savedMessage,setSavedMessage]=useState('');
+ const [livePeers,setLivePeers]=useState<DemoPeer[]>(demoPeers);
+ const [demoSaveState,setDemoSaveState]=useState<'idle'|'saving'|'saved'|'failed'>('idle');
+ const savedScanRef=useRef<ScanResult|null>(null);
  const complete=published&&answerKey.length===50&&answerKey.every(x=>x!==null);
+ useEffect(()=>{
+  if(!ignoreTestIdForDemo||!scan||!score||savedScanRef.current===scan)return;
+  savedScanRef.current=scan;
+  let active=true;
+  setDemoSaveState('saving');
+  void saveDemoSubmission({
+   responses:score.rows.map(r=>r.response),statuses:score.rows.map(r=>r.status),
+   confirmed:score.rows.map(r=>r.reviewed),qrVerified:scan.qrValid,
+   alignmentVerified:scan.alignmentVerified===true,timingMatched:scan.alignmentMatched||0
+  }).then(result=>{
+   if(!active)return;
+   setSavedMessage(result.message);setDemoSaveState(result.ok?'saved':'failed');
+   if(result.ok&&result.peers)setLivePeers(result.peers);
+  }).catch(()=>{if(active){setDemoSaveState('failed');setSavedMessage('Unable to reach Neon. Your score remains available locally.');}});
+  return()=>{active=false;};
+ },[score,scan,ignoreTestIdForDemo]);
  useEffect(()=>{if(score&&ignoreTestIdForDemo&&reportRef.current){reportRef.current.scrollIntoView({behavior:'smooth',block:'start'});}},[score,ignoreTestIdForDemo]);
  const blocked=scan?acceptedScan(scan,testNumber,ignoreTestIdForDemo):null;
  const flagged=scan?.answers.filter(needsManualReview)||[];
  const unreviewed=flagged.filter(r=>!confirmed[r.question]).length;
  const scanImage=async(file?:File)=>{
   if(!file)return;
-  setError('');setScore(null);setScan(null);setOverlay(null);setSavedMessage('');
+  setError('');setScore(null);setScan(null);setOverlay(null);setSavedMessage('');setDemoSaveState('idle');
   setConfirmed({});setFileName(file.name);
   setDiagnostics([]);setElapsed(0);
   if(!complete){setError('Publish a complete answer key for this test before evaluating sheets.');return;}
@@ -179,7 +198,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
     <p>Test {testNumber} · {testTitle}. The scanner checks QR, geometry and 50 timing marks before any score is calculated.</p>
    </div><span className="pill">Scanner v2.7.1</span>
   </div>
-  {ignoreTestIdForDemo&&<div className="notice"><strong>Demo-only Test ID bypass:</strong> a mismatched printed Test ID does not block local score calculation. QR and geometry verification still apply. Results cannot be saved to Neon from this page.</div>}
+  {ignoreTestIdForDemo&&<div className="notice"><strong>Demo-only Test ID bypass:</strong> a mismatched printed Test ID does not block local score calculation. QR and geometry verification still apply. Verified scanned answers are automatically saved in the Neon development database.</div>}
   {!complete?<div className="notice">Publish the test's complete answer key first. Only published keys can be used for scoring.</div>:<>
    <div className="omrInputPanel">
     <div className="omrInputHeader"><span className="omrDropIcon">▣</span><div><strong>Scan an OMR answer sheet</strong>
@@ -241,13 +260,13 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
     <div className="editorBottom">
      <div><strong>Ready to evaluate</strong>
       <p>{unreviewed?unreviewed+' exceptional detection(s) need a new photo or conservative blank confirmation.':
-        'All automatic decisions are final. No candidate data is uploaded.'}</p></div>
+        'All automatic decisions are final. Verified answers are saved to Neon for comparison.'}</p></div>
      <button type="button" className="button primary" disabled={unreviewed>0}
       onClick={calculate}>{ignoreTestIdForDemo?'View score and compare all questions ↗':'Calculate score ↗'}</button>
     </div>
    </>}
    {score&&<div className="scoreResult" ref={reportRef}>
-     {ignoreTestIdForDemo?<DemoComparison score={score} peers={demoPeers}/>:<>
+     {ignoreTestIdForDemo?<><div className="notice" role="status"><strong>{demoSaveState==='saving'?'Saving to Neon…':demoSaveState==='saved'?'Saved to Neon ✓':demoSaveState==='failed'?'Neon save unavailable':'Scan completed'}</strong><p>{savedMessage||'Verified answers are stored anonymously in the development database.'}</p></div><DemoComparison score={score} peers={livePeers}/></>:<>
      <div className="scoreHero"><span>FINAL REVIEWED SCORE</span>
       <strong>{score.total.toFixed(2)} <small>/ {score.max.toFixed(2)}</small></strong>
       <p>Correct +{correctMarks} · Wrong {wrongMarks} · Blank 0 · Cancelled 0</p>
@@ -259,7 +278,7 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
       <div><span>Multiple</span><strong>{score.multiple}</strong></div>
       <div><span>Cancelled</span><strong>{score.cancelled}</strong></div>
      </div>
-     {ignoreTestIdForDemo&&demoPeers.length>0&&<div className="pilotCompare" aria-label="Compare your scanned score with the fictional demo students">
+     {false&&demoPeers.length>0&&<div className="pilotCompare" aria-label="Compare your scanned score with the fictional demo students">
       <div className="pilotCompareTop"><div><span className="miniEyebrow">YOUR RESULT VS THE DEMO CLASS</span>
        <h3>How did this sheet perform?</h3>
        <p>The comparison uses the same synthetic answer key and the four fictional student records in Neon.</p></div>
