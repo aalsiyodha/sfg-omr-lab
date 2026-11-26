@@ -98,18 +98,15 @@ export default function OmrEvaluation({testNumber,testTitle,answerKey,published,
  useEffect(()=>{
   if(!ignoreTestIdForDemo||!scan||!score||savedScanRef.current===scan)return;
   savedScanRef.current=scan;
-  let active=true;
   setDemoSaveState('saving');
   void saveDemoSubmission({
    responses:score.rows.map(r=>r.response),statuses:score.rows.map(r=>r.status),
    confirmed:score.rows.map(r=>r.reviewed),qrVerified:scan.qrValid,
    alignmentVerified:scan.alignmentVerified===true,timingMatched:scan.alignmentMatched||0
   }).then(result=>{
-   if(!active)return;
    setSavedMessage(result.message);setDemoSaveState(result.ok?'saved':'failed');
    if(result.ok&&result.peers)setLivePeers(result.peers);
-  }).catch(()=>{if(active){setDemoSaveState('failed');setSavedMessage('Unable to reach Neon. Your score remains available locally.');}});
-  return()=>{active=false;};
+  }).catch(()=>{setDemoSaveState('failed');setSavedMessage('Unable to reach Neon. Your score remains available locally.');});
  },[score,scan,ignoreTestIdForDemo]);
  useEffect(()=>{if(score&&ignoreTestIdForDemo&&reportRef.current){reportRef.current.scrollIntoView({behavior:'smooth',block:'start'});}},[score,ignoreTestIdForDemo]);
  const blocked=scan?acceptedScan(scan,testNumber,ignoreTestIdForDemo):null;
