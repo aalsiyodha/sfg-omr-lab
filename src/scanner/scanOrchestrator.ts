@@ -1151,7 +1151,46 @@ export async function runFullScan(
                 color=cv.imread(warped.canvas);
                 gray=new cv.Mat();
                 cv.cvtColor(color,gray,cv.COLOR_RGBA2GRAY);
-                const check=verifyTimingMarks(gray,dpi);
+                let check=verifyTimingMarks(gray,dpi);
+                // A loosely correct joint fit can have a few millimetres of
+                // drift. Existing independent timing-square correction may
+                // improve it, but NEVER accept unless the exact source QR is
+                // still decoded and both timing tracks independently pass.
+                if(!check.passed && check.matched>=6 &&
+                  check.leftMatched>=2 && check.rightMatched>=2){
+                  const refined=refineByTimingSquares(color,dpi);
+                  if(refined){
+                    let refinedGray:any=null;
+                    let adopted=false;
+                    try{
+                      cv.imshow(warped.canvas,refined.corrected);
+                      const correctedQr=decodeQRFromRegion(warped.canvas,
+                        OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+                      if(correctedQr.valid&&correctedQr.raw===photoQr.raw){
+                        refinedGray=new cv.Mat();
+                        cv.cvtColor(refined.corrected,refinedGray,cv.COLOR_RGBA2GRAY);
+                        const correctedCheck=verifyTimingMarks(refinedGray,dpi);
+                        logger.info('perspective','Classical joint-fit timing refinement',{
+                          pageCandidate:candidateIndex,turnDegrees:turn*90,
+                          before:check.matched,after:correctedCheck.matched,
+                          left:correctedCheck.leftMatched,
+                          right:correctedCheck.rightMatched,
+                          qrIdentityUnchanged:true
+                        });
+                        if(shouldAdoptTimingRefinement(check,correctedCheck)){
+                          cleanupMats(color,gray);
+                          color=refined.corrected;
+                          gray=refinedGray;refinedGray=null;
+                          check=correctedCheck;
+                          adopted=true;
+                        }
+                      }
+                    }finally{
+                      if(!adopted)cleanupMats(refined.corrected);
+                      cleanupMats(refinedGray,refined.transform);
+                    }
+                  }
+                }
                 logger.info('perspective','Classical QR+paper joint-fit result',{
                   pageCandidate:candidateIndex,method:page.method,
                   turnDegrees:turn*90,preflightErrorMm:pre.errorMm,
