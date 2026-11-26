@@ -39,11 +39,13 @@ export function comparePhotos(scans:PhotoScan[]) {
 }
 export function buildCombinedReport(scans:PhotoScan[]):string {
   const c=comparePhotos(scans);
+  const provisionalCount=scans.filter(s=>s.result?.provisional).length;
   const out=[
-    'SFG OMR Lab — Experiment 3.7.1 — Multi-photo diagnostic (same physical OMR)',
+    'SFG OMR Lab — Experiment 3.7.2 — Multi-photo diagnostic (same physical OMR)',
     'Generated: '+new Date().toISOString(),
     'Scanner runs: '+scans.length+' | Verified same-identity scans: '+c.same.length,
     'Reference: '+(c.reference??'unverified'),
+    'PROVISIONAL QR-LESS GEOMETRY: '+provisionalCount+' scan(s); no student identity, not scored, excluded from same-identity comparison.',
     'NOTE: Each photo is scanned independently. No answers are merged or changed.',
     'NOTE: Luminance/edge metrics are estimates from downsampled source pixels, not calibrated light measurements.',
     '',
@@ -60,6 +62,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
       ' | dark pixels '+p.shadows+'% | clipped highlights '+p.highlights+'% | edge score '+p.edge,
       '  '+(r?'Status '+r.overallStatus+' | '+(scanIdentity(r)??'identity not verified')+
         ' | QR '+(r.qrValid?'valid':'invalid')+
+        (r.provisional?' | PROVISIONAL GEOMETRY — NOT SCORED':'')+
         ' | timing '+(r.alignmentMatched??'unknown')+'/50 | registration '+(r.registrationMethod??'none')+
         ' | rotated180 '+Boolean(r.orientationRotated)+
         ' | answers '+(counts.detected??0)+' detected / '+(counts.blank??0)+' blank / '+
