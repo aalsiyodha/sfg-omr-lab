@@ -7,11 +7,12 @@ import { buildCombinedReport, comparePhotos, type PhotoMetrics, type PhotoScan }
 import './v26.css';
 
 type Props={appState:AppState};
-type Entry={file:File; preview:string; scan:PhotoScan|null};
+type Entry={file:File; scan:PhotoScan|null};
 const round=(n:number)=>Math.round(n*10)/10;
 
 async function imageMetrics(file:File):Promise<PhotoMetrics>{
-  const bitmap=await createImageBitmap(file);
+  // Request a small decode so photo statistics don't allocate another 12MP bitmap.
+  const bitmap=await createImageBitmap(file,{resizeWidth:256,resizeHeight:256,resizeQuality:'medium'});
   try {
     const width=bitmap.width,height=bitmap.height;
     const scale=256/Math.max(width,height);
@@ -56,6 +57,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const [error,setError]=useState('');
   const input=useRef<HTMLInputElement>(null);
   const inProgress=useRef(false);
+  const cancelRequested=useRef(false);
   const addFiles=(event:ChangeEvent<HTMLInputElement>)=>{
     const incoming=Array.from(event.target.files??[]);
     event.target.value='';
@@ -66,24 +68,26 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
       setError('Use JPG, PNG or WebP photos under 25 MB each. Unsupported files were skipped.');
     }else setError('');
     setEntries(previous=>{
-      const remaining=Math.max(0,8-previous.length);
-      if(acceptable.length>remaining)setError('Maximum eight photos per comparison. Extra files were skipped.');
+      const remaining=Math.max(0,10-previous.length);
+      if(acceptable.length>remaining)setError('Maximum ten photos per comparison. Extra files were skipped.');
       return [...previous,...acceptable.slice(0,remaining).map(file=>({
-        file,preview:URL.createObjectURL(file),scan:null
+        file,scan:null
       }))];
     });
   };
   const clear=()=>{
     if(busy)return;
-    entries.forEach(x=>URL.revokeObjectURL(x.preview));
     setEntries([]);setError('');setStep('');
   };
   const run=async()=>{
     if(inProgress.current||entries.length<2||opencv!=='ready')return;
-    inProgress.current=true;setBusy(true);setError('');
+    inProgress.current=true;cancelRequested.current=false;setBusy(true);setError('');
     const files=[...entries];
     try{
       for(let i=0;i<files.length;i++){
+        if(cancelRequested.current)break;
+        // Yield between scans so mobile can paint progress and reclaim memory.
+        await new Promise<void>(resolve=>window.setTimeout(resolve,120));
         const entry=files[i];
         setStep('Photo '+(i+1)+'/'+files.length+': measuring light and scanning');
         let metrics:PhotoMetrics={width:0,height:0,mean:0,contrast:0,shadows:0,highlights:0,edge:0,landscape:false};
@@ -95,7 +99,12 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
             {fastQrRoi:true,coarseToFine:true,robustFusion:true,
               proofscan:false,proofmodel:false,proofmesh:false,
               simdProbe:false,ttopProbe:false});
-          result=scan.result;
+          // Drop large image overlays; only the compact decision and optical
+          // data are retained for the multi-photo comparison.
+          result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
+            log.level==='ERROR'||log.level==='WARNING'||
+            /registration performance|selected .* registration|timing-track|scan stage timings|calibration/i.test(log.message)
+          ).slice(-24)};
           if(result.overallStatus==='failed')problem=result.errors.join('; ')||'Registration failed';
         }catch(e){
           problem=e instanceof Error?e.message:String(e);
@@ -106,19 +115,20 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
         files[i]={...entry,scan:record};
       }
       const checked=comparePhotos(files.flatMap(e=>e.scan?[e.scan]:[]));
-      if(checked.same.length<2)setError('Comparison needs at least two verified scans of the same student and test. You can still export the report.');
+      if(cancelRequested.current)setError('Analysis stopped. Completed photo reports are retained.');
+      else if(checked.same.length<2)setError('Comparison needs at least two verified scans of the same student and test. You can still export the report.');
     }finally{
       inProgress.current=false;setBusy(false);setStep('');
     }
   };
   const scans=entries.flatMap(e=>e.scan?[e.scan]:[]);
-  const completed=entries.length>=2&&scans.length===entries.length&&!busy;
+  const completed=scans.length>=2&&!busy;
   const comparison=comparePhotos(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
       <div className="text-secondary small mb-2">SCANNER LAB · v{APP_BUILD_META.version}</div>
       <h1 className="h3 fw-bold mb-2">Compare multiple photos of one OMR</h1>
-      <p className="text-secondary mb-2">Upload 2–8 different photos of the <strong>same physical sheet</strong>.
+      <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
         No answer is silently combined or changed.</p>
       <p className="small text-secondary">Photos stay in your browser. The combined text report contains optical measurements,
@@ -128,23 +138,21 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
       <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between">
         <div>
           <h2 className="h6 fw-semibold mb-1">Add OMR photos</h2>
-          <div className="text-secondary small">Different angles, rotations and lighting. Original files up to 25 MB each.</div>
+          <div className="text-secondary small">Different angles, rotations and lighting. Up to 10 originals of 25 MB each; no heavy photo previews.</div>
         </div>
         <div className="d-flex gap-2">
           <input ref={input} className="d-none" type="file" multiple accept="image/jpeg,image/png,image/webp"
             onChange={addFiles}/>
-          <button type="button" className="btn btn-primary" disabled={busy||entries.length>=8}
+          <button type="button" className="btn btn-primary" disabled={busy||entries.length>=10}
             onClick={()=>input.current?.click()}>Choose photos</button>
           <button type="button" className="btn btn-outline-secondary" disabled={busy||!entries.length}
             onClick={clear}>Clear</button>
         </div>
       </div>
       {entries.length>0&&<div className="mt-3 row g-2">
-        {entries.map((entry,i)=><div className="col-6 col-md-3" key={entry.preview}>
+        {entries.map((entry,i)=><div className="col-6 col-md-3" key={i}>
           <div className="border rounded p-2 h-100">
-            <img src={entry.preview} alt={'OMR photo '+(i+1)} loading="lazy"
-              style={{width:'100%',height:135,objectFit:'contain'}}/>
-            <div className="small text-truncate" title={entry.file.name}>{i+1}. {entry.file.name}</div>
+            <div className="small text-truncate fw-semibold" title={entry.file.name}>{i+1}. {entry.file.name}</div>
             <div className="small text-secondary">{round(entry.file.size/1024)} KB
               {entry.scan?' · '+(entry.scan.result?.overallStatus??'failed'):''}</div>
           </div>
@@ -154,6 +162,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
         <button type="button" className="btn btn-primary" onClick={()=>void run()}
           disabled={busy||entries.length<2||opencv!=='ready'}>
           {busy?'Analysing…':'Analyse '+entries.length+' photos'}</button>
+        {busy&&<button type="button" className="btn btn-outline-secondary" onClick={()=>{cancelRequested.current=true;setStep('Stopping after current photo…');}}>Stop after this photo</button>}
         <span className="small text-secondary" role="status">
           {step||(opencv!=='ready'?'OpenCV '+opencv+' — analysis unavailable':
             entries.length<2?'Choose at least two photos':'Ready for local analysis')}</span>
