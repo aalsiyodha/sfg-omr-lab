@@ -6,6 +6,7 @@
  */
 import { OMR_LAYOUT, mmToPx } from '../config/omrLayout';
 import { getSettings } from '../config/scannerSettings';
+import { proposeVertexQuads } from './classicalVertexLab';
 declare const cv:any;
 
 export type PagePoint={x:number;y:number};
@@ -24,6 +25,7 @@ export interface BoundaryEvidence {
   candidateSummary?:Array<{method:string;score:number;areaRatio:number;minMarginRatio:number}>;
   thresholdsTried?:number;
   method?:string;
+  vertexLab?:{harris:number;tangent:number;errors:string[]};
 }
 export interface BoundaryResult {
   canvas:HTMLCanvasElement;
@@ -113,6 +115,7 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
     kernel=cv.getStructuringElement(cv.MORPH_RECT,new cv.Size(9,9));
     const areaFloor=small.cols*small.rows*(mode==='strict'?.18:.095);
     const candidates:{corners:PagePoint[];area:number;score:number;method:string}[]=[];
+    const vertexContours:PagePoint[][]=[];
     // Distinct thresholds are important for papers with hard sunlight and
     // shadow. Multiple candidate families are bounded and only searched
     // after the normal QR-verified registration has failed.
@@ -137,6 +140,10 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
           try{
             const area=cv.contourArea(contour);
             if(area<areaFloor||area>small.cols*small.rows*.96)continue;
+            if(vertexContours.length<20&&contour.rows>=12){
+              const d=contour.data32S;
+              if(d?.length>=24)vertexContours.push(Array.from({length:Math.min(contour.rows,400)},(_,k)=>({x:d[k*2],y:d[k*2+1]})));
+            }
             hull=new cv.Mat();cv.convexHull(contour,hull,false,true);
             const perimeter=cv.arcLength(hull,true);
             if(perimeter<=0)continue;
@@ -192,6 +199,41 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
           }finally{approx?.delete?.();hull?.delete?.();contour.delete();}
         }
       }finally{contours.delete();hierarchy.delete();contours=null;hierarchy=null;}
+    }
+    // Failure-only experiment: use Harris peaks near known candidate paper
+    // corners and tangent deflection of real page contours to propose
+    // additional geometries. Both remain subject to the original boundary
+    // gates and later QR + independently verified left/right timing marks.
+    if(mode==='strict' && candidates.length>0){
+      const lab=proposeVertexQuads(small,vertexContours,
+        candidates.slice(0,5).map(c=>c.corners.map(p=>({
+          x:p.x*scale,y:p.y*scale
+        }))),{maxCandidates:10});
+      for(const proposal of lab.proposals){
+        const corners=orderPageCorners(proposal.corners.map(p=>({
+          x:p.x/scale,y:p.y/scale
+        })));
+        if(!corners||!plausiblePageBoundary(corners,source.width,source.height,mode)||
+          hasClippedImageEdge(corners,source.width,source.height)||
+          touchesImageCorner(corners,source.width,source.height))continue;
+        if(options?.qrCenter){
+          const q=options.qrCenter;
+          const signs=corners.map((p,i)=>{
+            const n=corners[(i+1)%4];
+            return (n.x-p.x)*(q.y-p.y)-(n.y-p.y)*(q.x-p.x);
+          });
+          if(signs.some(x=>x>0)&&signs.some(x=>x<0))continue;
+        }
+        if(candidates.some(c=>c.corners.every((p,i)=>
+          Math.hypot(p.x-corners[i].x,p.y-corners[i].y)<10)))continue;
+        const area=cv.contourArea(cv.matFromArray(4,1,cv.CV_32SC2,
+          corners.flatMap(p=>[Math.round(p.x*scale),Math.round(p.y*scale)])));
+        // The method remains explicit in forensic diagnostics.
+        candidates.push({corners,area,score:area/(small.cols*small.rows)-.03,
+          method:'vertex-'+proposal.method});
+      }
+      diagnostics.vertexLab={harris:lab.stats.harris,
+        tangent:lab.stats.tangent,errors:lab.stats.errors};
     }
     candidates.sort((a,b)=>b.score-a.score);
     const candidateSummary=candidates.slice(0,4).map(c=>({
