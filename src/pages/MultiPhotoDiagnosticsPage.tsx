@@ -180,8 +180,14 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
     {scans.length>0&&<section className="card p-3 p-md-4 mb-3">
       <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
         <h2 className="h6 fw-bold mb-0">Diagnostic overview</h2>
-        <button type="button" className="btn btn-outline-primary btn-sm" disabled={!completed}
-          onClick={()=>saveReport(buildCombinedReport(scans))}>Download combined diagnostic .txt</button>
+        <div className="d-flex gap-2 flex-wrap">
+          <button type="button" className="btn btn-outline-primary btn-sm" disabled={!completed}
+            onClick={()=>saveReport(buildCombinedReport(scans))}>Download combined diagnostic .txt</button>
+          <button type="button" className="btn btn-outline-primary btn-sm" disabled={!completed}
+            onClick={()=>void navigator.clipboard.writeText(buildCombinedReport(scans))
+              .then(()=>window.alert('Diagnostic report copied'))
+              .catch(()=>window.alert('Clipboard permission denied — use Download'))}>Copy report</button>
+        </div>
       </div>
       <div className="small text-secondary mb-3">
         {comparison.same.length} matching verified scans · {comparison.excluded.length} excluded ·
