@@ -105,13 +105,18 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
             setStep('Photo '+(i+1)+'/'+files.length+': '+p.stage),
             {fastQrRoi:true,coarseToFine:true,robustFusion:true,
               proofscan:false,proofmodel:false,proofmesh:false,
-              simdProbe:false,ttopProbe:false,compact:true,qrOptionalExperiment:false,disableAiRecovery:true});
-          // Drop large image overlays; only the compact decision and optical
-          // data are retained for the multi-photo comparison.
+              simdProbe:false,ttopProbe:false,compact:true,qrOptionalExperiment:false,disableAiRecovery:false});
+          // Preserve forensic evidence rather than discarding 3.7.9 events:
+          // previous report filtered out exactly the corner and timing logs
+          // needed to explain its six remaining failed registrations.
+          // Retain compact structured events for all candidates, both
+          // detectors, source QR, AI stages, and per-row timing diagnostics.
+          // Exclude noisy image/debug output; do not cap by taking the LAST
+          // events as this loses early classical evidence on AI failures.
           result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
             log.level==='ERROR'||log.level==='WARNING'||
-            /registration performance|selected .* registration|timing-track|scan stage timings|calibration|original-photo QR locator|Sideways OMR orientation|recovery conclusion|registration candidates complete|outer-page boundary recovery|Exp3.7 alternative paper hypotheses|Exp3.6 360-degree boundary orientation|Exp3.6 verified all-angle|AI last-resort summary|AI document boundary recovery|AI first-warp independent landmark verification|AI orientation probe error|Exp3.7.4|Exp3.7.3|QR processing accounting/i.test(log.message)
-          ).slice(-75)};
+            /detailed registration candidate|registration performance|registration candidates complete|selected .* registration|scan stage timings|independent original-photo QR|original-photo QR locator|Exp3\\.7\\.9|Exp3\\.7\\.10|corner.*candidate coordinates|outer-page boundary recovery|small-page boundary|alternative paper hypotheses|360-degree boundary orientation|AI trace:|AI document boundary recovery|AI 360-degree candidate|AI first-warp|AI candidate verification|AI-prewarped fiducial|AI-assisted|AI last-resort summary|Optional AI recovery unavailable|QR processing accounting|failed registration taxonomy|timing-track|grayscale strip geometry diagnostic|Sideways OMR orientation|Lite gentle-curve|timing-assisted refinement/i.test(log.message)
+          ).slice(0,250)};
           if(result.overallStatus==='failed')problem=result.errors.join('; ')||'Registration failed';
         }catch(e){
           problem=e instanceof Error?e.message:String(e);
@@ -133,14 +138,13 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const comparison=comparePhotos(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 3.7.9 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.7.9 — Classical CV Only — No AI</h1>
-      <p className="small text-secondary">No neural document detector is executed in this experiment. Only conventional OpenCV, QR, ArUco, corner, midpoint, boundary and timing geometry operate. Full QR and dual-side timing validation remain required.</p>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.7.10 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.7.10 — Classical CV + Local AI Rescue</h1>
+      <p className="small text-secondary">Classical OpenCV runs first. When all classical registration methods fail, the optional on-device Scanic corner model proposes another page outline. AI cannot recognize answers or bypass QR identity and both timing tracks. The report identifies which method succeeded and whether AI ran.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
         No answer is silently combined or changed.</p>
-      <p className="small text-secondary">Photos stay in your browser. The combined text report contains optical measurements,
-        verification and disagreements—not the photo pixels.</p>
+      <p className="small text-secondary">Photos stay in your browser. The combined text report contains per-photo classical and local-AI outcomes, timing residuals and answer disagreements, but no photo pixels.</p>
     </div>
     <section className="card p-3 p-md-4 mb-3">
       <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between">
@@ -195,18 +199,19 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
       </div>
       <div className="table-responsive">
         <table className="table table-sm align-middle small">
-          <thead><tr><th>Photo</th><th>Scan / identity</th><th>Detected</th><th>Light (0–255)</th><th>Contrast</th><th>Orientation</th></tr></thead>
+          <thead><tr><th>Photo</th><th>Scan / identity</th><th>Method</th><th>Timing</th><th>Detected</th><th>Light (0–255)</th><th>Contrast</th><th>Orientation</th></tr></thead>
           <tbody>{scans.map((s,i)=><tr key={i}>
             <td title={s.filename}>{i+1}. {s.filename}</td>
             <td>{s.result?.overallStatus??'failed'} / {s.result?.qrValid?'QR ✓':'QR unverified'}</td>
+            <td>{s.result?.registrationMethod?.startsWith('ai-')?'Local AI':s.result?.registrationMethod?'Classical':'Unverified'}</td>
+            <td>{s.result?.alignmentVerified?s.result.alignmentMatched+'/50':'Not verified'}</td>
             <td>{s.result?.answers.filter(a=>a.status==='detected').length??'–'}/50</td>
             <td>{s.metrics.mean}</td><td>{s.metrics.contrast}</td>
             <td>{s.metrics.landscape?'Landscape':'Portrait'}</td>
           </tr>)}</tbody>
         </table>
       </div>
-      <p className="text-secondary small mb-0">Brightness/contrast describe sampled pixel data, not calibrated lux.
-        Full grayscale reference, timing marks, registration method, and rejected-ink reasons are included in the report.</p>
+      <p className="text-secondary small mb-0">Brightness/contrast are approximate. Download the report for classical-versus-AI attribution, rejected registration candidates, per-side timing offsets and answer disagreements.</p>
     </section>}
     {completed&&<section className="card p-3 p-md-4 mb-3">
       <h2 className="h6 fw-bold">Answer disagreements</h2>
