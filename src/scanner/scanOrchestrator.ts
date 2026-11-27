@@ -1866,21 +1866,6 @@ export async function runFullScan(
       const proofMeshEnabled=options?.proofmesh ?? experimentalParams.get('proofmesh')==='1';
       const proofModelEnabled=options?.proofmodel ?? experimentalParams.get('proofmodel')==='1';
       let activeGridOffset=(q:number)=>offsetForQuestion(grid,q);
-      const ringEnabled=options?.answerCentricRings ?? true;
-      const ringStart=Date.now();
-      const ringRecovery=ringEnabled?refineQuestionRings(chosen.gray,dpi,activeGridOffset):null;
-      const ringMs=Date.now()-ringStart;
-      if(ringRecovery&&ringRecovery.adopted>0){
-        const prior=activeGridOffset;
-        activeGridOffset=(q:number)=>ringRecovery.offsets[q]??prior(q);
-      }
-      logger.info('perspective','Exp3.8 heldout per-question printed-ring localisation',{
-        enabled:ringEnabled,adopted:ringRecovery?.adopted??0,
-        rejected:ringRecovery?.rejected??50,meanHoldoutGain:ringRecovery?.meanHoldoutGain??0,
-        maxDisplacement:ringRecovery?.maxDisplacement??0,
-        questions:ringRecovery?.checks??[],durationMs:ringMs,
-        note:'Fit A/C rings, validate B/D rings. No grade may be inferred from geometry confidence.'
-      });
       let rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
         activeGridOffset,rawInkThreshold);
       const excludedInkQuestions=new Set(rawAnswers.filter(row=>
@@ -1908,6 +1893,25 @@ export async function runFullScan(
         durationMs:meshMs,
         note:'Candidate based only on printed rings; cannot override QR identity'
       });
+      const ringEnabled=options?.answerCentricRings ?? true;
+      const ringStart=Date.now();
+      const ringRecovery=ringEnabled?refineQuestionRings(chosen.gray,dpi,activeGridOffset):null;
+      const ringMs=Date.now()-ringStart;
+      if(ringRecovery&&ringRecovery.adopted>0){
+        const prior=activeGridOffset;
+        activeGridOffset=(q:number)=>ringRecovery.offsets[q]??prior(q);
+      }
+      logger.info('perspective','Exp3.8 heldout per-question printed-ring localisation',{
+        enabled:ringEnabled,adopted:ringRecovery?.adopted??0,
+        rejected:ringRecovery?.rejected??50,meanHoldoutGain:ringRecovery?.meanHoldoutGain??0,
+        maxDisplacement:ringRecovery?.maxDisplacement??0,
+        questions:ringRecovery?.checks??[],durationMs:ringMs,
+        note:'Fit A/C rings, validate B/D rings. No grade may be inferred from geometry confidence.'
+      });
+      if(ringRecovery?.adopted){
+        rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
+          activeGridOffset,rawInkThreshold);
+      }
       // Independent original-source photometry is a comparison measurement
       // rather than an automatic change to the strict bubble classifier.
       const sourceProbeEnabled=options?.sourceInkProbe??true;
