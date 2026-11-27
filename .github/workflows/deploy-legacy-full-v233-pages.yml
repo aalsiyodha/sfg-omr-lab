@@ -35,6 +35,11 @@ jobs:
         with:
           ref: experiment/3-7-6-color-paper-geometry
           path: comparison
+      - name: Checkout isolated Classical CV + Local AI Rescue 3.7.10
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-10-classical-local-ai-forensics
+          path: classical-ai-3710
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -44,6 +49,7 @@ jobs:
             experiment/package-lock.json
             baseline/package-lock.json
             comparison/package-lock.json
+            classical-ai-3710/package-lock.json
       - name: Validate and build stable root
         working-directory: production
         run: |
@@ -90,6 +96,22 @@ jobs:
             mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/$version"
             cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/$version/"
           done
+      - name: Validate and build Classical CV + Local AI Rescue 3.7.10
+        working-directory: classical-ai-3710
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:scanner
+          mkdir -p public/opencv
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/3.7.10/' npm run build
+          mkdir -p dist/ai-model/scanic
+          cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+          mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.7.10"
+          cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.7.10/"
       - name: Combine stable root and isolated experiment
         run: |
           mkdir -p production/dist/experiments/legacy-full-v233
@@ -99,6 +121,9 @@ jobs:
           test -s production/dist/experiments/legacy-full-v233/opencv/opencv.js
           test -s production/dist/experiments/3.7.4/index.html
           test -s production/dist/experiments/3.7.6/index.html
+          test -s production/dist/experiments/3.7.10/index.html
+          test -s production/dist/experiments/3.7.10/opencv/opencv.js
+          test -d production/dist/experiments/3.7.10/ai-model/scanic
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
