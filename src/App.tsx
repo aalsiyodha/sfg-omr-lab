@@ -5,6 +5,7 @@ import PracticeTestPage from './pages/PracticeTestPage';
 import ScanPage from './pages/ScanPage';
 import ResultsPage from './pages/ResultsPage';
 import DiagnosticsPage from './pages/DiagnosticsPage';
+import LegacyBatchPage from './pages/LegacyBatchPage';
 import { usePracticeTest } from './hooks/usePracticeTest';
 import { useScanResult } from './hooks/useScanResult';
 
@@ -45,7 +46,7 @@ export default function App() {
 
   const appState: AppState = { opencv: opencvStatus, practice, scanning };
 
-  const Router = import.meta.env.BASE_URL === '/sfg-omr-lab/' ? HashRouter : BrowserRouter;
+  const Router = import.meta.env.BASE_URL.includes('/sfg-omr-lab/') ? HashRouter : BrowserRouter;
   return (
     <Router>
       <div className="min-vh-100 d-flex flex-column">
@@ -91,6 +92,7 @@ export default function App() {
             <Route path="/scan" element={<ScanPage appState={appState} />} />
             <Route path="/results" element={<ResultsPage appState={appState} />} />
             <Route path="/diagnostics" element={<DiagnosticsPage appState={appState} />} />
+            <Route path="/legacy-full-batch" element={<LegacyBatchPage appState={appState} />} />
           </Routes>
         </main>
 
