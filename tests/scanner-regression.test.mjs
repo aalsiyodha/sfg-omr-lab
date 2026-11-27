@@ -2380,14 +2380,17 @@ test('Experiment 3.7.3 P-1 hatch shadow requires paper-bright internal gaps',()=
   assert.equal(bright.hatchLike,true);
 });
 
-test('Experiment 3.7.4 classical-only mode guards neural document inference',()=>{
+test('Experiment 3.7.10 invokes local AI only after failed classical geometry and retains strict gates',()=>{
   const orchestrator=readFileSync(resolve(process.cwd(),
     'src/scanner/scanOrchestrator.ts'),'utf8');
   assert.match(orchestrator,/if\(!selected && !options\?\.disableAiRecovery\)\{/);
   assert.match(orchestrator,/disableAiRecovery\?: boolean/);
   const page=readFileSync(resolve(process.cwd(),
     'src/pages/MultiPhotoDiagnosticsPage.tsx'),'utf8');
-  assert.match(page,/disableAiRecovery:true/);
+  assert.match(page,/disableAiRecovery:false/);
+  assert.match(orchestrator,/if\(!selected && !options\?\.disableAiRecovery\)\{/);
+  assert.match(orchestrator,/directQR\.valid&&directTiming\.passed/);
+  assert.match(orchestrator,/sourceQrCenter:photoQr\?\.valid\?photoQr\.center:null/);
 });
 
 test('immutable OpenCV grayscale threshold cache returns identical value and supports invalidation',()=>{
