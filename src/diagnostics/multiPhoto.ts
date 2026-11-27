@@ -37,6 +37,55 @@ export function comparePhotos(scans:PhotoScan[]) {
   }
   return {usable,same,excluded,reference,differences};
 }
+/**
+ * 3.8.0 answer-first, label-free scorecard.
+ * Does NOT claim accuracy without a ground-truth key and adversarial marks.
+ * Unregistered/mismatched scans count against full-cohort reproducibility.
+ */
+export function answerQualityScorecard(scans:PhotoScan[]){
+  const c=comparePhotos(scans);
+  const samples=scans.map(s=>s.result?.processingTimeMs).filter(
+    (v):v is number=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);
+  const percentile=(p:number)=>samples.length?round(samples[
+    Math.min(samples.length-1,Math.ceil(p*samples.length)-1)]/1000):null;
+  let unanimous=0,modalSum=0,fullCohortUnanimous=0;
+  const questionAgreement:Array<{question:number;modal:number;unanimous:boolean;
+    mode:string;eligible:number}>=[];
+  if(c.same.length){
+    for(let q=1;q<=50;q++){
+      const values=c.same.map(s=>selected(s.result?.answers.find(x=>x.question===q)));
+      const counts=new Map<string,number>();
+      for(const v of values)counts.set(v,(counts.get(v)??0)+1);
+      const ranked=[...counts].sort((a,b)=>b[1]-a[1]);
+      const count=ranked[0][1],mode=ranked[0][0];
+      const fraction=count/values.length;
+      modalSum+=fraction;
+      if(count===values.length)unanimous++;
+      if(count===scans.length&&c.same.length===scans.length)fullCohortUnanimous++;
+      questionAgreement.push({question:q,modal:round(fraction*100),
+        unanimous:count===values.length,mode,eligible:values.length});
+    }
+  }
+  const statuses=c.same.flatMap(s=>s.result?.answers??[]);
+  const abstained=statuses.filter(row=>row.status==='uncertain'||row.status==='error');
+  const perPhoto=scans.map(s=>({filename:s.filename,verified:Boolean(s.result&&scanIdentity(s.result)),
+    detected:s.result?.answers.filter(a=>a.status==='detected').length??null,
+    abstained:s.result?.answers.filter(a=>a.status==='uncertain'||a.status==='error').length??null,
+    seconds:s.result?round(s.result.processingTimeMs/1000):null}));
+  return {
+    photos:scans.length,verifiedSameIdentity:c.same.length,
+    conditionalUnanimousQuestions:c.same.length>1?unanimous:null,
+    fullCohortUnanimousQuestions:scans.length>1?fullCohortUnanimous:null,
+    meanModalAgreementPercent:c.same.length>1?round(modalSum/50*100):null,
+    abstentionRatePercent:statuses.length?round(100*abstained.length/statuses.length):null,
+    p50Seconds:percentile(.50),p95Seconds:percentile(.95),
+    accuracy:'NOT MEASURED: ground-truth answer labels required',
+    incompleteMarkFalseAcceptRate:'NOT MEASURED: adversarial labelled sheet required',
+    perPhoto,questionAgreement,
+    caveat:'Agreement is label-free, and unanimous errors remain possible. Never merge answers across photos.'
+  };
+}
+
 export function buildCombinedReport(scans:PhotoScan[]):string {
   const c=comparePhotos(scans);
   const provisionalCount=scans.filter(s=>s.result?.provisional).length;
