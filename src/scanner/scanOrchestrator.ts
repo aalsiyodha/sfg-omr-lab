@@ -22,6 +22,7 @@ import { makeReviewCropSheet } from './reviewCropSheet';
 import { fitMaskedLatentPredictor } from './latentPredictor';
 import { predictSyntheticDecision, SYNTHETIC_MODEL_INFO } from './trainedDecisionHead';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
+import { detectLowSaturationPaper } from './colorPaperRecovery';
 import { warpBoundaryOrientation } from './omniBoundary';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
@@ -1032,10 +1033,23 @@ export async function runFullScan(
       // so the ORIGINAL sheet can be tilted at any angle and in perspective.
       // Cheap QR/geometry-verified fast registrations never enter this path.
       // A white-page contour alone is NEVER accepted as an OMR identity.
-      if(rough?.evidence.quadrilateral && !selected){
+      // Complement contrast/edge page detection with color-saturation cues,
+      // not a replacement for any marker-family registration method.
+      // Classical HSV contours only propose paper quadrilaterals; never
+      // approve an OMR unless the original QR and both timing tracks pass.
+      const colorQuads=detectLowSaturationPaper(loaded.canvas,5);
+      logger.info('perspective','Exp3.7.6 color-page boundary hypotheses',{
+        count:colorQuads.length,candidates:colorQuads.map(c=>({
+          method:c.method,areaRatio:c.areaRatio,corners:c.corners
+        })),acceptance:'Unchanged QR+independent dual-side timing verification'
+      });
+      if((rough?.evidence.quadrilateral || colorQuads.length>0) && !selected){
         const pageCandidates=[
-          {corners:rough.evidence.quadrilateral,method:rough.evidence.method??'primary'},
-          ...(rough.evidence.alternativeQuads??[])
+          ...(rough?.evidence.quadrilateral
+            ?[{corners:rough.evidence.quadrilateral,method:rough.evidence.method??'primary'}]
+            :[]),
+          ...(rough?.evidence.alternativeQuads??[]),
+          ...colorQuads
         ];
         logger.info('perspective','Exp3.7 alternative paper hypotheses',{
           alternatives:pageCandidates.length-1,
