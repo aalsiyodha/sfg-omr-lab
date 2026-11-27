@@ -152,7 +152,7 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
       'Incomplete-mark false accepts '+labelled.falseAccept+'/'+labelled.invalidTotal+
       ' | rate='+str(labelled.incompleteMarkFalseAcceptRatePercent)+'%',
       'Abstentions on labelled photos '+labelled.abstentions,
-      ...labelled.byQuestion.filter(q=>q.correct!==q.total||q.falseAccept>0)
+      ...(labelled.byQuestion??[]).filter(q=>q.correct!==q.total||q.falseAccept>0)
         .map(q=>'Q'+q.question+' groundTruth='+q.label+' correct='+q.correct+'/'+q.total+
           ' falseAccept='+q.falseAccept));
   }
