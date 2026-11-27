@@ -86,6 +86,54 @@ export function answerQualityScorecard(scans:PhotoScan[]){
   };
 }
 
+/**
+ * Optional manually entered ground truth. 'X' = deliberately incomplete
+ * mark (tick/crescent) that MUST NOT be accepted as any answer. 'blank' is
+ * genuinely unmarked, 'M' is intentionally multiple-marked.
+ * No cross-photo consensus is ever used as a substitute for ground truth.
+ */
+export function evaluateLabeledAnswers(scans:PhotoScan[],labelsText:string){
+  const tokens=labelsText.trim().split(/[\s,;|]+/).filter(Boolean)
+    .map(x=>x.toUpperCase());
+  const allowed=new Set(['A','B','C','D','-','BLANK','X','M','MULTIPLE']);
+  if(!labelsText.trim())return null;
+  if(tokens.length!==50||tokens.some(x=>!allowed.has(x)))
+    return {valid:false,error:'Provide exactly 50 labels: A, B, C, D, blank (-), X (incomplete mark), or M (multiple).'};
+  const c=comparePhotos(scans);
+  let correct=0,total=0,invalidTotal=0,falseAccept=0;
+  let abstentions=0;
+  const byQuestion:Array<{question:number;label:string;correct:number;
+    total:number;falseAccept:number}>=[];
+  for(let i=0;i<50;i++){
+    const label=tokens[i];
+    let rowCorrect=0,rowCount=0,rowFalse=0;
+    for(const s of c.same){
+      const row=s.result?.answers.find(a=>a.question===i+1);
+      if(!row)continue;
+      const accepted=row.status==='detected';
+      const predicted=selected(row);
+      const target=label==='-'||label==='BLANK'?'blank':
+        label==='M'||label==='MULTIPLE'?'multiple':label;
+      const exact=target==='X'?!accepted&&row.status!=='multiple':
+        predicted.toUpperCase()===target.toUpperCase();
+      if(exact){correct++;rowCorrect++;}
+      if(row.status==='uncertain'||row.status==='error')abstentions++;
+      if(target==='X'){
+        invalidTotal++;if(accepted){falseAccept++;rowFalse++;}
+      }
+      total++;rowCount++;
+    }
+    byQuestion.push({question:i+1,label,correct:rowCorrect,total:rowCount,
+      falseAccept:rowFalse});
+  }
+  return {valid:true,groundTruthPhotos:c.same.length,labels:tokens,
+    accuracyPercent:total?round(100*correct/total):null,
+    correct,total,abstentions,
+    incompleteMarkFalseAcceptRatePercent:invalidTotal?
+      round(100*falseAccept/invalidTotal):null,
+    falseAccept,invalidTotal,byQuestion,
+    note:'Unknown/uncertain predictions are not counted as correct. Incomplete X explicitly tests false acceptance.'};
+}
 export function buildCombinedReport(scans:PhotoScan[]):string {
   const c=comparePhotos(scans);
   const provisionalCount=scans.filter(s=>s.result?.provisional).length;
