@@ -2457,3 +2457,41 @@ test('Exp3.7.9 QR-relative corner assignment is invariant to 0/35/90/180 degree 
     }
   }
 });
+
+test('Exp3.7.9 small-page mode recovers a modest sheet without changing strict rejection',()=>{
+  const mod=loadTS('src/scanner/pageBoundaryRecovery.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}},mmToPx:x=>x},
+    '../config/scannerSettings':{getSettings:()=>({scanDpi:150})}
+  });
+  const small=[{x:300,y:430},{x:700,y:430},
+    {x:690,y:820},{x:290,y:820}];
+  assert.equal(mod.plausiblePageBoundary(small,1000,1400),false);
+  assert.equal(mod.plausiblePageBoundary(small,1000,1400,'small-page-rescue'),true);
+  assert.equal(mod.plausiblePageBoundary([
+    {x:0,y:0},{x:999,y:0},{x:999,y:1399},{x:0,y:1399}
+  ],1000,1400,'small-page-rescue'),false);
+});
+test('Exp3.7.9 read-only timing residuals report 50 known centered squares',()=>{
+  const mod=loadTS('src/scanner/timingResidualDiagnostics.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{answers:{
+      rowStartY:83,rowSpacingY:7.4}},mmToPx:(v,dpi)=>v*dpi/25.4},
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>150}
+  });
+  const rows=1754,cols=1240,dpi=150;
+  const data=new Uint8Array(rows*cols).fill(255);
+  for(const xMm of [13.3,196.7])for(let i=0;i<25;i++){
+    const x=Math.round(xMm*dpi/25.4),
+      y=Math.round((83+i*7.4)*dpi/25.4);
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)
+      data[(y+dy)*cols+x+dx]=0;
+  }
+  const gray={rows,cols,data,channels:()=>1,step:cols,
+    ucharPtr:(y,x)=>[data[y*cols+x]]};
+  const result=mod.diagnosticTimingResiduals(gray,dpi);
+  assert.equal(result.samples.length,50);
+  assert.equal(result.foundNearby,50);
+  assert.equal(result.leftNearby,25);
+  assert.equal(result.rightNearby,25);
+  assert.equal(result.medianAbsDxMm,0);
+  assert.equal(result.medianAbsDyMm,0);
+});
