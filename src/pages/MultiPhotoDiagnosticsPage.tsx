@@ -105,7 +105,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
           const scan=await runFullScan(entry.file,p=>
             setStep('Photo '+(i+1)+'/'+files.length+': '+p.stage),
             {fastQrRoi:true,coarseToFine:true,robustFusion:true,
-              proofscan:false,proofmodel:false,proofmesh:false,
+              proofscan:false,proofmodel:false,proofmesh:true,
               simdProbe:false,ttopProbe:false,compact:true,qrOptionalExperiment:false,disableAiRecovery:false});
           // Preserve forensic evidence rather than discarding 3.7.9 events:
           // previous report filtered out exactly the corner and timing logs
@@ -144,7 +144,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
       <p className="small text-secondary">Classical OpenCV runs first. When all classical registration methods fail, the optional on-device Scanic corner model proposes another page outline. AI cannot recognize answers or bypass QR identity and both timing tracks. The report identifies which method succeeded and whether AI ran.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
-        No answer is silently combined or changed.</p>
+        No answer is silently combined or changed. A withheld-print-validated local grid refinement is tested per photo, and fragile bubble positions are reported independently.</p>
       <p className="small text-secondary">Photos stay in your browser. The combined text report contains per-photo classical and local-AI outcomes, timing residuals and answer disagreements, but no photo pixels.</p>
     </div>
     <section className="card p-3 p-md-4 mb-3">
