@@ -65,7 +65,7 @@ export function buildForensicReport(scans:PhotoScan[]):string {
     /AI last-resort summary|AI document boundary recovery|Exp3\.7\.11 dual AI rescue summary/i.test(e.message))).length;
   const totalMs=scans.reduce((sum,s)=>sum+(s.result?.processingTimeMs??0),0);
   const out=[
-    'SFG OMR Lab — Experiment 3.7.11 — Adaptive Classical CV + Dual AI Rescue + Bubble Consistency',
+    'SFG OMR Lab — Experiment 3.7.12 — Classical Vertex Lab (Harris + Tangent Deflection)',
     'Generated: '+new Date().toISOString(),
     'Engine policy: CLASSICAL FIRST; Scanic after failure; DocAligner FastViT/LCNet after Scanic fails. All require QR and independent bilateral timing.',
     'Acceptance: valid QR + at least 35/50 timing squares and at least 10/25 on each side.',
