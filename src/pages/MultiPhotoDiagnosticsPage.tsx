@@ -116,7 +116,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
           // events as this loses early classical evidence on AI failures.
           result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
             log.level==='ERROR'||log.level==='WARNING'||
-            /detailed registration candidate|registration performance|registration candidates complete|selected .* registration|scan stage timings|independent original-photo QR|original-photo QR locator|Exp3\.7\.9|Exp3\.7\.10|corner.*candidate coordinates|outer-page boundary recovery|small-page boundary|alternative paper hypotheses|360-degree boundary orientation|AI trace:|AI document boundary recovery|AI 360-degree candidate|AI first-warp|AI candidate verification|AI-prewarped fiducial|AI-assisted|AI last-resort summary|Optional AI recovery unavailable|QR processing accounting|failed registration taxonomy|timing-track|grayscale strip geometry diagnostic|Sideways OMR orientation|Lite gentle-curve|timing-assisted refinement/i.test(log.message)
+            /detailed registration candidate|registration performance|registration candidates complete|selected .* registration|scan stage timings|independent original-photo QR|original-photo QR locator|Exp3\.7\.9|Exp3\.7\.10|corner.*candidate coordinates|outer-page boundary recovery|small-page boundary|alternative paper hypotheses|360-degree boundary orientation|AI trace:|AI document boundary recovery|AI 360-degree candidate|Exp3.7.11|AI first-warp|AI candidate verification|AI-prewarped fiducial|AI-assisted|AI last-resort summary|Exp3.7.11 dual AI rescue summary|Optional AI recovery unavailable|QR processing accounting|failed registration taxonomy|timing-track|grayscale strip geometry diagnostic|Sideways OMR orientation|Lite gentle-curve|timing-assisted refinement/i.test(log.message)
           )};
           if(result.overallStatus==='failed')problem=result.errors.join('; ')||'Registration failed';
         }catch(e){
@@ -139,8 +139,8 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const comparison=comparePhotos(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 3.7.10 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.7.10 — Classical CV + Local AI Rescue</h1>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.7.11 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.7.11 — Adaptive Classical CV + Dual AI Rescue + Bubble Consistency</h1>
       <p className="small text-secondary">Classical OpenCV runs first. When all classical registration methods fail, the optional on-device Scanic corner model proposes another page outline. AI cannot recognize answers or bypass QR identity and both timing tracks. The report identifies which method succeeded and whether AI ran.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
