@@ -210,6 +210,7 @@ jobs:
           test -s production/dist/experiments/3.7.12/opencv/opencv.js
           test -s production/dist/experiments/3.7.12/ai-runtime/quadscan.iife.js
           test -s production/dist/experiments/3.7.12/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
+          test -d production/dist/experiments/3.7.12/ai-model/scanic
           test -n "$(find production/dist/experiments/3.7.11/ai-runtime -maxdepth 1 -name '*.wasm' -print -quit)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
