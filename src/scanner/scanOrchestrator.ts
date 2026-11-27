@@ -45,6 +45,8 @@ import { decodeQRFromRegion, locateQRInPhoto } from './qrDecoder';
 import { detectAllAnswers, detectTestId, computeAdaptiveDarkThreshold } from './bubbleDetector';
 import { measureGrayCalibration, grayStripInkCeiling, investigateGrayStrip } from './grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
+import {refineQuestionRings} from './answerCentricRings';
+import {probeSourceInk} from './sourceInkProbe';
 import { rescueTestIdOffset } from './testIdAlignment';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
@@ -483,6 +485,10 @@ export interface ScanModeOptions {
   proofscan?: boolean;
   proofmodel?: boolean;
   proofmesh?: boolean;
+  /** 3.8: holdout-verified per-question ring localisation; no ink threshold change. */
+  answerCentricRings?: boolean;
+  /** 3.8: original-source pixel probe; diagnostic only. */
+  sourceInkProbe?: boolean;
   fastQrRoi?: boolean;
   coarseToFine?: boolean;
   robustFusion?: boolean;
@@ -1801,6 +1807,21 @@ export async function runFullScan(
       const proofMeshEnabled=options?.proofmesh ?? experimentalParams.get('proofmesh')==='1';
       const proofModelEnabled=options?.proofmodel ?? experimentalParams.get('proofmodel')==='1';
       let activeGridOffset=(q:number)=>offsetForQuestion(grid,q);
+      const ringEnabled=options?.answerCentricRings ?? true;
+      const ringStart=Date.now();
+      const ringRecovery=ringEnabled?refineQuestionRings(chosen.gray,dpi,activeGridOffset):null;
+      const ringMs=Date.now()-ringStart;
+      if(ringRecovery&&ringRecovery.adopted>0){
+        const prior=activeGridOffset;
+        activeGridOffset=(q:number)=>ringRecovery.offsets[q]??prior(q);
+      }
+      logger.info('perspective','Exp3.8 heldout per-question printed-ring localisation',{
+        enabled:ringEnabled,adopted:ringRecovery?.adopted??0,
+        rejected:ringRecovery?.rejected??50,meanHoldoutGain:ringRecovery?.meanHoldoutGain??0,
+        maxDisplacement:ringRecovery?.maxDisplacement??0,
+        questions:ringRecovery?.checks??[],durationMs:ringMs,
+        note:'Fit A/C rings, validate B/D rings. No grade may be inferred from geometry confidence.'
+      });
       let rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
         activeGridOffset,rawInkThreshold);
       const excludedInkQuestions=new Set(rawAnswers.filter(row=>
@@ -1827,6 +1848,17 @@ export async function runFullScan(
         rejectionBreakdown:verifiedMesh?.rejectionBreakdown??null,
         durationMs:meshMs,
         note:'Candidate based only on printed rings; cannot override QR identity'
+      });
+      // Independent original-source photometry is a comparison measurement
+      // rather than an automatic change to the strict bubble classifier.
+      const sourceProbeEnabled=options?.sourceInkProbe??true;
+      const sourceProbe=sourceProbeEnabled?
+        probeSourceInk(loaded.canvas,chosen.perspective.transform,dpi,activeGridOffset):null;
+      logger.info('bubbleDetection','Exp3.8 original-pixel ink contrast audit',{
+        enabled:sourceProbeEnabled,supported:sourceProbe?.supported??false,
+        reason:sourceProbe?.reason??'disabled',sampled:sourceProbe?.sampled??0,
+        valid:sourceProbe?.valid??0,measurements:sourceProbe?.measurements??[],
+        gradingUnchanged:true
       });
       // v3.7.11: small translation probes identify unstable bubble decisions.
       // Diagnostic ONLY; do not infer across photographs or rewrite grades.
