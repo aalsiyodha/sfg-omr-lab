@@ -99,8 +99,9 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
   let mask:any=null,kernel:any=null,contours:any=null,hierarchy:any=null;
   let points:any=null,dest:any=null,homography:any=null,output:any=null;
   const report=(e:BoundaryEvidence)=>onEvidence?.(e);
-  const diagnostics:BoundaryEvidence={mode,candidates:0,rejectedBorder:0,rejectedImageCorner:0,
-    rejectedGeometry:0,rejectedQrOutside:0,thresholdsTried:0};
+  const diagnostics={mode,candidates:0,rejectedBorder:0,rejectedImageCorner:0,
+    rejectedGeometry:0,rejectedQrOutside:0,thresholdsTried:0,
+    vertexLab:undefined as BoundaryEvidence['vertexLab']};
   try{
     src=cv.imread(source);
     gray=new cv.Mat();cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
