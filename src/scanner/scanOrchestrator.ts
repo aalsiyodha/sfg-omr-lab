@@ -63,14 +63,15 @@ type Hypothesis =
   | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
   | { kind: 'aruco'; name: string; markers: ArucoRegistration }
   | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> }
-  | { kind: 'fusion'; name: string; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration }
-  | { kind: 'multi'; name: string; qrLocated: ReturnType<typeof locateQRInPhoto>; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
+  | { kind: 'fusion'; name: string; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
+type MultiHypothesis = { kind: 'multi'; name: string; qrLocated: ReturnType<typeof locateQRInPhoto>; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
+type ScannableHypothesis = Hypothesis | MultiHypothesis;
 /** Deduplicate only EXACT reference coordinates on the SAME source image.
  * No near-match tolerance: a subpixel difference can affect printed rings.
  * All QR and timing gates are still enforced for the first occurrence.
  */
 function geometryFingerprint(h:Hypothesis):string|null {
-  if(h.kind==='hybrid'||h.kind==='fusion'||h.kind==='multi')return null;
+  if(h.kind==='hybrid'||h.kind==='fusion')return null;
   if(h.kind==='corner')return JSON.stringify(['corner',h.markers.topLeft,
     h.markers.topRight,h.markers.bottomLeft,h.markers.bottomRight]);
   if(h.kind==='midpoint')return JSON.stringify(['midpoint',h.markers.top,
@@ -80,7 +81,7 @@ function geometryFingerprint(h:Hypothesis):string|null {
 }
 
 interface AcceptedAlignment {
-  hypothesis: Hypothesis;
+  hypothesis: ScannableHypothesis;
   perspective: PerspectiveResult;
   gray: any;
   canvas: HTMLCanvasElement;
@@ -134,7 +135,7 @@ type RegistrationProbe = {
 };
 function evaluateHypothesis(
   source: HTMLCanvasElement,
-  hypothesis: Hypothesis,
+  hypothesis: ScannableHypothesis,
   dpi: number,
   curveBudget: { remaining: number },
   allowQrlessProvisional = false,
@@ -161,7 +162,7 @@ function evaluateHypothesis(
       ? warpMultiLandmark(source,hypothesis.qrLocated,
           hypothesis.corners,hypothesis.midpoint,hypothesis.aruco,dpi,model=>{
             if(evidence)evidence.multiFusionEvidence=model;
-            logger.info('perspective','Exp3.7.6 pooled multi-landmark fusion evidence',model);
+            logger.info('perspective','Exp3.7.6 pooled multi-landmark fusion evidence',{...model});
           })?.perspective ?? {corrected:null,correctedDataUrl:'',
             transform:null,success:false,error:'No consistent multi-family homography'}
       : hypothesis.kind === 'fusion'
@@ -576,7 +577,7 @@ export async function runFullScan(
       multiFusionEvidence?:MultiFusionEvidence;
     }[]=[];
     const traceRegistration=(
-      source:HTMLCanvasElement,hypothesis:Hypothesis,dpi:number,
+      source:HTMLCanvasElement,hypothesis:ScannableHypothesis,dpi:number,
       budget:{remaining:number},allowProvisional=false
     ):AcceptedAlignment|null=>{
       const t=Date.now();
@@ -663,6 +664,7 @@ export async function runFullScan(
         }
       }
     }
+    let midForMulti:MidpointRegistration|undefined;
     if(!selected||!canStopUnifiedRegistration(selected.qr.valid,selected.check.matched,
       selected.check.leftMatched,selected.check.rightMatched)){
     markerProfile.fallbackDiscoveryTriggered=true;
@@ -678,6 +680,7 @@ export async function runFullScan(
     // Always evaluate an independent midpoint hypothesis: a false-positive
     // corner quadrilateral can be geometrically plausible (Test 4 v1.6).
     const mid = detectMidpointMarkers(preprocessed.thresholded, loaded.width, loaded.height);
+    midForMulti=mid;
     if (mid.found) hypotheses.push({ kind: 'midpoint', name: 'midpoint/adaptive', markers: mid });
     const partialArucoCount=Object.keys(arucoAdaptive.points).length;
     const fusionAnchors=(primary.found?4:0)+(mid.found?4:0)+partialArucoCount;
@@ -1004,16 +1007,16 @@ export async function runFullScan(
       // Retain the existing strict QR identity and dual timing acceptance.
       if(located.valid && !selected && options?.robustFusion!==false){
         const attempts=[
-          {name:'adaptive',corners:primary,midpoint:mid,aruco:arucoAdaptive},
+          {name:'adaptive',corners:primary,midpoint:midForMulti,aruco:arucoAdaptive},
           {name:'Otsu',corners:cornerOtsuForHybrid,
             midpoint:undefined,aruco:arucoOtsu},
           {name:'cross-threshold',corners:cornerOtsuForHybrid,
-            midpoint:mid,aruco:arucoAdaptive}
+            midpoint:midForMulti,aruco:arucoAdaptive}
         ];
         for(const attempt of attempts){
           if(selected)break;
           warpAttempts++;
-          const proposal:Hypothesis={kind:'multi',
+          const proposal:MultiHypothesis={kind:'multi',
             name:'fusion/pooled-'+attempt.name,
             qrLocated:located,corners:attempt.corners,
             midpoint:attempt.midpoint,aruco:attempt.aruco};
