@@ -1661,6 +1661,7 @@ test('v2.3.31: abrupt or excessive deformations are rejected rather than fitted'
 
 test('v2.3.4: outer paper outline rejects degenerate and non-convex polygons',()=>{
   const mod=loadTS('src/scanner/pageBoundaryRecovery.ts',{
+    './classicalVertexLab':{proposeVertexQuads:()=>({proposals:[],stats:{harris:0,tangent:0,errors:[]}})},
     '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}},mmToPx:x=>x},
     '../config/scannerSettings':{getSettings:()=>({scanDpi:150})}
   });
@@ -1701,6 +1702,7 @@ test('v2.3.4: minimum UI keeps actionable diagnostics without redundant copy',()
 
 test('v2.3.41: paper boundary refuses image-border-as-paper false positives',()=>{
   const m=loadTS('src/scanner/pageBoundaryRecovery.ts',{
+    './classicalVertexLab':{proposeVertexQuads:()=>({proposals:[],stats:{harris:0,tangent:0,errors:[]}})},
     '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}},mmToPx:x=>x},
     '../config/scannerSettings':{getSettings:()=>({scanDpi:150})}
   });
@@ -1735,6 +1737,7 @@ test('v2.3.41: reports why page-boundary recovery failed, not only QR missing',(
 
 test('v2.3.43: photograph-corner background is rejected without banning a single side contact',()=>{
   const m=loadTS('src/scanner/pageBoundaryRecovery.ts',{
+    './classicalVertexLab':{proposeVertexQuads:()=>({proposals:[],stats:{harris:0,tangent:0,errors:[]}})},
     '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}},mmToPx:x=>x},
     '../config/scannerSettings':{getSettings:()=>({scanDpi:150})}
   });
@@ -2463,6 +2466,7 @@ test('Exp3.7.9 QR-relative corner assignment is invariant to 0/35/90/180 degree 
 
 test('Exp3.7.9 small-page mode recovers a modest sheet without changing strict rejection',()=>{
   const mod=loadTS('src/scanner/pageBoundaryRecovery.ts',{
+    './classicalVertexLab':{proposeVertexQuads:()=>({proposals:[],stats:{harris:0,tangent:0,errors:[]}})},
     '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}},mmToPx:x=>x},
     '../config/scannerSettings':{getSettings:()=>({scanDpi:150})}
   });
