@@ -196,7 +196,7 @@ jobs:
           cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
           mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.7.12"
           cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.7.12/"
-      # Independent per-ring holdouts, source-pixel diagnostics and labelled accuracy.
+      # Refined sequence: mesh first, per-question rings second; four-way template orientation.
       - name: Validate and build 3.8.0 recom1 + recom2 answer-centric lab
         working-directory: answer-centric-380
         run: |
