@@ -226,8 +226,10 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
         }
         if(candidates.some(c=>c.corners.every((p,i)=>
           Math.hypot(p.x-corners[i].x,p.y-corners[i].y)<10)))continue;
-        const area=cv.contourArea(cv.matFromArray(4,1,cv.CV_32SC2,
-          corners.flatMap(p=>[Math.round(p.x*scale),Math.round(p.y*scale)])));
+        const pts=corners.map(p=>({x:p.x*scale,y:p.y*scale}));
+        const area=Math.abs(pts.reduce((sum,p,i)=>{
+          const n=pts[(i+1)%4];return sum+p.x*n.y-n.x*p.y;
+        },0))/2;
         // The method remains explicit in forensic diagnostics.
         candidates.push({corners,area,score:area/(small.cols*small.rows)-.03,
           method:'vertex-'+proposal.method});
