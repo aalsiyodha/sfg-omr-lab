@@ -1104,19 +1104,40 @@ export async function runFullScan(
     if(!selected){
       boundaryAttempted=true;
       const boundaryStart=Date.now();
-      const rough=recoverPaperBoundary(loaded.canvas,evidence=>{
+      let rough=recoverPaperBoundary(loaded.canvas,evidence=>{
         logger.info('perspective','Outer-page boundary recovery evidence',{
           reason:evidence.reason,candidates:evidence.candidates,
           contourAreaRatio:evidence.contourAreaRatio,
           rejectedBorder:evidence.rejectedBorder,
           rejectedImageCorner:evidence.rejectedImageCorner,
           rejectedGeometry:evidence.rejectedGeometry,
+          rejectedQrOutside:evidence.rejectedQrOutside,mode:evidence.mode,
           candidateSummary:evidence.candidateSummary,
           thresholdsTried:evidence.thresholdsTried,
           method:evidence.method,
           quadrilateral:evidence.quadrilateral});
       });
-      if(!rough)logger.warning('perspective','Outer-page rescue produced no plausible sheet candidate');
+      if(!rough){
+        // Exp3.7.9 bounded second chance for a smaller, fully visible paper
+        // against light patchwork. Do not relax frame-corner rejection and
+        // use independently decoded source QR as an inside-quad constraint.
+        // Even a candidate returned here must pass QR AND bilateral timing.
+        rough=recoverPaperBoundary(loaded.canvas,evidence=>{
+          logger.info('perspective','Exp3.7.9 small-page boundary rejection evidence',{
+            mode:evidence.mode,reason:evidence.reason,
+            candidates:evidence.candidates,rejectedGeometry:evidence.rejectedGeometry,
+            rejectedBorder:evidence.rejectedBorder,
+            rejectedImageCorner:evidence.rejectedImageCorner,
+            rejectedQrOutside:evidence.rejectedQrOutside,
+            candidateSummary:evidence.candidateSummary,
+            quadrilateral:evidence.quadrilateral,
+            alternatives:evidence.alternativeQuads
+          });
+        },{mode:'small-page-rescue',
+          qrCenter:photoQr?.valid?photoQr.center:null});
+      }
+      if(!rough)logger.warning('perspective',
+        'Both strict and QR-constrained small-page boundary searches returned no plausible sheet');
       // Experiment 3.6: independently orient any recovered paper quad at 0,
       // 90, 180, or 270 degrees. Each mapping is a true 4-point homography,
       // so the ORIGINAL sheet can be tilted at any angle and in perspective.
