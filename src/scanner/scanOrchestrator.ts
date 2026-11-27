@@ -598,7 +598,7 @@ export async function runFullScan(
         multiFusionEvidence:evidence.multiFusionEvidence
       };
       registrationAttempts.push(item);
-      if(options?.qrOptionalExperiment && !result && provisionalCandidates.length<32){
+      if(options?.qrOptionalExperiment && hypothesis.kind!=='multi' && !result && provisionalCandidates.length<32){
         const already=provisionalCandidates.some(x=>x.source===source &&
           x.hypothesis.kind===hypothesis.kind && x.hypothesis.name===hypothesis.name);
         if(!already)provisionalCandidates.push({source,hypothesis});
@@ -787,7 +787,7 @@ export async function runFullScan(
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
       if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name,
-        hypothesis.kind==='hybrid'||hypothesis.kind==='fusion'||hypothesis.kind==='multi'?'corner':hypothesis.kind)) {
+        hypothesis.kind==='hybrid'||hypothesis.kind==='fusion'?'corner':hypothesis.kind)) {
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
