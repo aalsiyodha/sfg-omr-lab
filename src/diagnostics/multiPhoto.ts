@@ -89,6 +89,8 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         /Exp3.7.3 failed registration taxonomy/i,
         /Exp3.7.4 AI recovery deliberately disabled/i,
         /Exp3.7.6 color-page boundary hypotheses/i,
+        /Exp3.7.6 pooled multi-landmark outcome/i,
+        /Exp3.7.6 pooled multi-landmark fusion evidence/i,
       ];
       const events=r?.stageLogs??[];
       for(const pattern of stages){
