@@ -2389,3 +2389,25 @@ test('Experiment 3.7.4 classical-only mode guards neural document inference',()=
     'src/pages/MultiPhotoDiagnosticsPage.tsx'),'utf8');
   assert.match(page,/disableAiRecovery:true/);
 });
+
+test('immutable OpenCV grayscale threshold cache returns identical value and supports invalidation',()=>{
+  const mat={rows:32,cols:32,data:new Uint8Array(1024).fill(190),
+    channels:()=>1,ucharPtr(y,x){return [this.data[y*32+x]];}};
+  const a=bubbles.computeAdaptiveDarkThreshold(mat);
+  const b=bubbles.computeAdaptiveDarkThreshold(mat);
+  assert.equal(a,b);
+  mat.data.fill(28);
+  // Explicit invalidation is mandatory for in-place Mat edits.
+  bubbles.invalidateAdaptiveThreshold(mat);
+  const c=bubbles.computeAdaptiveDarkThreshold(mat);
+  assert.equal(c,bubbles.computeAdaptiveDarkThreshold({...mat,data:new Uint8Array(1024).fill(28)}));
+});
+test('non-byte-backed fake mats bypass adaptive-threshold cache',()=>{
+  const fake={rows:24,cols:24,value:200,ucharPtr(){return [this.value];}};
+  const before=bubbles.computeAdaptiveDarkThreshold(fake);
+  fake.value=40;
+  const after=bubbles.computeAdaptiveDarkThreshold(fake);
+  const fresh=bubbles.computeAdaptiveDarkThreshold({rows:24,cols:24,ucharPtr:()=>[40]});
+  assert.equal(after,fresh);
+  assert.ok(Number.isFinite(before));
+});
