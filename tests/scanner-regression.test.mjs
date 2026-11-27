@@ -2515,3 +2515,48 @@ test('3.7.12: tangent-deflection peaks at rectangle vertices, not along straight
   assert.ok(turns.filter(v=>v>.6).length>=4);
   assert.ok(turns.filter(v=>v<.01).length>=20);
 });
+
+test('3.8.0: ring refinement adopts only with independent B/D heldout improvement',()=>{
+  const centers=(q,opt)=>({xMm:100+opt*20,yMm:q*10});
+  const ringScore=(_g,x,y)=>{
+    const xPhase=((x-100)%20+20)%20;
+    const yPhase=((y-1)%10+10)%10;
+    return Math.max(0,50-5*Math.hypot(
+      Math.min(Math.abs(xPhase-2),20-Math.abs(xPhase-2)),
+      Math.min(yPhase,10-yPhase)));
+  };
+  const mod=loadTS('src/scanner/answerCentricRings.ts',{
+    '../config/omrLayout':{getBubbleCentre:centers,mmToPx:x=>x,OMR_LAYOUT:{answers:{bubbleDiamMm:3.4}}},
+    './gridAlignment':{scorePrintedRingAt:ringScore}
+  });
+  const base=()=>({dx:0,dy:0,applied:false,confidence:0});
+  const result=mod.refineQuestionRings({},25.4,base,3);
+  assert.ok(result.adopted>=40);
+  assert.equal(result.offsets[1].dx,2);
+  assert.equal(result.offsets[1].dy,1);
+  // Flat ring signal must never authorize a correction.
+  const flat=loadTS('src/scanner/answerCentricRings.ts',{
+    '../config/omrLayout':{getBubbleCentre:centers,mmToPx:x=>x,OMR_LAYOUT:{answers:{bubbleDiamMm:3.4}}},
+    './gridAlignment':{scorePrintedRingAt:()=>20}
+  });
+  assert.equal(flat.refineQuestionRings({},25.4,base,3).adopted,0);
+});
+
+test('3.8.0: scorecard counts failed photos against full-cohort reproducibility',()=>{
+  const mod=loadTS('src/diagnostics/multiPhoto.ts');
+  const make=(a,ms)=>({
+    filename:'same',size:100,mime:'image/jpeg',metrics:{},
+    result:{qrValid:true,studentId:'S',testId:27,provisional:false,
+      alignmentVerified:true,processingTimeMs:ms,
+      answers:Array.from({length:50},(_,i)=>({
+        question:i+1,status:'detected',detectedAnswer:a,measurements:[]}))
+    },error:null
+  });
+  const failed={...make('A',500),result:null,error:'registration failed'};
+  const v=mod.answerQualityScorecard([make('A',1000),make('A',2000),failed]);
+  assert.equal(v.conditionalUnanimousQuestions,50);
+  assert.equal(v.fullCohortUnanimousQuestions,0);
+  assert.equal(v.p50Seconds,1);
+  assert.equal(v.p95Seconds,2);
+  assert.match(v.accuracy,/NOT MEASURED/);
+});
