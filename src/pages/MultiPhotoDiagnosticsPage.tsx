@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react';
 import type { AppState } from '../App';
 import { APP_BUILD_META } from '../config/version';
 import { runFullScan } from '../scanner/scanOrchestrator';
-import { comparePhotos, answerQualityScorecard, type PhotoMetrics, type PhotoScan } from '../diagnostics/multiPhoto';
+import { comparePhotos, answerQualityScorecard, evaluateLabeledAnswers, type PhotoMetrics, type PhotoScan } from '../diagnostics/multiPhoto';
 import { buildForensicReport } from '../diagnostics/forensicReport';
 import './v26.css';
 
@@ -60,6 +60,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const [busy,setBusy]=useState(false);
   const [step,setStep]=useState('');
   const [error,setError]=useState('');
+  const [truth,setTruth]=useState('');
   const input=useRef<HTMLInputElement>(null);
   const inProgress=useRef(false);
   const cancelRequested=useRef(false);
@@ -139,6 +140,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const completed=scans.length>=2&&!busy;
   const comparison=comparePhotos(scans);
   const quality=answerQualityScorecard(scans);
+  const labeled=evaluateLabeledAnswers(scans,truth);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
       <div className="text-secondary small mb-2">EXPERIMENT 3.8.0 · v{APP_BUILD_META.version}</div>
@@ -189,9 +191,9 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
         <h2 className="h6 fw-bold mb-0">Diagnostic overview</h2>
         <div className="d-flex gap-2 flex-wrap">
           <button type="button" className="btn btn-outline-primary btn-sm" disabled={!completed}
-            onClick={()=>saveReport(buildForensicReport(scans))}>Download forensic report .txt</button>
+            onClick={()=>saveReport(buildForensicReport(scans,truth))}>Download forensic report .txt</button>
           <button type="button" className="btn btn-outline-primary btn-sm" disabled={!completed}
-            onClick={()=>void navigator.clipboard.writeText(buildForensicReport(scans))
+            onClick={()=>void navigator.clipboard.writeText(buildForensicReport(scans,truth))
               .then(()=>window.alert('Diagnostic report copied'))
               .catch(()=>window.alert('Clipboard permission denied — use Download'))}>Copy report</button>
         </div>
@@ -207,6 +209,21 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
         <div className="col-6 col-md-3"><div className="border rounded p-2"><div className="text-secondary small">p50 / p95</div><strong>{quality.p50Seconds??'–'}s / {quality.p95Seconds??'–'}s</strong></div></div>
       </div>
       <p className="small text-secondary">Cross-photo agreement is label-free, not correctness. Accuracy and incomplete-mark false-accept rate require labelled sheets. Failed and mismatched photographs count against full-cohort unanimity.</p>
+      <details className="mb-3">
+        <summary className="small fw-semibold">Optional: measure actual answer accuracy using 50 known labels</summary>
+        <p className="small text-secondary mt-2 mb-2">Enter exactly 50 labels separated by spaces or commas: A, B, C, D, blank (-), X for an incomplete mark that must not be accepted, or M for multiple marks. Cross-photo agreement alone is not proof of correctness.</p>
+        <textarea className="form-control form-control-sm" rows={3}
+          value={truth} onChange={e=>setTruth(e.target.value)}
+          placeholder="A B C D - X M ... (50 labels)" aria-label="Optional 50-question ground-truth labels"/>
+        {labeled&&('valid' in labeled&&!labeled.valid
+          ?<div className="small text-danger mt-2">{labeled.error}</div>
+          :('accuracyPercent' in labeled
+            ?<div className="small mt-2"><strong>Labelled accuracy: {labeled.accuracyPercent??'–'}%</strong>
+               {' · '}Correct: {labeled.correct}/{labeled.total}
+               {' · '}Incomplete-mark false accepts: {labeled.falseAccept}/{labeled.invalidTotal}
+               {' · '}False-accept rate: {labeled.incompleteMarkFalseAcceptRatePercent??'–'}%</div>
+            :null))}
+      </details>
       <div className="table-responsive">
         <table className="table table-sm align-middle small">
           <thead><tr><th>Photo</th><th>Scan / identity</th><th>Accepted via</th><th>AI model</th><th>Timing</th><th>Detected</th><th>Light (0–255)</th><th>Contrast</th><th>Orientation</th></tr></thead>
