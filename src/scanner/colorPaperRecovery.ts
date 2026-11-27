@@ -12,6 +12,7 @@ export function detectLowSaturationPaper(
 ):ColorPaperCandidate[]{
   let rgba:any=null,rgb:any=null,hsv:any=null,mask:any=null,closed:any=null;
   let opened:any=null,kClose:any=null,kOpen:any=null,contours:any=null,hierarchy:any=null;
+  let lower:any=null,upper:any=null;
   const results:ColorPaperCandidate[]=[];
   const seen=new Set<string>();
   try{
@@ -28,8 +29,9 @@ export function detectLowSaturationPaper(
       mask=new cv.Mat();
       closed=new cv.Mat();
       opened=new cv.Mat();
-      cv.inRange(hsv,new cv.Mat(hsv.rows,hsv.cols,hsv.type(),new cv.Scalar(0,0,120)),
-        new cv.Mat(hsv.rows,hsv.cols,hsv.type(),new cv.Scalar(179,maxSat,255)),mask);
+      lower=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),new cv.Scalar(0,0,120));
+      upper=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),new cv.Scalar(179,maxSat,255));
+      cv.inRange(hsv,lower,upper,mask);
       cv.morphologyEx(mask,closed,cv.MORPH_CLOSE,kClose);
       cv.morphologyEx(closed,opened,cv.MORPH_OPEN,kOpen);
       contours=new cv.MatVector();hierarchy=new cv.Mat();
@@ -62,15 +64,15 @@ export function detectLowSaturationPaper(
             areaRatio:Number(area.toFixed(4))});
         }finally{for(const m of [c,hull,poly])try{m?.delete?.()}catch{/*clean*/}}
       }
-      for(const m of [mask,closed,opened,contours,hierarchy])try{m?.delete?.()}catch{/*clean*/}
-      mask=closed=opened=contours=hierarchy=null;
+      for(const m of [mask,closed,opened,contours,hierarchy,lower,upper])try{m?.delete?.()}catch{/*clean*/}
+      mask=closed=opened=contours=hierarchy=lower=upper=null;
     }
     // Never treat area or paper whiteness as identity. These are only
     // conservative proposals; full optical verification is mandatory.
     return results.sort((a,b)=>a.areaRatio-b.areaRatio).slice(0,maxCandidates);
   }catch{return [];}
   finally{
-    for(const m of [rgba,rgb,hsv,mask,closed,opened,kClose,kOpen,contours,hierarchy])
+    for(const m of [rgba,rgb,hsv,mask,closed,opened,kClose,kOpen,contours,hierarchy,lower,upper])
       try{m?.delete?.()}catch{/*clean*/}
   }
 }
