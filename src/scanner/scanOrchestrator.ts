@@ -438,7 +438,8 @@ function evaluateHypothesis(
       // The nearest dark patch is not proof of a timing marker. This cannot
       // influence geometry adoption or threshold/sampling requirements.
       if(hypothesis.name==='corner/adaptive'||
-         hypothesis.name.startsWith('corner/qr-frame-')){
+         hypothesis.name.startsWith('corner/qr-frame-')||
+         hypothesis.name.startsWith('ai-boundary/')){
         try{
           const residuals=diagnosticTimingResiduals(gray,dpi);
           logger.info('perspective','Exp3.7.9 rejected bilateral timing offsets',{
@@ -1346,6 +1347,9 @@ export async function runFullScan(
       let aiAttempted=0;
       let aiStatus='not-started';
       let aiRejections:{method:string;reason:string}[]=[];
+      let aiOrientationProbes=0;
+      let aiQrVerifiedProbes=0;
+      let aiBestTiming={matched:0,left:0,right:0,turnDegrees:null as number|null};
       try{
         onProgress?.({stage:'Last resort: detecting page corners with local AI…',percent:52});
         const ai=await recoverPageWithScanic(loaded.canvas,(event,data)=>{
@@ -1371,10 +1375,35 @@ export async function runFullScan(
               if(!trial)continue;
               const qr=decodeQRFromRegion(trial,
                 OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
-              if(!qr.valid)continue;
+              aiOrientationProbes++;
+              if(!qr.valid){
+                logger.info('perspective','Exp3.7.10 AI orientation evidence',{
+                  turnDegrees:turn*90,qrValid:false,timingNotEvaluated:true,
+                  accepted:false,reason:'warped-QR-not-at-expected-coordinate'
+                });
+                continue;
+              }
+              aiQrVerifiedProbes++;
               color=cv.imread(trial);gray=new cv.Mat();
               cv.cvtColor(color,gray,cv.COLOR_RGBA2GRAY);
               const timing=verifyTimingMarks(gray,dpi);
+              if(timing.matched>aiBestTiming.matched)
+                aiBestTiming={matched:timing.matched,left:timing.leftMatched,
+                  right:timing.rightMatched,turnDegrees:turn*90};
+              logger.info('perspective','Exp3.7.10 AI orientation evidence',{
+                turnDegrees:turn*90,qrValid:true,timing:timing.matched,
+                left:timing.leftMatched,right:timing.rightMatched,
+                accepted:timing.passed,reason:timing.passed?'strictly-verified':'bilateral-timing-rejected'
+              });
+              if(!timing.passed && (timing.leftMatched>=8||timing.rightMatched>=8)){
+                try{
+                  logger.info('perspective','Exp3.7.10 AI rejected timing residuals',{
+                    turnDegrees:turn*90,...diagnosticTimingResiduals(gray,dpi)
+                  });
+                }catch(error){logger.warning('perspective','Exp3.7.10 AI timing residual diagnostic error',{
+                  turnDegrees:turn*90,reason:String(error)});
+                }
+              }
               logger.info('perspective','Exp3.6 AI 360-degree candidate',{
                 turnDegrees:turn*90,qrValid:true,timing:timing.matched,
                 left:timing.leftMatched,right:timing.rightMatched,
@@ -1412,6 +1441,9 @@ export async function runFullScan(
             const directQR=decodeQRFromRegion(ai.canvas,
               OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
             const directStrip=measureGrayCalibration(directGray,dpi);
+            if(directQR.valid && directTiming.matched>aiBestTiming.matched)
+              aiBestTiming={matched:directTiming.matched,left:directTiming.leftMatched,
+                right:directTiming.rightMatched,turnDegrees:null};
             logger.info('perspective','AI first-warp independent landmark verification',{
               method:'ai-boundary/direct-no-second-warp',
               timing:directTiming.matched,left:directTiming.leftMatched,
@@ -1421,6 +1453,16 @@ export async function runFullScan(
               stripOrdered:directStrip.ordered,
               note:'No second homography; QR and both timing tracks remain mandatory'
             });
+            if(directQR.valid&&!directTiming.passed &&
+               (directTiming.leftMatched>=8||directTiming.rightMatched>=8)){
+              try{
+                logger.info('perspective','Exp3.7.10 AI rejected timing residuals',{
+                  method:'ai-boundary/direct-no-second-warp',...diagnosticTimingResiduals(directGray,dpi)
+                });
+              }catch(error){logger.warning('perspective','Exp3.7.10 AI timing residual diagnostic error',{
+                method:'ai-boundary/direct-no-second-warp',reason:String(error)});
+              }
+            }
             if(directQR.valid&&directTiming.passed){
               // The paper-edge hypothesis itself is not proof; only the QR
               // identity and the independently detected timing lattice are.
@@ -1514,6 +1556,8 @@ export async function runFullScan(
         logger.info('perspective','AI last-resort summary',{
           invoked:true,model:'Scanic DocCornerNet SimCC',modelLibrary:'scanic@1.8.0',
           status:aiStatus,attempts:aiAttempted,verified:Boolean(selected),
+          orientationProbes:aiOrientationProbes,qrVerifiedProbes:aiQrVerifiedProbes,
+          bestTiming:aiBestTiming,
           rejections:aiRejections,durationMs:Date.now()-aiStart
         });
       }
