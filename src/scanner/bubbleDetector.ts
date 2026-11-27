@@ -40,8 +40,23 @@ export interface BubbleMeasurementDetail {
  * and sets the ink-darkness threshold dynamically: Math.max(142, Math.min(166, Math.round((140 + otsu) / 2)))
  * Default fallback is 152.
  */
+// Cache only real OpenCV grayscale Mats with byte-backed storage. Test doubles
+// and mutable pixel proxies deliberately bypass this cache. The scanner creates
+// new Mats for each warped/refined page; never use this on a Mat modified
+// in-place after its first threshold measurement.
+const adaptiveThresholdCache=new WeakMap<object,number>();
+export function invalidateAdaptiveThreshold(mat:object):void {
+  adaptiveThresholdCache.delete(mat);
+}
 export function computeAdaptiveDarkThreshold(grayMat: any): number {
   if (!grayMat || !grayMat.rows || !grayMat.cols) return 152;
+  const cacheable=(grayMat.data instanceof Uint8Array ||
+    grayMat.data instanceof Uint8ClampedArray) &&
+    (typeof grayMat.channels!=='function'||grayMat.channels()===1);
+  if(cacheable){
+    const cached=adaptiveThresholdCache.get(grayMat);
+    if(cached!==undefined)return cached;
+  }
   const hist = new Int32Array(256);
   const pixel = grayReader(grayMat);
   let count = 0;
@@ -80,7 +95,9 @@ export function computeAdaptiveDarkThreshold(grayMat: any): number {
   }
 
   // Ink threshold: safely calibrated halfway between ink baseline (140) and Otsu background boundary
-  return Math.max(142, Math.min(166, Math.round((140 + otsu) / 2)));
+  const threshold=Math.max(142, Math.min(166, Math.round((140 + otsu) / 2)));
+  if(cacheable)adaptiveThresholdCache.set(grayMat,threshold);
+  return threshold;
 }
 
 /**
