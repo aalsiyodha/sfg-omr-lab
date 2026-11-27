@@ -2,6 +2,14 @@
 
 You are reviewing the attached **entire scanner source code** and real 10-photo failure evidence. Your job is **diagnosis**, not a generic rewrite. Spend **~90% of your effort on page registration and geometric verification**, **~10% on low-risk performance or overlooked engineering optimizations**. The scanner must never invent marks or lower identity/timing checks merely to increase pass rate.
 
+## Source ZIP — attachment and direct link are alternatives
+
+The full OMRLab v3.7.8 scanner source is provided as a **ZIP attachment** to this request. If you cannot open/read the attachment, download the same source snapshot directly from GitHub:
+
+**Direct ZIP:** https://github.com/aalsiyodha/sfg-omr-lab/archive/aaec56d623b8dbc7dff94600632efbf98603afdb.zip
+
+**Do not download both.** The ZIP attachment and the GitHub link refer to the **same scanner source snapshot** for this audit. Prefer the attachment when accessible; use the URL only as a fallback. This prompt is an instruction sheet, not a second scanner ZIP. Avoid comparing the two copies or spending tokens on duplicate source analysis.
+
 ## Ground truth & constraints
 - Ten real Samsung smartphone photos capture **the same printed 50-question A4 UPSC-style OMR sheet** in different orientations/perspectives. They are sharp enough to decode the printed QR independently in multiple otherwise-failed photos.
 - Frozen classical baseline **v3.7.4 verifies 3/10** (50/50 bilateral timing). Historic full v2.3.3 verifies 0/10; 3.7.6 pooled QR/ArUco/corner/midpoint fusion still verifies 3/10. The 3.7.7 QR+far-page-corners path is experimental and **not proven better**. Do not equate 135+ unit tests with physical photo success.
