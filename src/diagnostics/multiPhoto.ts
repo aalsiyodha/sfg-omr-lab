@@ -39,12 +39,15 @@ export function comparePhotos(scans:PhotoScan[]) {
 }
 export function buildCombinedReport(scans:PhotoScan[]):string {
   const c=comparePhotos(scans);
+  const provisionalCount=scans.filter(s=>s.result?.provisional).length;
   const out=[
-    'SFG OMR Lab — Experiment 3.7.1 — Multi-photo diagnostic (same physical OMR)',
+    'SFG OMR Lab — Experiment 3.7.6 — Multi-photo diagnostic (same physical OMR)',
     'Generated: '+new Date().toISOString(),
     'Scanner runs: '+scans.length+' | Verified same-identity scans: '+c.same.length,
     'Reference: '+(c.reference??'unverified'),
+    'PROVISIONAL QR-LESS GEOMETRY: '+provisionalCount+' scan(s); no student identity, not scored, excluded from same-identity comparison.',
     'NOTE: Each photo is scanned independently. No answers are merged or changed.',
+    'EXPERIMENT MODE: Classical CV ONLY. Neural document detector skipped. Strict QR and timing verification retained.',
     'NOTE: Luminance/edge metrics are estimates from downsampled source pixels, not calibrated light measurements.',
     '',
     'PER-PHOTO SUMMARY'
@@ -60,6 +63,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
       ' | dark pixels '+p.shadows+'% | clipped highlights '+p.highlights+'% | edge score '+p.edge,
       '  '+(r?'Status '+r.overallStatus+' | '+(scanIdentity(r)??'identity not verified')+
         ' | QR '+(r.qrValid?'valid':'invalid')+
+        (r.provisional?' | PROVISIONAL GEOMETRY — NOT SCORED':'')+
         ' | timing '+(r.alignmentMatched??'unknown')+'/50 | registration '+(r.registrationMethod??'none')+
         ' | rotated180 '+Boolean(r.orientationRotated)+
         ' | answers '+(counts.detected??0)+' detected / '+(counts.blank??0)+' blank / '+
@@ -80,12 +84,20 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         /AI document boundary recovery/i,
         /AI last-resort summary/i,
         /Registration performance summary/i,
+        /Exp3.7.3 QR-only landmark proposal/i,
+        /Exp3.7.3 QR processing accounting/i,
+        /Exp3.7.3 failed registration taxonomy/i,
+        /Exp3.7.4 AI recovery deliberately disabled/i,
+        /Exp3.7.6 color-page boundary hypotheses/i,
+        /Exp3.7.6 pooled multi-landmark outcome/i,
+        /Exp3.7.6 pooled multi-landmark fusion evidence/i,
       ];
       const events=r?.stageLogs??[];
       for(const pattern of stages){
         const item=[...events].reverse().find(e=>pattern.test(e.message));
         if(item)out.push('  '+item.message+': '+
-          (item.data?JSON.stringify(item.data).slice(0,550):'recorded'));
+          (item.data?JSON.stringify(item.data).slice(0,
+            /failed registration taxonomy/i.test(item.message)?2300:800):'recorded'));
       }
       if(s.error)out.push('  Error: '+s.error);
     }
@@ -100,6 +112,15 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
   c.differences.forEach(d=>{
     out.push('Q'+String(d.question).padStart(2,'0')+': '+
       c.same.map((s,i)=>s.filename+'='+d.answers[i]+' ['+d.fills[i]+']').join(' | '));
+  });
+  out.push('','HATCH V2 SHADOW CLASSIFIER — diagnostic only; no scoring changes');
+  c.same.forEach(scan=>{
+    const diffs=scan.result?.answers.flatMap(row=>row.measurements.filter(m=>
+      m.hatchLike!==undefined&&m.hatchV2!==undefined&&m.hatchLike!==m.hatchV2)
+      .map(m=>'Q'+row.question+' '+m.option+' existing='+m.hatchLike+
+        ' new='+m.hatchV2+' fill='+round(m.fillPercent)+'%'))??[];
+    out.push(scan.filename+': '+diffs.length+' changed hatch flags'+
+      (diffs.length?' | '+diffs.slice(0,15).join('; '):''));
   });
   out.push('','High-ink rejected marks (selected diagnostic evidence)');
   c.same.forEach(s=>{

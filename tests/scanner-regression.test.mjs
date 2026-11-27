@@ -2350,3 +2350,87 @@ test('Experiment 3.6: 360-degree quad orientation covers each distinct corner as
   }
   assert.deepEqual(corners,[{x:12,y:5},{x:97,y:27},{x:81,y:152},{x:4,y:124}]);
 });
+
+test('Experiment 3.7.3 P-1 hatch shadow requires paper-bright internal gaps',()=>{
+  // The normal unit-test OMR layout stubs mmToPx as identity. For this
+  // spatial kernel test we need the physical 150 dpi mapping (~6px/mm).
+  const shadow=loadTS('src/scanner/bubbleDetector.ts',{
+    '../config/omrLayout':{
+      mmToPx:(mm,dpi)=>mm*dpi/25.4,
+      getBubbleCentre:()=>({xMm:0,yMm:0}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings':{getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{minFill:45}},
+    './strayInk':{measureOutlineBand:()=>255,hasInterBubbleInk:()=>false,
+      hasExternalStroke:()=>false},
+    './radialInk':{measureRadialInk:()=>({core:0,middle:0,outer:0,
+      classification:'insufficient_resolution'})}
+  });
+  const mk=(gapBrightness)=>{
+    const pixels=Array.from({length:35},()=>Array(35).fill(50));
+    // Repeated light slots in the same two columns: ordinary JPEG grey
+    // holes must not mimic an actual paper-white hatch.
+    for(let y=13;y<=21;y++){pixels[y][17]=gapBrightness;pixels[y][18]=gapBrightness;}
+    return {rows:35,cols:35,ucharPtr:(y,x)=>[pixels[y][x]]};
+  };
+  const grey=shadow.interiorHatchEvidenceV2(mk(180),17,17,150,150,235);
+  const bright=shadow.interiorHatchEvidenceV2(mk(244),17,17,150,150,235);
+  assert.equal(grey.hatchLike,false);
+  assert.equal(bright.hatchLike,true);
+});
+
+test('Experiment 3.7.4 classical-only mode guards neural document inference',()=>{
+  const orchestrator=readFileSync(resolve(process.cwd(),
+    'src/scanner/scanOrchestrator.ts'),'utf8');
+  assert.match(orchestrator,/if\(!selected && !options\?\.disableAiRecovery\)\{/);
+  assert.match(orchestrator,/disableAiRecovery\?: boolean/);
+  const page=readFileSync(resolve(process.cwd(),
+    'src/pages/MultiPhotoDiagnosticsPage.tsx'),'utf8');
+  assert.match(page,/disableAiRecovery:true/);
+});
+
+test('pooled fusion recovers a homography from QR and two distant ArUco landmarks',()=>{
+  const fusion=loadTS('src/scanner/multiLandmarkFusion.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{qr:{xMm:169.35,yMm:10.4,sizeMm:21.25},
+      page:{widthMm:210,heightMm:297}},mmToPx:(mm,dpi)=>mm*dpi/25.4},
+    './arucoDetector':{ARUCO_MARKERS_MM:[]},
+    './midpointDetector':{MIDPOINTS_MM:{}}
+  });
+  const dpi=150,toPx=x=>x*dpi/25.4;
+  // Rotated/slanted camera mapping with no extreme perspective.
+  const source=(x,y)=>({x:1850-x*5.1+y*.25,
+    y:230+y*5.1+x*.15});
+  const target=(x,y)=>({x:toPx(x),y:toPx(y)});
+  const anchor=(x,y,family,name)=>({
+    source:source(x,y),target:target(x,y),family,name
+  });
+  const markers=[
+    anchor(169.35,10.4,'qr','qr-0'),
+    anchor(190.6,10.4,'qr','qr-1'),
+    anchor(190.6,31.65,'qr','qr-2'),
+    anchor(169.35,31.65,'qr','qr-3'),
+    anchor(51.5,287,'aruco','aruco-2'),
+    anchor(117.5,287,'aruco','aruco-3')
+  ];
+  const result=fusion.fitMultiLandmarkGeometry(markers,dpi);
+  assert.ok(result,'QR + just two independently identified bottom IDs must be eligible');
+  assert.ok(result.evidence.nonQrInliers>=2);
+  assert.equal(result.evidence.inlierFamilies.includes('qr'),true);
+  const p=result.matrix,q=markers[4].source,d=p[6]*q.x+p[7]*q.y+p[8];
+  assert.ok(Math.abs((p[0]*q.x+p[1]*q.y+p[2])/d-markers[4].target.x)<2);
+});
+test('pooled fusion rejects QR-only extrapolation and a missing distant landmark',()=>{
+  const fusion=loadTS('src/scanner/multiLandmarkFusion.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{qr:{xMm:169.35,yMm:10.4,sizeMm:21.25},
+      page:{widthMm:210,heightMm:297}},mmToPx:(mm,dpi)=>mm*dpi/25.4},
+    './arucoDetector':{ARUCO_MARKERS_MM:[]},
+    './midpointDetector':{MIDPOINTS_MM:{}}
+  });
+  const a=(x,y,family)=>({source:{x:x*5,y:y*5},
+    target:{x:x*5,y:y*5},family,name:family+'-'+x+'-'+y});
+  const q=[a(169,10,'qr'),a(190,10,'qr'),
+    a(190,31,'qr'),a(169,31,'qr')];
+  assert.equal(fusion.fitMultiLandmarkGeometry(q,150),null);
+  assert.equal(fusion.fitMultiLandmarkGeometry([...q,a(51,287,'aruco')],150),null);
+});
