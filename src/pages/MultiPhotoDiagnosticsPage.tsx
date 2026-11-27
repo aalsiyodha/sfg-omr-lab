@@ -3,7 +3,8 @@ import type { ChangeEvent } from 'react';
 import type { AppState } from '../App';
 import { APP_BUILD_META } from '../config/version';
 import { runFullScan } from '../scanner/scanOrchestrator';
-import { buildCombinedReport, comparePhotos, type PhotoMetrics, type PhotoScan } from '../diagnostics/multiPhoto';
+import { comparePhotos, type PhotoMetrics, type PhotoScan } from '../diagnostics/multiPhoto';
+import { buildForensicReport } from '../diagnostics/forensicReport';
 import './v26.css';
 
 type Props={appState:AppState};
@@ -116,7 +117,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
           result={...scan.result,stageLogs:scan.result.stageLogs.filter(log=>
             log.level==='ERROR'||log.level==='WARNING'||
             /detailed registration candidate|registration performance|registration candidates complete|selected .* registration|scan stage timings|independent original-photo QR|original-photo QR locator|Exp3\\.7\\.9|Exp3\\.7\\.10|corner.*candidate coordinates|outer-page boundary recovery|small-page boundary|alternative paper hypotheses|360-degree boundary orientation|AI trace:|AI document boundary recovery|AI 360-degree candidate|AI first-warp|AI candidate verification|AI-prewarped fiducial|AI-assisted|AI last-resort summary|Optional AI recovery unavailable|QR processing accounting|failed registration taxonomy|timing-track|grayscale strip geometry diagnostic|Sideways OMR orientation|Lite gentle-curve|timing-assisted refinement/i.test(log.message)
-          ).slice(0,250)};
+          )};
           if(result.overallStatus==='failed')problem=result.errors.join('; ')||'Registration failed';
         }catch(e){
           problem=e instanceof Error?e.message:String(e);
@@ -186,9 +187,9 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
         <h2 className="h6 fw-bold mb-0">Diagnostic overview</h2>
         <div className="d-flex gap-2 flex-wrap">
           <button type="button" className="btn btn-outline-primary btn-sm" disabled={!completed}
-            onClick={()=>saveReport(buildCombinedReport(scans))}>Download combined diagnostic .txt</button>
+            onClick={()=>saveReport(buildForensicReport(scans))}>Download forensic report .txt</button>
           <button type="button" className="btn btn-outline-primary btn-sm" disabled={!completed}
-            onClick={()=>void navigator.clipboard.writeText(buildCombinedReport(scans))
+            onClick={()=>void navigator.clipboard.writeText(buildForensicReport(scans))
               .then(()=>window.alert('Diagnostic report copied'))
               .catch(()=>window.alert('Clipboard permission denied — use Download'))}>Copy report</button>
         </div>
@@ -199,11 +200,12 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
       </div>
       <div className="table-responsive">
         <table className="table table-sm align-middle small">
-          <thead><tr><th>Photo</th><th>Scan / identity</th><th>Method</th><th>Timing</th><th>Detected</th><th>Light (0–255)</th><th>Contrast</th><th>Orientation</th></tr></thead>
+          <thead><tr><th>Photo</th><th>Scan / identity</th><th>Accepted via</th><th>AI model</th><th>Timing</th><th>Detected</th><th>Light (0–255)</th><th>Contrast</th><th>Orientation</th></tr></thead>
           <tbody>{scans.map((s,i)=><tr key={i}>
             <td title={s.filename}>{i+1}. {s.filename}</td>
             <td>{s.result?.overallStatus??'failed'} / {s.result?.qrValid?'QR ✓':'QR unverified'}</td>
             <td>{s.result?.registrationMethod?.startsWith('ai-')?'Local AI':s.result?.registrationMethod?'Classical':'Unverified'}</td>
+            <td>{(s.result?.stageLogs??[]).some(log=>/AI last-resort summary/i.test(log.message))?'Invoked':'Not needed'}</td>
             <td>{s.result?.alignmentVerified?s.result.alignmentMatched+'/50':'Not verified'}</td>
             <td>{s.result?.answers.filter(a=>a.status==='detected').length??'–'}/50</td>
             <td>{s.metrics.mean}</td><td>{s.metrics.contrast}</td>
