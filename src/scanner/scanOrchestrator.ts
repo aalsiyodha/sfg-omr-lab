@@ -12,6 +12,7 @@ import { measureTtop32Fork } from './ttop32ForkLab';
 import { detectMidpointMarkers, generateMidpointOverlay } from './midpointDetector';
 import type { MidpointRegistration } from './midpointDetector';
 import { verifyTimingMarks } from './alignmentValidator';
+import { diagnosticTimingResiduals } from './timingResidualDiagnostics';
 import { canStopUnifiedRegistration } from './unifiedGeometryPolicy';
 import { chooseGeometryAction } from './geometryRouter';
 import { auditBubbleDecision, applyDecisionReview } from './decisionProof';
@@ -432,6 +433,26 @@ function evaluateHypothesis(
       }
     }
     if (!check.passed) {
+      // Exp3.7.9: one diagnostic-only local search around each expected
+      // timing square after a QR-verified but rejected corner warp.
+      // The nearest dark patch is not proof of a timing marker. This cannot
+      // influence geometry adoption or threshold/sampling requirements.
+      if(hypothesis.name==='corner/adaptive'||
+         hypothesis.name.startsWith('corner/qr-frame-')){
+        try{
+          const residuals=diagnosticTimingResiduals(gray,dpi);
+          logger.info('perspective','Exp3.7.9 rejected bilateral timing offsets',{
+            method:hypothesis.name,
+            nearby:residuals.foundNearby,
+            left:residuals.leftNearby,right:residuals.rightNearby,
+            medianAbsDxMm:residuals.medianAbsDxMm,
+            medianAbsDyMm:residuals.medianAbsDyMm,
+            samples:residuals.samples,
+            warning:residuals.warning
+          });
+        }catch(error){logger.warning('perspective','Exp3.7.9 offset diagnostic failed',{
+          method:hypothesis.name,reason:String(error)});}
+      }
       if(evidence){evidence.phase='timing';evidence.reason='QR valid, timing gate rejected';
         evidence.timing=check.matched;evidence.left=check.leftMatched;evidence.right=check.rightMatched;}
       logger.warning('perspective', `${hypothesis.name}: rejected, insufficient independent timing-mark alignment`);
