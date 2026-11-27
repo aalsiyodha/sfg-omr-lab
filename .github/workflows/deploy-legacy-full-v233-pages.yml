@@ -164,7 +164,7 @@ jobs:
           cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
           mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.7.11"
           cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.7.11/"
-      # Build branch revision containing the explicitly typed vertex evidence.
+      # Revalidate revised vertex diagnostic typing (all optional fields inferred safely).
       - name: Validate and build 3.7.12 Harris and tangent vertex experiment
         working-directory: vertex-3712
         run: |
