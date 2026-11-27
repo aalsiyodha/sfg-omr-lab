@@ -71,7 +71,10 @@ export interface ScanicRescue{
  canvas:HTMLCanvasElement;corners:Point[];confidence:number;
  variant:string;allCandidates:Array<{variant:string;score:number;corners:Point[];geometryValid:boolean}>;
 }
-export async function recoverPageWithScanic(source:HTMLCanvasElement,trace:Trace):Promise<ScanicRescue|null>{
+/** QR is an independent source-photo location cue, never a scoring gate. */
+export async function recoverPageWithScanic(source:HTMLCanvasElement,trace:Trace,
+  options?:{sourceQrCenter?:Point|null}
+):Promise<ScanicRescue|null>{
  const started=clk();
  trace('scanic-config',{model:'DocCornerNet SimCC',scanicVersion:'1.8.0',
    assetVersion:'scanic-ml@0.2.0',modelInput:[224,224],
@@ -79,6 +82,17 @@ export async function recoverPageWithScanic(source:HTMLCanvasElement,trace:Trace
    modelBase:assetBase,strictScoreFloor:.5,maxVariants:3});
  const runtime=await loadModelRuntime(trace);
  const candidates:Candidate[]=[];
+ const sourceQrCenter=options?.sourceQrCenter??null;
+ const insideQuad=(points:Point[],p:Point):boolean=>{
+   if(points.length!==4)return false;
+   let positive=false,negative=false;
+   for(let i=0;i<4;i++){
+     const a=points[i],b=points[(i+1)%4];
+     const value=(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
+     if(value>1)positive=true;if(value< -1)negative=true;
+   }
+   return !(positive&&negative);
+ };
  const allCandidates:ScanicRescue['allCandidates']=[];
  const crop=cropCanvas(source);
  const variants=[
@@ -98,10 +112,21 @@ export async function recoverPageWithScanic(source:HTMLCanvasElement,trace:Trace
        result.corners.bottomRight,result.corners.bottomLeft
      ].map(p=>({x:p.x+v.offset.x,y:p.y+v.offset.y})):[];
      const score=result.score??result.confidence??0;
-     const geometryValid=points.length===4&&plausiblePageBoundary(points,source.width,source.height);
+     const strictGeometryValid=points.length===4&&
+       plausiblePageBoundary(points,source.width,source.height);
+     const qrInside=Boolean(sourceQrCenter&&insideQuad(points,sourceQrCenter));
+     // Reuse the 3.7.9 bounded small-page geometry gate for local AI too.
+     // It only PROPOSES a candidate if the independently decoded source QR
+     // lies inside the quad. Mandatory warped QR + bilateral timing remain
+     // unchanged in scanOrchestrator.
+     const smallPageGeometryValid=Boolean(!strictGeometryValid&&qrInside&&
+       plausiblePageBoundary(points,source.width,source.height,'small-page-rescue'));
+     const geometryValid=strictGeometryValid||smallPageGeometryValid;
      trace('scanic-variant',{variant:v.name,elapsedMs:Math.round(clk()-t),
        detected:result.success,message:result.message,score,corners:points,
-       geometryValid,meetsScoreFloor:score>=.5,modelTimings:result.timings??[],
+       geometryValid,strictGeometryValid,smallPageGeometryValid,
+       sourceQrDecoded:Boolean(sourceQrCenter),qrInside,
+       meetsScoreFloor:score>=.5,modelTimings:result.timings??[],
        inputCrop:v.offset,cropSize:[v.canvas.width,v.canvas.height]});
      allCandidates.push({variant:v.name,score,corners:points,geometryValid});
      if(geometryValid&&score>=.5)candidates.push({corners:points,score,canvas:v.canvas,variant:v.name});
