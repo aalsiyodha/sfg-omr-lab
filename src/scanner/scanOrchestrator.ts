@@ -5,6 +5,7 @@ import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
 import { detectCoarseToFineCorners } from './coarseToFineCorners';
 import { fitRobustSheetWarp, type FusionEvidence } from './robustSheetHomography';
+import { warpMultiLandmark, type MultiFusionEvidence } from './multiLandmarkFusion';
 import {discoverUpperPairs} from './partialMarkerRescue';
 import { measureOpenCv5Simd } from './opencv5SimdLab';
 import { measureTtop32Fork } from './ttop32ForkLab';
@@ -63,12 +64,13 @@ type Hypothesis =
   | { kind: 'aruco'; name: string; markers: ArucoRegistration }
   | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> }
   | { kind: 'fusion'; name: string; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
+  | { kind: 'multi'; name: string; qrLocated: ReturnType<typeof locateQRInPhoto>; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
 /** Deduplicate only EXACT reference coordinates on the SAME source image.
  * No near-match tolerance: a subpixel difference can affect printed rings.
  * All QR and timing gates are still enforced for the first occurrence.
  */
 function geometryFingerprint(h:Hypothesis):string|null {
-  if(h.kind==='hybrid'||h.kind==='fusion')return null;
+  if(h.kind==='hybrid'||h.kind==='fusion'||h.kind==='multi')return null;
   if(h.kind==='corner')return JSON.stringify(['corner',h.markers.topLeft,
     h.markers.topRight,h.markers.bottomLeft,h.markers.bottomRight]);
   if(h.kind==='midpoint')return JSON.stringify(['midpoint',h.markers.top,
@@ -128,6 +130,7 @@ type RegistrationProbe = {
   timing:number;left:number;right:number;
   warpMs?:number;qrMs?:number;previewMs?:number;
   fusionEvidence?:FusionEvidence;
+  multiFusionEvidence?:MultiFusionEvidence;
 };
 function evaluateHypothesis(
   source: HTMLCanvasElement,
@@ -154,6 +157,13 @@ function evaluateHypothesis(
             ? correctPerspectiveFromQrCorners(source,hypothesis.qrLocated,!fastQrRoi)
             : correctPerspectiveFromQrAruco(source,hypothesis.qrLocated,hypothesis.aruco,!fastQrRoi)
          : correctPerspectiveFromHybrid(source,hypothesis.corners,hypothesis.aruco,!fastQrRoi)
+      : hypothesis.kind === 'multi'
+      ? warpMultiLandmark(source,hypothesis.qrLocated,
+          hypothesis.corners,hypothesis.midpoint,hypothesis.aruco,dpi,model=>{
+            if(evidence)evidence.multiFusionEvidence=model;
+            logger.info('perspective','Exp3.7.6 pooled multi-landmark fusion evidence',model);
+          })?.perspective ?? {corrected:null,correctedDataUrl:'',
+            transform:null,success:false,error:'No consistent multi-family homography'}
       : hypothesis.kind === 'fusion'
       ? fitRobustSheetWarp(source,hypothesis.corners,hypothesis.midpoint,
           hypothesis.aruco,dpi,(fusion)=>{
@@ -563,6 +573,7 @@ export async function runFullScan(
       accepted:boolean;provisional:boolean;
       warpMs?:number;qrMs?:number;previewMs?:number;
       fusionEvidence?:FusionEvidence;
+      multiFusionEvidence?:MultiFusionEvidence;
     }[]=[];
     const traceRegistration=(
       source:HTMLCanvasElement,hypothesis:Hypothesis,dpi:number,
@@ -582,7 +593,8 @@ export async function runFullScan(
         right:result?.check.rightMatched??evidence.right,
         accepted:Boolean(result),provisional:Boolean(result?.provisional),
         warpMs:evidence.warpMs,qrMs:evidence.qrMs,previewMs:evidence.previewMs,
-        fusionEvidence:evidence.fusionEvidence
+        fusionEvidence:evidence.fusionEvidence,
+        multiFusionEvidence:evidence.multiFusionEvidence
       };
       registrationAttempts.push(item);
       if(options?.qrOptionalExperiment && !result && provisionalCandidates.length<32){
@@ -772,7 +784,7 @@ export async function runFullScan(
       // We still compare the independent adaptive midpoint candidate before
       // skipping Otsu alternatives, and retry Otsu for marginal alignments.
       if (skipRedundantFallback(selected?.check.matched ?? null, hypothesis.name,
-        hypothesis.kind==='hybrid'||hypothesis.kind==='fusion'?'corner':hypothesis.kind)) {
+        hypothesis.kind==='hybrid'||hypothesis.kind==='fusion'||hypothesis.kind==='multi'?'corner':hypothesis.kind)) {
         logger.info('markerDetection', `${hypothesis.name}: skipped redundant expensive fallback after strong verification`);
         continue;
       }
@@ -785,7 +797,7 @@ export async function runFullScan(
       // Prefer the hypothesis that aligns the most timing marks; tie-break in
       // favour of actual corner squares (less extrapolation than midpoints).
       const rank = (a: AcceptedAlignment) => registrationScore({
-        kind: a.hypothesis.kind==='hybrid'||a.hypothesis.kind==='fusion'?'corner':a.hypothesis.kind, timingMatched: a.check.matched,
+        kind: a.hypothesis.kind==='hybrid'||a.hypothesis.kind==='fusion'||a.hypothesis.kind==='multi'?'corner':a.hypothesis.kind, timingMatched: a.check.matched,
         leftMatched: a.check.leftMatched, rightMatched: a.check.rightMatched,
         qrVerified: a.qr.valid,
       });
@@ -837,7 +849,7 @@ export async function runFullScan(
           rightMatched:attempt.check.rightMatched,
           qrVerified:attempt.qr.valid});
         const prior=selected?registrationScore({
-          kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
+          kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'||selected.hypothesis.kind==='multi'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
           leftMatched:selected.check.leftMatched,
           rightMatched:selected.check.rightMatched,qrVerified:selected.qr.valid,
         }): -Infinity;
@@ -985,6 +997,33 @@ export async function runFullScan(
           timing:qrOnlyResult?.check.matched??null,
           note:'QR-corner extrapolation never bypasses timing verification'});
         if(qrOnlyResult)selected=qrOnlyResult;
+      }
+      // Exp 3.7.6: pool independently decoded original QR and printed
+      // markers into ONE robust model instead of fitting each pair alone.
+      // Run only on photos that defeated earlier alignment paths.
+      // Retain the existing strict QR identity and dual timing acceptance.
+      if(located.valid && !selected && options?.robustFusion!==false){
+        const attempts=[
+          {name:'adaptive',corners:primary,midpoint:mid,aruco:arucoAdaptive},
+          {name:'Otsu',corners:cornerOtsuForHybrid,
+            midpoint:undefined,aruco:arucoOtsu},
+          {name:'cross-threshold',corners:cornerOtsuForHybrid,
+            midpoint:mid,aruco:arucoAdaptive}
+        ];
+        for(const attempt of attempts){
+          if(selected)break;
+          warpAttempts++;
+          const proposal:Hypothesis={kind:'multi',
+            name:'fusion/pooled-'+attempt.name,
+            qrLocated:located,corners:attempt.corners,
+            midpoint:attempt.midpoint,aruco:attempt.aruco};
+          const candidate=traceRegistration(loaded.canvas,proposal,dpi,curveBudget);
+          logger.info('perspective','Exp3.7.6 pooled multi-landmark outcome',{
+            method:proposal.name,qrSourceVerified:true,
+            accepted:Boolean(candidate),timing:candidate?.check.matched??null
+          });
+          if(candidate)selected=candidate;
+        }
       }
       // New v2.3.46 failure-only cross-family registration. It combines
       // independently located QR corners with two decoded bottom ArUco IDs.
@@ -1163,11 +1202,11 @@ export async function runFullScan(
             const candidate=traceRegistration(rough.canvas,hypothesis,dpi,curveBudget);
             if(!candidate)continue;
             const score=registrationScore({
-              kind:candidate.hypothesis.kind==='hybrid'||candidate.hypothesis.kind==='fusion'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
+              kind:candidate.hypothesis.kind==='hybrid'||candidate.hypothesis.kind==='fusion'||candidate.hypothesis.kind==='multi'?'corner':candidate.hypothesis.kind,timingMatched:candidate.check.matched,
               leftMatched:candidate.check.leftMatched,rightMatched:candidate.check.rightMatched,
               qrVerified:candidate.qr.valid});
             const previous=selected?registrationScore({
-              kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
+              kind:selected.hypothesis.kind==='hybrid'||selected.hypothesis.kind==='fusion'||selected.hypothesis.kind==='multi'?'corner':selected.hypothesis.kind,timingMatched:selected.check.matched,
               leftMatched:selected.check.leftMatched,rightMatched:selected.check.rightMatched,
               qrVerified:selected.qr.valid}):-Infinity;
             if(score>previous){
