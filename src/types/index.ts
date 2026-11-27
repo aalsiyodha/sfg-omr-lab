@@ -26,6 +26,9 @@ export interface BubbleMeasurement {
   filledSectors?: number;
   hatchGapRows?: number;
   hatchLike?: boolean;
+  /** Z.ai audit shadow result; never overrides strict classifier. */
+  hatchV2?: boolean;
+  hatchV2GapRows?: number;
   strokeLike?: boolean;
   axisCoverage?: number;
   diagonalCoverage?: number;

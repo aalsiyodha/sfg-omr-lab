@@ -19,6 +19,8 @@ export interface BoundaryEvidence {
   rejectedBorder?:number;
   rejectedImageCorner?:number;
   rejectedGeometry?:number;
+  rejectedQrOutside?:number;
+  mode?:'strict'|'small-page-rescue';
   candidateSummary?:Array<{method:string;score:number;areaRatio:number;minMarginRatio:number}>;
   thresholdsTried?:number;
   method?:string;
@@ -65,7 +67,9 @@ export function touchesImageCorner(points:PagePoint[],width:number,height:number
     (p.x<=tol || p.x>=width-tol) &&
     (p.y<=tol || p.y>=height-tol));
 }
-export function plausiblePageBoundary(points:PagePoint[],width:number,height:number):boolean{
+export type BoundaryRecoveryMode='strict'|'small-page-rescue';
+export function plausiblePageBoundary(points:PagePoint[],width:number,height:number,
+  mode:BoundaryRecoveryMode='strict'):boolean{
   const p=orderPageCorners(points);
   if(!p)return false;
   const cross=(a:PagePoint,b:PagePoint,c:PagePoint)=>
@@ -73,23 +77,28 @@ export function plausiblePageBoundary(points:PagePoint[],width:number,height:num
   if(p.some((v,i)=>cross(v,p[(i+1)%4],p[(i+2)%4])<=0))return false;
   const area=Math.abs(p.reduce((sum,v,i)=>sum+v.x*p[(i+1)%4].y-
     v.y*p[(i+1)%4].x,0))/2;
-  if(area<width*height*.18||area>width*height*.95)return false;
+  if(area<width*height*(mode==='strict'?.18:.095)||area>width*height*.95)return false;
   const d=(a:PagePoint,b:PagePoint)=>Math.hypot(a.x-b.x,a.y-b.y);
   const top=d(p[0],p[1]),bottom=d(p[3],p[2]);
   const left=d(p[0],p[3]),right=d(p[1],p[2]);
-  if(Math.min(top,bottom)<width*.26||Math.min(left,right)<height*.30)return false;
+  if(Math.min(top,bottom)<width*(mode==='strict'?.26:.16)||
+     Math.min(left,right)<height*(mode==='strict'?.30:.16))return false;
   const widthRatio=Math.max(top,bottom)/Math.min(top,bottom);
   const heightRatio=Math.max(left,right)/Math.min(left,right);
-  if(widthRatio>2.1||heightRatio>2.1)return false;
+  if(widthRatio>(mode==='strict'?2.1:3.2)||heightRatio>(mode==='strict'?2.1:3.2))return false;
   return true;
 }
 export function recoverPaperBoundary(source:HTMLCanvasElement,
-  onEvidence?:(e:BoundaryEvidence)=>void):BoundaryResult|null{
+  onEvidence?:(e:BoundaryEvidence)=>void,
+  options?:{mode?:BoundaryRecoveryMode;qrCenter?:PagePoint|null}
+):BoundaryResult|null{
+  const mode=options?.mode??'strict';
   let src:any=null,gray:any=null,small:any=null,blur:any=null;
   let mask:any=null,kernel:any=null,contours:any=null,hierarchy:any=null;
   let points:any=null,dest:any=null,homography:any=null,output:any=null;
   const report=(e:BoundaryEvidence)=>onEvidence?.(e);
-  const diagnostics={candidates:0,rejectedBorder:0,rejectedImageCorner:0,rejectedGeometry:0,thresholdsTried:0};
+  const diagnostics={mode,candidates:0,rejectedBorder:0,rejectedImageCorner:0,
+    rejectedGeometry:0,rejectedQrOutside:0,thresholdsTried:0};
   try{
     src=cv.imread(source);
     gray=new cv.Mat();cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
@@ -102,7 +111,7 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
     cv.GaussianBlur(small,blur,new cv.Size(5,5),0);
     mask=new cv.Mat();
     kernel=cv.getStructuringElement(cv.MORPH_RECT,new cv.Size(9,9));
-    const areaFloor=small.cols*small.rows*.18;
+    const areaFloor=small.cols*small.rows*(mode==='strict'?.18:.095);
     const candidates:{corners:PagePoint[];area:number;score:number;method:string}[]=[];
     // Distinct thresholds are important for papers with hard sunlight and
     // shadow. Multiple candidate families are bounded and only searched
@@ -140,7 +149,7 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
                 x:v[j*2]/scale,y:v[j*2+1]/scale
               }));
               approx.delete();approx=null;
-              if(!plausiblePageBoundary(corners,source.width,source.height)){
+              if(!plausiblePageBoundary(corners,source.width,source.height,mode)){
                 diagnostics.rejectedGeometry++;continue;
               }
               if(hasClippedImageEdge(corners,source.width,source.height)){
@@ -148,6 +157,22 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
               }
               if(touchesImageCorner(corners,source.width,source.height)){
                 diagnostics.rejectedImageCorner++;continue;
+              }
+              // In the deliberately more permissive second pass, require
+              // the independently located source QR to remain INSIDE the
+              // paper hypothesis (when a QR was actually decoded).
+              // A background polygon excluding the real QR is impossible.
+              if(mode==='small-page-rescue'&&options?.qrCenter){
+                const p=orderPageCorners(corners)!;
+                const center=options.qrCenter;
+                const signed=p.map((c,i)=>{
+                  const n=p[(i+1)%4];
+                  return (n.x-c.x)*(center.y-c.y)-
+                    (n.y-c.y)*(center.x-c.x);
+                });
+                if(signed.some(v=>v>0)&&signed.some(v=>v<0)){
+                  diagnostics.rejectedQrOutside++;continue;
+                }
               }
               // Prefer a large actual sheet with available margins. A large
               // contour which hugs the image boundary is NOT automatically
