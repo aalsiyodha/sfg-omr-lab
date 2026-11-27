@@ -45,6 +45,11 @@ jobs:
         with:
           ref: experiment/3-7-11-adaptive-dual-ai-consistency
           path: adaptive-dual-3711
+      - name: Checkout 3.7.12 classical vertex lab
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-12-classical-vertex-lab
+          path: vertex-3712
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -56,6 +61,7 @@ jobs:
             comparison/package-lock.json
             classical-ai-3710/package-lock.json
             adaptive-dual-3711/package-lock.json
+            vertex-3712/package-lock.json
       - name: Validate and build stable root
         working-directory: production
         run: |
@@ -158,6 +164,31 @@ jobs:
           cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
           mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.7.11"
           cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.7.11/"
+      - name: Validate and build 3.7.12 Harris and tangent vertex experiment
+        working-directory: vertex-3712
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:scanner
+          mkdir -p public/opencv public/ai-runtime public/ai-model
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
+          archive=$(npm pack --silent --ignore-scripts quadscan@1.0.0)
+          tar -xzf "$archive"
+          cp package/dist/quadscan.iife.js public/ai-runtime/quadscan.iife.js
+          cp package/models/lcnet100_h_e_bifpn_256_fp32.onnx public/ai-model/
+          rm -rf package "$archive"
+          archive=$(npm pack --silent --ignore-scripts onnxruntime-web@1.20.1)
+          tar -xzf "$archive"
+          cp package/dist/*.wasm public/ai-runtime/
+          rm -rf package "$archive"
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/3.7.12/' npm run build
+          mkdir -p dist/ai-model/scanic
+          cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+          mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.7.12"
+          cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.7.12/"
       - name: Combine stable root and isolated experiment
         run: |
           mkdir -p production/dist/experiments/legacy-full-v233
@@ -175,6 +206,10 @@ jobs:
           test -s production/dist/experiments/3.7.11/ai-runtime/quadscan.iife.js
           test -s production/dist/experiments/3.7.11/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
           test -d production/dist/experiments/3.7.11/ai-model/scanic
+          test -s production/dist/experiments/3.7.12/index.html
+          test -s production/dist/experiments/3.7.12/opencv/opencv.js
+          test -s production/dist/experiments/3.7.12/ai-runtime/quadscan.iife.js
+          test -s production/dist/experiments/3.7.12/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
           test -n "$(find production/dist/experiments/3.7.11/ai-runtime -maxdepth 1 -name '*.wasm' -print -quit)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
