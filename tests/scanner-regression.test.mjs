@@ -2411,3 +2411,49 @@ test('non-byte-backed fake mats bypass adaptive-threshold cache',()=>{
   assert.equal(after,fresh);
   assert.ok(Number.isFinite(before));
 });
+
+test('Exp3.7.9 QR-relative corner assignment is invariant to 0/35/90/180 degree rotation',()=>{
+  const marks={topLeft:{xMm:6,yMm:6,sizeMm:7},
+    topRight:{xMm:197,yMm:6,sizeMm:7},
+    bottomLeft:{xMm:6,yMm:284,sizeMm:7},
+    bottomRight:{xMm:197,yMm:284,sizeMm:7}};
+  const layout={qr:{xMm:169.35,yMm:10.4,sizeMm:21.25},
+    markers:marks};
+  const geometry=loadTS('src/scanner/rotationInvariantCorners.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:layout}
+  });
+  const nameToPoint=name=>{
+    const m=marks[name];return {x:m.xMm+3.5,y:m.yMm+3.5};
+  };
+  for(const degrees of [0,35,90,180,270]){
+    const theta=degrees*Math.PI/180,cos=Math.cos(theta),sin=Math.sin(theta);
+    const rotate=({x,y})=>({
+      x:750+(x-105)*4*cos-(y-148.5)*4*sin,
+      y:850+(x-105)*4*sin+(y-148.5)*4*cos
+    });
+    const q=layout.qr;
+    const qrCorners=[
+      {x:q.xMm,y:q.yMm},{x:q.xMm+q.sizeMm,y:q.yMm},
+      {x:q.xMm+q.sizeMm,y:q.yMm+q.sizeMm},
+      {x:q.xMm,y:q.yMm+q.sizeMm}
+    ].map(rotate);
+    const corners=['topLeft','topRight','bottomRight','bottomLeft'].map((name,i)=>{
+      const m=rotate(nameToPoint(name));
+      return {...m,cx:m.x,cy:m.y,width:26,height:26,area:625,
+        index:i,...geometry.qrFrameCoordinates(qrCorners,m)};
+    });
+    const qr={valid:true,found:true,raw:'SFGOMR1:test',
+      corners:qrCorners,center:rotate({x:q.xMm+q.sizeMm/2,y:q.yMm+q.sizeMm/2}),
+      attempts:1};
+    const extra=[{...corners[0],cx:750,cy:850,
+      u:0,v:4,index:30}];
+    const proposals=geometry.rankQrGuidedMarkers([...corners,...extra],qr,1500,1800,4);
+    assert.ok(proposals.length>0,'rotation '+degrees+' proposed no quadrilateral');
+    const best=proposals[0].markers;
+    for(const [index,label] of ['topLeft','topRight','bottomRight','bottomLeft'].entries()){
+      const picked=best[label],expected=corners[index];
+      assert.ok(Math.hypot(picked.x-expected.x,picked.y-expected.y)<1,
+        'rotation '+degrees+' assigned wrong '+label);
+    }
+  }
+});
