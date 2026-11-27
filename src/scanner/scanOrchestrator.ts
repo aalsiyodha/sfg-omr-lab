@@ -63,7 +63,7 @@ type Hypothesis =
   | { kind: 'midpoint'; name: string; markers: MidpointRegistration }
   | { kind: 'aruco'; name: string; markers: ArucoRegistration }
   | { kind: 'hybrid'; name: string; corners: MarkerDetectionResult; aruco: ArucoRegistration; qrLocated?: ReturnType<typeof locateQRInPhoto> }
-  | { kind: 'fusion'; name: string; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
+  | { kind: 'fusion'; name: string; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration }
   | { kind: 'multi'; name: string; qrLocated: ReturnType<typeof locateQRInPhoto>; corners: MarkerDetectionResult; midpoint?: MidpointRegistration; aruco: ArucoRegistration };
 /** Deduplicate only EXACT reference coordinates on the SAME source image.
  * No near-match tolerance: a subpixel difference can affect printed rings.
