@@ -1,0 +1,196 @@
+name: Deploy 3.7.9 rotation-invariant classical scanner and full source ZIP
+on:
+  push:
+    branches:
+      - experiment/3-7-9-rotation-invariant-classical
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout stable production
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: production
+      - name: Checkout isolated experiment
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-9-rotation-invariant-classical
+          path: experiment
+      - name: Checkout frozen classical baseline 3.7.4
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-4-classical-only
+          path: baseline
+      - name: Checkout archived full v2.3.3 comparison
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/legacy-full-v233-ten-photo-benchmark
+          path: historical
+      - name: Checkout previous 3.7.8 optimization experiment
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-8-classical-perf-review
+          path: previous8
+      - name: Checkout previous 3.7.7 geometry experiment
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-7-qr-anchored-classical
+          path: previous
+      - name: Checkout classical 3.7.6 comparison
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-6-color-paper-geometry
+          path: comparison
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            production/package-lock.json
+            experiment/package-lock.json
+            baseline/package-lock.json
+            comparison/package-lock.json
+            historical/package-lock.json
+            previous/package-lock.json
+            previous8/package-lock.json
+      - name: Validate and build stable root
+        working-directory: production
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:scanner
+          mkdir -p public/opencv
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true npm run build
+          mkdir -p dist/ai-model/scanic
+          cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+      - name: Validate and build classical 3.7.9 without AI
+        working-directory: experiment
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm run test:scanner
+          mkdir -p public/opencv
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/3.7.9/' npm run build
+          mkdir -p dist/ai-model/scanic
+          cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+      - name: Build and retain 3.7.8 previous experiment
+        working-directory: previous8
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:scanner
+          mkdir -p public/opencv
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/3.7.8/' npm run build
+          mkdir -p dist/ai-model/scanic
+          cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+      - name: Build and retain 3.7.7 previous experiment
+        working-directory: previous
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:scanner
+          mkdir -p public/opencv
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/3.7.7/' npm run build
+          mkdir -p dist/ai-model/scanic
+          cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+      - name: Build archived full v2.3.3 comparator
+        working-directory: historical
+        run: |
+          npm ci
+          npm run lint
+          npm run test:scanner
+          mkdir -p public/opencv
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/legacy-full-v233/' npm run build
+      - name: Restore baseline 3.7.4 and comparison 3.7.6 pages
+        run: |
+          for label in baseline comparison; do
+            cd "$GITHUB_WORKSPACE/$label"
+            npm ci
+            npm run typecheck
+            npm run test:scanner
+            mkdir -p public/opencv
+            archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+            tar -xzf "$archive" package/dist/opencv.js
+            cp package/dist/opencv.js public/opencv/opencv.js
+            rm -rf package "$archive"
+            version="3.7.4"
+            if [ "$label" = "comparison" ]; then version="3.7.6"; fi
+            GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE="/sfg-omr-lab/experiments/$version/" npm run build
+            mkdir -p dist/ai-model/scanic
+            cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+            mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/$version"
+            cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/$version/"
+          done
+      - name: Combine stable root and isolated experiment
+        run: |
+          mkdir -p production/dist/experiments/legacy-full-v233
+          cp -a historical/dist/. production/dist/experiments/legacy-full-v233/
+          mkdir -p production/dist/experiments/3.7.7
+          cp -a previous/dist/. production/dist/experiments/3.7.7/
+          mkdir -p production/dist/experiments/3.7.8
+          cp -a previous8/dist/. production/dist/experiments/3.7.8/
+          mkdir -p production/dist/experiments/3.7.9
+          cp -a experiment/dist/. production/dist/experiments/3.7.9/
+          # Retain both full source archives to make the distinct
+          # experimental versions directly downloadable for independent audits.
+          cd previous8
+          git archive --format=zip --output="$GITHUB_WORKSPACE/production/dist/experiments/3.7.8/omrlab-classical-full-source-3.7.8.zip" HEAD
+          cd ../experiment
+          git archive --format=zip --output="$GITHUB_WORKSPACE/production/dist/experiments/3.7.9/omrlab-classical-full-source-3.7.9.zip" HEAD
+          cd ..
+          test -s production/dist/experiments/3.7.8/omrlab-classical-full-source-3.7.8.zip
+          test -s production/dist/experiments/3.7.9/omrlab-classical-full-source-3.7.9.zip
+          test -s production/dist/index.html
+          test -s production/dist/experiments/legacy-full-v233/index.html
+          test -s production/dist/experiments/legacy-full-v233/opencv/opencv.js
+          test -s production/dist/experiments/3.7.7/index.html
+          test -s production/dist/experiments/3.7.7/opencv/opencv.js
+          test -s production/dist/experiments/3.7.8/index.html
+          test -s production/dist/experiments/3.7.8/opencv/opencv.js
+          test -s production/dist/experiments/3.7.9/index.html
+          test -s production/dist/experiments/3.7.9/opencv/opencv.js
+          test -s production/dist/experiments/3.7.4/index.html
+          test -s production/dist/experiments/3.7.6/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: production/dist
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: exp-3-7-9
+      url: https://aalsiyodha.github.io/sfg-omr-lab/experiments/3.7.9/#/experiment-3-7-9
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
