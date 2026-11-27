@@ -4,7 +4,7 @@
  * Candidate QR/timing figures never imply grading acceptance.
  */
 import type { PhotoScan } from './multiPhoto';
-import { comparePhotos, scanIdentity, answerQualityScorecard } from './multiPhoto';
+import { comparePhotos, scanIdentity, answerQualityScorecard, evaluateLabeledAnswers } from './multiPhoto';
 type Evidence={message:string;data?:unknown};
 const round=(n:number)=>Math.round(n*10)/10;
 const dataOf=(e:Evidence|undefined):Record<string,unknown> =>
@@ -54,9 +54,10 @@ function residualLines(out:string[],logs:Evidence[],prefix:string){
     out.push(prefix+'  Note: nearby dark patches are unverified optical hints, NOT accepted timing marks.');
   }
 }
-export function buildForensicReport(scans:PhotoScan[]):string {
+export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
   const comparison=comparePhotos(scans);
   const scorecard=answerQualityScorecard(scans);
+  const labelled=evaluateLabeledAnswers(scans,groundTruth);
   const count=scans.filter(s=>Boolean(s.result&&scanIdentity(s.result))).length;
   const classical=scans.filter(s=>s.result&&scanIdentity(s.result)&&
     !s.result.registrationMethod?.startsWith('ai-')).length;
@@ -143,6 +144,18 @@ export function buildForensicReport(scans:PhotoScan[]):string {
   for(const row of scorecard.perPhoto)out.push('  '+row.filename+
     ' | verified='+row.verified+' | detected='+str(row.detected)+
     '/50 | abstained='+str(row.abstained)+' | '+str(row.seconds)+'s');
+  if(labelled){
+    if(!labelled.valid)out.push('Ground truth input invalid: '+labelled.error);
+    else out.push('','02C  MANUALLY LABELLED ACCURACY (OPTIONAL)',
+      'Correct '+labelled.correct+'/'+labelled.total+
+      ' | accuracy='+str(labelled.accuracyPercent)+'%',
+      'Incomplete-mark false accepts '+labelled.falseAccept+'/'+labelled.invalidTotal+
+      ' | rate='+str(labelled.incompleteMarkFalseAcceptRatePercent)+'%',
+      'Abstentions on labelled photos '+labelled.abstentions,
+      ...labelled.byQuestion.filter(q=>q.correct!==q.total||q.falseAccept>0)
+        .map(q=>'Q'+q.question+' groundTruth='+q.label+' correct='+q.correct+'/'+q.total+
+          ' falseAccept='+q.falseAccept));
+  }
   out.push('','03  FORENSIC TRACE — FULL PER-PHOTO EVIDENCE');
   scans.forEach((s,i)=>{
     const e=(s.result?.stageLogs??[]) as Evidence[];
