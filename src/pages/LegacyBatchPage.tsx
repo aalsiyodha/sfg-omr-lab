@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import type { AppState } from '../App';
 import { runFullScan } from '../scanner/scanOrchestrator';
@@ -70,20 +70,25 @@ export default function LegacyBatchPage({appState}:{appState:AppState}){
   const [results,setResults]=useState<Entry[]>([]);
   const [working,setWorking]=useState(false);
   const [progress,setProgress]=useState('');
+  const [copyStatus,setCopyStatus]=useState('');
+  const runningRef=useRef(false);
+  const autoStartedRef=useRef<File[]|null>(null);
   const ready=appState.opencv==='ready';
   const eligible=files.length===10&&files.every(f=>/image\/(jpeg|jpg|png|webp)/.test(f.type));
   const same=useMemo(()=>results.filter(e=>e.result?.qrValid&&
     e.result.alignmentVerified&&e.result.overallStatus!=='failed'),[results]);
   const onChange=(e:ChangeEvent<HTMLInputElement>)=>{
     setFiles(Array.from(e.target.files??[]).sort((a,b)=>a.name.localeCompare(b.name)));
-    setResults([]);setProgress('');
+    setResults([]);setProgress('');setCopyStatus('');
+    autoStartedRef.current=null;
   };
-  const start=async()=>{
-    if(!eligible||!ready||working)return;
+  const start=async(batch:File[])=>{
+    if(batch.length!==10||!ready||runningRef.current)return;
+    runningRef.current=true;
     setWorking(true);setResults([]);
     const all:Entry[]=[];
     try{
-      for(const [i,file] of files.entries()){
+      for(const [i,file] of batch.entries()){
         setProgress('Scanning '+(i+1)+'/10: '+file.name);
         const t=performance.now();
         let entry:Entry;
@@ -98,19 +103,42 @@ export default function LegacyBatchPage({appState}:{appState:AppState}){
         await new Promise(resolve=>setTimeout(resolve,50));
       }
       setProgress('Complete: '+all.length+'/10 photographs tested.');
-    }finally{setWorking(false);}
+    }finally{runningRef.current=false;setWorking(false);}
+  };
+  // Automatic regression: choosing ten photographs should immediately scan
+  // them once OpenCV is ready. This also works when files arrive before WASM.
+  useEffect(()=>{
+    if(!eligible||!ready||runningRef.current||autoStartedRef.current===files)return;
+    autoStartedRef.current=files;
+    void start(files);
+  },[files,eligible,ready]);
+  const copyReport=async()=>{
+    if(results.length!==10)return;
+    const body=report(results);
+    try{
+      if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(body);
+      else{
+        const textarea=document.createElement('textarea');
+        textarea.value=body;textarea.style.position='fixed';
+        textarea.style.opacity='0';document.body.appendChild(textarea);
+        textarea.select();
+        const copied=document.execCommand('copy');textarea.remove();
+        if(!copied)throw new Error('Clipboard unavailable');
+      }
+      setCopyStatus('Report copied to clipboard.');
+    }catch(e){setCopyStatus('Copy failed: '+String(e)+'. Use Download instead.');}
   };
   return <div className="container py-4" style={{maxWidth:1000}}>
     <h1>Experiment 2.3.3-full — historical full engine</h1>
-    <p className="text-muted">Archived full scanner before Lite. Ten original photos are processed locally.
+    <p className="text-muted">Archived full scanner before Lite. Choosing exactly ten photos starts scanning automatically as soon as OpenCV is ready. All processing stays local.
       Core legacy registration and bubble-reading code has not been modified.</p>
     <div className="alert alert-secondary" role="status">OpenCV: {appState.opencv}.
-      {' '}{progress||'Choose all ten Test 27 photos.'}</div>
+      {' '}{progress||'Choose all ten Test 27 photos; scanning starts automatically.'}</div>
     <label className="form-label" htmlFor="legacy-files">Choose exactly 10 photographs</label>
     <input id="legacy-files" className="form-control mb-3" type="file"
       multiple accept="image/jpeg,image/png,image/webp" onChange={onChange} disabled={working}/>
     <button type="button" className="btn btn-primary mb-3" disabled={!eligible||!ready||working}
-      onClick={start}>Analyse 10 photos</button>
+      onClick={()=>void start(files)}>Analyse 10 photos</button>
     <p className="small text-muted">Selected {files.length}/10 · Completed {results.length}/10 ·
       Verified {same.length}. Unverified sheets remain unscored.</p>
     <div className="table-responsive">
@@ -124,10 +152,17 @@ export default function LegacyBatchPage({appState}:{appState:AppState}){
         </tr>)}</tbody>
       </table>
     </div>
+    <div className="d-flex flex-wrap gap-2 mb-2">
     <button type="button" className="btn btn-outline-secondary"
       disabled={working||results.length!==10}
       onClick={()=>download('omrlab-multi-photo-diagnostic.txt',report(results))}>
       Download combined diagnostic .txt
     </button>
+    <button type="button" className="btn btn-outline-primary"
+      disabled={working||results.length!==10} onClick={()=>void copyReport()}>
+      Copy report
+    </button>
+    </div>
+    <p role="status" aria-live="polite" className="small">{copyStatus}</p>
   </div>;
 }
