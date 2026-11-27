@@ -1853,7 +1853,9 @@ export async function runFullScan(
       // rather than an automatic change to the strict bubble classifier.
       const sourceProbeEnabled=options?.sourceInkProbe??true;
       const sourceProbe=sourceProbeEnabled?
-        probeSourceInk(loaded.canvas,chosen.perspective.transform,dpi,activeGridOffset):null;
+        probeSourceInk(loaded.canvas,
+          /^(corner\/|midpoint\/|aruco\/|fusion\/|hybrid\/)/.test(registrationMethod??'')
+            ?chosen.perspective.transform:null,dpi,activeGridOffset):null;
       logger.info('bubbleDetection','Exp3.8 original-pixel ink contrast audit',{
         enabled:sourceProbeEnabled,supported:sourceProbe?.supported??false,
         reason:sourceProbe?.reason??'disabled',sampled:sourceProbe?.sampled??0,
