@@ -29,7 +29,7 @@ export default defineConfig(({ command }) => {
     dirty: !isVercel && localDirty(),
   }
   return {
-    base: isGitHubPages ? '/sfg-omr-lab/' : '/',
+    base: isGitHubPages ? (process.env.GITHUB_PAGES_BASE || '/sfg-omr-lab/') : '/',
     plugins: [
       react(),
       { name: 'app-version-html', transformIndexHtml: html => html.replaceAll('__APP_VERSION__', `v${version}`) },
