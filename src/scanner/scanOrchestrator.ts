@@ -27,6 +27,7 @@ import { recoverPaperBoundary } from './pageBoundaryRecovery';
 import { warpQrAnchoredPaper, type QrAnchoredVariant } from './qrAnchoredPaperRecovery';
 import { warpBoundaryOrientation } from './omniBoundary';
 import { recoverPageWithScanic } from './scanicPageRescue';
+import { recoverPageWithAI } from './aiPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
 import { correctPerspectiveFromQrAruco } from './qrArucoRegistration';
 import { correctPerspectiveFromQrCorners } from './qrCornerRegistration';
@@ -321,7 +322,7 @@ function evaluateHypothesis(
     // have measurable warp drift in the distant right column. Recheck with
     // four extreme printed timing squares, but only adopt a strictly better
     // independently verified result. Perfect 50/50 warps stay untouched.
-    if (!check.passed || (hypothesis.kind === 'aruco' && check.matched < 50)) {
+    if (!check.passed || (check.matched >= 30 && check.matched < 50)) {
       // v2.2.2: Any registration method can have a sound QR position but
       // a slightly displaced timing lattice. Try four *independent* printed
       // timing squares as a bounded second correction. Never trust a refined
@@ -1562,6 +1563,74 @@ export async function runFullScan(
         });
       }
     }
+    // v3.7.11: genuinely independent DocAligner ONNX fallback, only after
+    // classical and Scanic failures. AI corners NEVER approve answer reading.
+    if(!selected && !options?.disableAiRecovery){
+      const dualStart=Date.now(),failures:string[]=[];
+      let model='none';
+      for(const variant of ['fastvit','lcnet'] as const){
+        try{
+          onProgress?.({stage:'Second local AI geometry: '+variant,percent:58});
+          const proposal=await recoverPageWithAI(loaded.canvas,(event,data)=>
+            logger.info('perspective','Exp3.7.11 dual AI trace: '+event,data),variant);
+          if(!proposal){failures.push(variant+':invalid-quad');continue;}
+          const canvas=proposal.canvas;
+          let direct:any=null,gray:any=null,keep=false;
+          try{
+            direct=cv.imread(canvas);gray=new cv.Mat();
+            cv.cvtColor(direct,gray,cv.COLOR_RGBA2GRAY);
+            const qr=decodeQRFromRegion(canvas,OMR_LAYOUT.qr.xMm,
+              OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+            const timing=verifyTimingMarks(gray,dpi);
+            logger.info('perspective','Exp3.7.11 second model direct gate',{
+              variant,qrValid:qr.valid,confidence:proposal.confidence,
+              matched:timing.matched,left:timing.leftMatched,right:timing.rightMatched,
+              accepted:qr.valid&&timing.passed});
+            if(qr.valid&&timing.passed){
+              selected={hypothesis:{kind:'corner',name:'ai-'+variant+'/direct',
+                markers:primary},perspective:{corrected:direct,correctedDataUrl:'',
+                transform:null,success:true},gray,canvas,qr,check:timing,rotated:false};
+              keep=true;model=variant;
+            }
+          }finally{if(!keep)cleanupMats(direct,gray);}
+          if(selected)break;
+          // Classical refinement: neural paper edges are not printed OMR markers.
+          const proc=preprocessImage(canvas);let otsu:any=null;
+          try{
+            otsu=new cv.Mat();
+            cv.threshold(proc.gray,otsu,0,255,cv.THRESH_BINARY_INV|cv.THRESH_OTSU);
+            for(const variantImage of [{name:'adaptive',mat:proc.thresholded},
+              {name:'otsu',mat:otsu}]){
+              const corners=detectMarkers(variantImage.mat,canvas.width,canvas.height);
+              const midpoints=detectMidpointMarkers(variantImage.mat,canvas.width,canvas.height);
+              const candidates:Hypothesis[]=[];
+              if(corners.found)candidates.push({kind:'corner',
+                name:'ai-'+variant+'/corner-'+variantImage.name,markers:corners});
+              if(midpoints.found)candidates.push({kind:'midpoint',
+                name:'ai-'+variant+'/midpoint-'+variantImage.name,markers:midpoints});
+              logger.info('perspective','Exp3.7.11 adaptive printed-marker proposals',{
+                variant,threshold:variantImage.name,cornerCount:corners.count,
+                midpointFound:midpoints.found,candidates:candidates.length});
+              for(const hypothesis of candidates){
+                warpAttempts++;
+                const result=traceRegistration(canvas,hypothesis,dpi,curveBudget);
+                if(result){selected=result;model=variant;break;}
+              }
+              if(selected)break;
+            }
+          }finally{cleanupMats(otsu,proc.gray,proc.blurred,proc.thresholded);}
+          if(selected)break;
+          failures.push(variant+':QR-or-timing-unverified');
+        }catch(error){
+          failures.push(variant+':'+String(error));
+          logger.warning('perspective','Exp3.7.11 second model unavailable',{variant,reason:String(error)});
+        }
+      }
+      logger.info('perspective','Exp3.7.11 dual AI rescue summary',{
+        invoked:true,model,verified:Boolean(selected),failures,
+        durationMs:Date.now()-dualStart,
+        acceptance:'Original QR + two independently verified timing tracks only'});
+    }
     if(!selected && options?.disableAiRecovery){
       logger.info('perspective','Exp3.7.4 AI recovery deliberately disabled',{
         aiModelLoaded:false,attempts:0,
@@ -1758,6 +1827,24 @@ export async function runFullScan(
         rejectionBreakdown:verifiedMesh?.rejectionBreakdown??null,
         durationMs:meshMs,
         note:'Candidate based only on printed rings; cannot override QR identity'
+      });
+      // v3.7.11: small translation probes identify unstable bubble decisions.
+      // Diagnostic ONLY; do not infer across photographs or rewrite grades.
+      const shifts=[{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+      const alternatives=shifts.map(delta=>detectAllAnswers(chosen.gray,dpi,
+        inkCeiling??undefined,q=>{const v=activeGridOffset(q);
+          return {dx:v.dx+delta.dx,dy:v.dy+delta.dy};},rawInkThreshold));
+      const unstable=rawAnswers.flatMap((row,i)=>{
+        const disagreements=alternatives.map(a=>a[i]).filter(a=>
+          a.status!==row.status||a.detectedAnswer!==row.detectedAnswer);
+        return disagreements.length>=2?[{question:row.question,
+          original:row.detectedAnswer,originalStatus:row.status,
+          shiftsDisagree:disagreements.length,
+          alternatives:disagreements.map(a=>({answer:a.detectedAnswer,status:a.status}))}]:[];
+      });
+      logger.info('bubbleDetection','Exp3.7.11 local bubble consistency probe',{
+        shifts,unstableCount:unstable.length,unstableQuestions:unstable,
+        policy:'Diagnostic only: never auto-select by consensus; strict rejects unchanged'
       });
       finishStage('rawBubbleDetection');
       const tone=applySevenToneCorrection(chosen.gray,grayCalibration);
