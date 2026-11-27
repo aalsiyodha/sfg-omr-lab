@@ -41,7 +41,7 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
   const c=comparePhotos(scans);
   const provisionalCount=scans.filter(s=>s.result?.provisional).length;
   const out=[
-    'SFG OMR Lab — Experiment 3.7.4 — Multi-photo diagnostic (same physical OMR)',
+    'SFG OMR Lab — Experiment 3.7.9 — Multi-photo diagnostic (same physical OMR)',
     'Generated: '+new Date().toISOString(),
     'Scanner runs: '+scans.length+' | Verified same-identity scans: '+c.same.length,
     'Reference: '+(c.reference??'unverified'),
@@ -90,6 +90,10 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
         /Exp3.7.4 AI recovery deliberately disabled/i,
         /Exp3.7.7 QR-anchor geometry evidence/i,
         /Exp3.7.7 QR-anchor proposal rejected/i,
+        /Exp3.7.9 original-photo QR orientation hint/i,
+        /Exp3.7.9 rotation-invariant corner search/i,
+        /Exp3.7.9 small-page boundary rejection evidence/i,
+        /Exp3.7.9 rejected bilateral timing offsets/i,
       ];
       const events=r?.stageLogs??[];
       for(const pattern of stages){
@@ -98,6 +102,13 @@ export function buildCombinedReport(scans:PhotoScan[]):string {
           (item.data?JSON.stringify(item.data).slice(0,
             /failed registration taxonomy/i.test(item.message)?2300:800):'recorded'));
       }
+      // Keep multiple distinctive QR-frame and per-row drift observations:
+      // one "last event" cannot explain why earlier quads were rejected.
+      const forensic=events.filter(e=>
+        /Exp3\\.7\\.9 (rotation-invariant corner search|rejected bilateral timing offsets|small-page boundary rejection evidence)/i.test(e.message));
+      for(const event of forensic.slice(-8))
+        out.push('  '+event.message+': '+
+          (event.data?JSON.stringify(event.data).slice(0,2100):'recorded'));
       if(s.error)out.push('  Error: '+s.error);
     }
   });
