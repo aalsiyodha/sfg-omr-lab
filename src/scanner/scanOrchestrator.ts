@@ -3,6 +3,7 @@ import { loadImageFromFile, validateImage } from './imageLoader';
 import { orientLandscapePhoto } from './pageOrientation';
 import { preprocessImage, checkOpenCV, cleanupMats } from './imagePreprocessor';
 import { detectMarkers } from './markerDetector';
+import { proposeQrGuidedCorners } from './rotationInvariantCorners';
 import { detectCoarseToFineCorners } from './coarseToFineCorners';
 import { fitRobustSheetWarp, type FusionEvidence } from './robustSheetHomography';
 import {discoverUpperPairs} from './partialMarkerRescue';
@@ -526,6 +527,7 @@ export async function runFullScan(
 
     const registrationStarted=Date.now();
     let originalQrLocatorMs=0;
+    let failureQrHint:ReturnType<typeof locateQRInPhoto>|null=null;
     let boundaryQrMs=0;
     let boundaryQrAttempts=0;
     const hypotheses: Hypothesis[] = [];
@@ -648,6 +650,72 @@ export async function runFullScan(
             selected=fallback;
           }else if(fallback)disposeAlignment(fallback);
           else hypotheses.push(alternative);
+        }
+      }
+    }
+    // Exp3.7.9 — failure-only classical geometry, without camera quadrants.
+    // The original camera-TL/TR/BL/BR detector remains the first/fast path.
+    // When it fails, decode the SOURCE QR to recover the sheet's physical
+    // directions and classify eligible printed square contours in that frame.
+    // This permits 35° roll, sideways 90° and upside-down 180° captures;
+    // only independent QR+bilateral timing can accept any proposed warp.
+    if(!selected){
+      const qrStart=Date.now();
+      failureQrHint=locateQRInPhoto(loaded.canvas);
+      originalQrLocatorMs+=Date.now()-qrStart;
+      logger.info('markerDetection','Exp3.7.9 original-photo QR orientation hint',{
+        found:failureQrHint.found,valid:failureQrHint.valid,
+        center:failureQrHint.center,
+        corners:failureQrHint.corners,attempts:failureQrHint.attempts,
+        elapsedMs:Date.now()-qrStart,
+        note:'Source QR is only a hint; never identity or timing approval'
+      });
+      if(failureQrHint.valid){
+        const tryQrFrame=(binary:any,family:string,maxCandidates:number)=>{
+          const {proposals,diagnostics}=proposeQrGuidedCorners(
+            binary,loaded.width,loaded.height,failureQrHint!,maxCandidates);
+          logger.info('markerDetection','Exp3.7.9 rotation-invariant corner search',{
+            family,...diagnostics,proposals:proposals.map(p=>({
+              score:p.score,quadrantViolations:p.quadrantViolations,
+              corners:{tl:p.markers.topLeft,tr:p.markers.topRight,
+                bl:p.markers.bottomLeft,br:p.markers.bottomRight}
+            }))
+          });
+          for(const [i,proposal] of proposals.entries()){
+            const hypothesis:Hypothesis={kind:'corner',
+              name:'corner/qr-frame-'+family+'-'+(i+1),markers:proposal.markers};
+            const fingerprint=geometryFingerprint(hypothesis);
+            if(fingerprint&&usedGeometries.has(fingerprint))continue;
+            if(fingerprint)usedGeometries.add(fingerprint);
+            markerProfile.hypothesesEvaluated++;
+            fastWarpAttempts++;
+            const candidate=traceRegistration(loaded.canvas,hypothesis,dpi,curveBudget);
+            // A background QR with a valid prefix must not substitute for
+            // the decoded physical-sheet QR which oriented this proposal.
+            if(candidate&&candidate.qr.raw!==failureQrHint!.raw){
+              logger.warning('perspective','Exp3.7.9 source/warped QR identity mismatch',{
+                name:hypothesis.name,accepted:false});
+              disposeAlignment(candidate);continue;
+            }
+            if(!candidate)continue;
+            selected=candidate;
+            logger.info('perspective','Exp3.7.9 rotation-invariant corners verified',{
+              name:hypothesis.name,qrIdentity:true,
+              timing:candidate.check.matched,left:candidate.check.leftMatched,
+              right:candidate.check.rightMatched,
+              quadrantViolations:proposal.quadrantViolations});
+            break;
+          }
+        };
+        tryQrFrame(preprocessed.thresholded,'adaptive',4);
+        if(!selected){
+          let otsu:any=null;
+          try{
+            otsu=new cv.Mat();
+            cv.threshold(preprocessed.gray,otsu,0,255,
+              cv.THRESH_BINARY_INV|cv.THRESH_OTSU);
+            tryQrFrame(otsu,'otsu',3);
+          }finally{cleanupMats(otsu);}
         }
       }
     }
@@ -964,9 +1032,9 @@ export async function runFullScan(
     // a failed perspective warp. It is diagnostic evidence, not scan approval.
     if(!selected){
       const qrLocatorStart=Date.now();
-      const located=locateQRInPhoto(loaded.canvas);
+      const located=failureQrHint??locateQRInPhoto(loaded.canvas);
       photoQr=located;
-      originalQrLocatorMs=Date.now()-qrLocatorStart;
+      if(!failureQrHint)originalQrLocatorMs+=Date.now()-qrLocatorStart;
       logger.info('qrDecoding','Independent original-photo QR locator',{
         found:located.found,valid:located.valid,center:located.center,
         corners:located.corners,raw:located.raw,attempts:located.attempts,
