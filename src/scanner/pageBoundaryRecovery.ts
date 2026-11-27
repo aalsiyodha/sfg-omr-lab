@@ -260,7 +260,13 @@ export function recoverPaperBoundary(source:HTMLCanvasElement,
     // verification. The old code discarded every candidate except #1.
     const separation=Math.min(source.width,source.height)*.014;
     const alternates:typeof candidates=[];
-    for(const candidate of candidates.slice(1)){
+    // Reserve at most one trial for vertex-family proposals so that they
+    // are actually evaluated rather than displaced by near-duplicate masks.
+    const standard=candidates.slice(1).filter(c=>!c.method.startsWith('vertex-'));
+    const vertices=candidates.slice(1).filter(c=>c.method.startsWith('vertex-'));
+    const trialOrder=[...standard.slice(0,2),...vertices.slice(0,1),
+      ...standard.slice(2),...vertices.slice(1)];
+    for(const candidate of trialOrder){
       if(alternates.length>=3)break;
       const different=[best,...alternates].every(previous=>
         previous.corners.some((point,i)=>Math.hypot(point.x-candidate.corners[i].x,
