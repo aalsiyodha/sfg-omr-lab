@@ -134,8 +134,8 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
       <div className="text-secondary small mb-2">EXPERIMENT 3.7.6 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.7.6 — Classical Color + Marker Fusion — No AI</h1>
-      <p className="small text-secondary">Experimental low-saturation paper detection complements marker-based fusion without invoking neural AI. No neural document detector is executed in this experiment. Only conventional OpenCV, QR, ArUco, corner, midpoint, boundary and timing geometry operate. Full QR and dual-side timing validation remain required.</p>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.7.6 — Pooled Multi-Landmark Fusion + Color — No AI</h1>
+      <p className="small text-secondary">Pooled QR, partial ArUco IDs, corner squares and midpoint squares use one robust homography; low-saturation page detection remains an independent fallback. All acceptance gates are unchanged. No neural document detector is executed in this experiment. Only conventional OpenCV, QR, ArUco, corner, midpoint, boundary and timing geometry operate. Full QR and dual-side timing validation remain required.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
         No answer is silently combined or changed.</p>
