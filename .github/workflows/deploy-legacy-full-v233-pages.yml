@@ -58,8 +58,6 @@ jobs:
           cp package/dist/opencv.js public/opencv/opencv.js
           rm -rf package "$archive"
           GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/legacy-full-v233/' npm run build
-          mkdir -p dist/ai-model/scanic
-          cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
       - name: Combine stable root and isolated experiment
         run: |
           mkdir -p production/dist/experiments/legacy-full-v233
