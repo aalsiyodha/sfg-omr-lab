@@ -25,6 +25,16 @@ jobs:
         with:
           ref: experiment/legacy-full-v233-ten-photo-benchmark
           path: experiment
+      - name: Checkout frozen classical baseline 3.7.4
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-4-classical-only
+          path: baseline
+      - name: Checkout classical 3.7.6 comparison
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-7-6-color-paper-geometry
+          path: comparison
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -32,6 +42,8 @@ jobs:
           cache-dependency-path: |
             production/package-lock.json
             experiment/package-lock.json
+            baseline/package-lock.json
+            comparison/package-lock.json
       - name: Validate and build stable root
         working-directory: production
         run: |
@@ -58,6 +70,26 @@ jobs:
           cp package/dist/opencv.js public/opencv/opencv.js
           rm -rf package "$archive"
           GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/legacy-full-v233/' npm run build
+      - name: Restore baseline 3.7.4 and comparison 3.7.6 pages
+        run: |
+          for label in baseline comparison; do
+            cd "$GITHUB_WORKSPACE/$label"
+            npm ci
+            npm run typecheck
+            npm run test:scanner
+            mkdir -p public/opencv
+            archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+            tar -xzf "$archive" package/dist/opencv.js
+            cp package/dist/opencv.js public/opencv/opencv.js
+            rm -rf package "$archive"
+            version="3.7.4"
+            if [ "$label" = "comparison" ]; then version="3.7.6"; fi
+            GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE="/sfg-omr-lab/experiments/$version/" npm run build
+            mkdir -p dist/ai-model/scanic
+            cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+            mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/$version"
+            cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/$version/"
+          done
       - name: Combine stable root and isolated experiment
         run: |
           mkdir -p production/dist/experiments/legacy-full-v233
@@ -65,6 +97,8 @@ jobs:
           test -s production/dist/index.html
           test -s production/dist/experiments/legacy-full-v233/index.html
           test -s production/dist/experiments/legacy-full-v233/opencv/opencv.js
+          test -s production/dist/experiments/3.7.4/index.html
+          test -s production/dist/experiments/3.7.6/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
