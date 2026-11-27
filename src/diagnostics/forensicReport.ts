@@ -62,7 +62,7 @@ export function buildForensicReport(scans:PhotoScan[]):string {
   const rescued=scans.filter(s=>s.result&&scanIdentity(s.result)&&
     s.result.registrationMethod?.startsWith('ai-')).length;
   const aiInvoked=scans.filter(s=>(s.result?.stageLogs??[]).some(e=>
-    /AI last-resort summary|AI document boundary recovery|Exp3\\.7\\.11 dual AI rescue summary/i.test(e.message))).length;
+    /AI last-resort summary|AI document boundary recovery|Exp3\.7\.11 dual AI rescue summary/i.test(e.message))).length;
   const totalMs=scans.reduce((sum,s)=>sum+(s.result?.processingTimeMs??0),0);
   const out=[
     'SFG OMR Lab — Experiment 3.7.11 — Adaptive Classical CV + Dual AI Rescue + Bubble Consistency',
@@ -95,7 +95,7 @@ export function buildForensicReport(scans:PhotoScan[]):string {
     const best=(cs:typeof all)=>[...cs].filter(c=>c.qr).sort((a,b)=>b.timing-a.timing)[0];
     const bestC=best(classicalCandidates),bestA=best(aiCandidates);
     const aiSummary=dataOf(last(events,/AI last-resort summary/i));
-    const dualSummary=dataOf(last(events,/Exp3\\.7\\.11 dual AI rescue summary/i));
+    const dualSummary=dataOf(last(events,/Exp3\.7\.11 dual AI rescue summary/i));
     const aiModel=dataOf(last(events,/AI document boundary recovery/i));
     const qr=dataOf(last(events,/Independent original-photo QR locator|Exp3\.7\.9 original-photo QR orientation hint/i));
     const accepted=Boolean(r&&scanIdentity(r));
@@ -142,8 +142,8 @@ export function buildForensicReport(scans:PhotoScan[]):string {
       ['Source QR and coarse orientation',/Independent original-photo QR locator|Exp3\.7\.9 original-photo QR orientation hint|Sideways OMR orientation recovery/i],
       ['Quadrant-free QR-oriented corners',/Exp3\.7\.9 rotation-invariant corner search/i],
       ['Paper boundary detection and rejection',/Outer-page boundary recovery evidence|Exp3\.7\.9 small-page boundary rejection evidence|Exp3\.7 alternative paper hypotheses/i],
-      ['Local AI model and orientation candidates',/AI document boundary recovery|Exp3\.7\.10 AI orientation evidence|AI first-warp independent landmark verification|Exp3\\.7\\.11|AI-prewarped fiducial discovery|AI candidate verification result|AI last-resort summary|Optional AI recovery unavailable/i],
-      ['Bubble grid and stability',/Exp3\\.7\\.11 local bubble consistency probe|Independent printed-ring grid offsets|withheld-print-validated local mesh/i],
+      ['Local AI model and orientation candidates',/AI document boundary recovery|Exp3\.7\.10 AI orientation evidence|AI first-warp independent landmark verification|Exp3\.7\.11|AI-prewarped fiducial discovery|AI candidate verification result|AI last-resort summary|Optional AI recovery unavailable/i],
+      ['Bubble grid and stability',/Exp3\.7\.11 local bubble consistency probe|Independent printed-ring grid offsets|withheld-print-validated local mesh/i],
       ['Scan performance and decision',/Registration performance summary|Exp3\.7\.3 failed registration taxonomy|scan stage timings|Scan complete in/i]
     ] as const;
     for(const [heading,pattern] of stages){
