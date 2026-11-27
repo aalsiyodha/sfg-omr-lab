@@ -118,6 +118,7 @@ jobs:
           cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
           mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.7.10"
           cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.7.10/"
+      # Publish the latest isolated 3.7.11 branch, including withheld-grid correction.
       - name: Validate and build 3.7.11 Adaptive CV + Dual AI + Bubble Consistency
         working-directory: adaptive-dual-3711
         run: |
