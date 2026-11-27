@@ -2502,3 +2502,16 @@ test('Exp3.7.9 read-only timing residuals report 50 known centered squares',()=>
   assert.equal(result.medianAbsDxMm,0);
   assert.equal(result.medianAbsDyMm,0);
 });
+
+test('3.7.12: tangent-deflection peaks at rectangle vertices, not along straight edges',()=>{
+  const lab=loadTS('src/scanner/classicalVertexLab.ts');
+  const points=[];
+  for(let x=0;x<100;x+=10)points.push({x,y:0});
+  for(let y=0;y<100;y+=10)points.push({x:100,y});
+  for(let x=100;x>0;x-=10)points.push({x,y:100});
+  for(let y=100;y>0;y-=10)points.push({x:0,y});
+  const turns=lab.tangentDeflection(points,2);
+  assert.equal(turns.length,points.length);
+  assert.ok(turns.filter(v=>v>.6).length>=4);
+  assert.ok(turns.filter(v=>v<.01).length>=20);
+});
