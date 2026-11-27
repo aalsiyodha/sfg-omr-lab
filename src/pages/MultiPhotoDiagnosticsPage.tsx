@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react';
 import type { AppState } from '../App';
 import { APP_BUILD_META } from '../config/version';
 import { runFullScan } from '../scanner/scanOrchestrator';
-import { comparePhotos, type PhotoMetrics, type PhotoScan } from '../diagnostics/multiPhoto';
+import { comparePhotos, answerQualityScorecard, type PhotoMetrics, type PhotoScan } from '../diagnostics/multiPhoto';
 import { buildForensicReport } from '../diagnostics/forensicReport';
 import './v26.css';
 
@@ -106,6 +106,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
             setStep('Photo '+(i+1)+'/'+files.length+': '+p.stage),
             {fastQrRoi:true,coarseToFine:true,robustFusion:true,
               proofscan:false,proofmodel:false,proofmesh:true,
+              answerCentricRings:true,sourceInkProbe:true,
               simdProbe:false,ttopProbe:false,compact:true,qrOptionalExperiment:false,disableAiRecovery:false});
           // Preserve forensic evidence rather than discarding 3.7.9 events:
           // previous report filtered out exactly the corner and timing logs
@@ -137,14 +138,15 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const scans=entries.flatMap(e=>e.scan?[e.scan]:[]);
   const completed=scans.length>=2&&!busy;
   const comparison=comparePhotos(scans);
+  const quality=answerQualityScorecard(scans);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 3.7.12 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.7.12 — Harris + Contour Tangent Vertex Lab</h1>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.8.0 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.8.0 — Answer-Centric Registration Laboratory</h1>
       <p className="small text-secondary">Classical OpenCV runs first. When all classical registration methods fail, the optional on-device Scanic corner model proposes another page outline. AI cannot recognize answers or bypass QR identity and both timing tracks. The report identifies which method succeeded and whether AI ran.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
-        No answer is silently combined or changed. A withheld-print-validated local grid refinement is tested per photo, and fragile bubble positions are reported independently.</p>
+        No answer is silently combined or changed. Per-question printed-ring corrections are accepted only after independent held-out ring agreement. Raw camera-pixel photometry is separately audited when an original-source homography exists; it never silently changes grades.</p>
       <p className="small text-secondary">Photos stay in your browser. The combined text report contains per-photo classical and local-AI outcomes, timing residuals and answer disagreements, but no photo pixels.</p>
     </div>
     <section className="card p-3 p-md-4 mb-3">
@@ -198,6 +200,13 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
         {comparison.same.length} matching verified scans · {comparison.excluded.length} excluded ·
         {' '}{comparison.differences.length} question disagreements
       </div>
+      <div className="row g-2 mb-3">
+        <div className="col-6 col-md-3"><div className="border rounded p-2"><div className="text-secondary small">Same-ID unanimous</div><strong>{quality.conditionalUnanimousQuestions??'–'}/50</strong></div></div>
+        <div className="col-6 col-md-3"><div className="border rounded p-2"><div className="text-secondary small">Full-cohort unanimous</div><strong>{quality.fullCohortUnanimousQuestions??'–'}/50</strong></div></div>
+        <div className="col-6 col-md-3"><div className="border rounded p-2"><div className="text-secondary small">Abstentions</div><strong>{quality.abstentionRatePercent??'–'}%</strong></div></div>
+        <div className="col-6 col-md-3"><div className="border rounded p-2"><div className="text-secondary small">p50 / p95</div><strong>{quality.p50Seconds??'–'}s / {quality.p95Seconds??'–'}s</strong></div></div>
+      </div>
+      <p className="small text-secondary">Cross-photo agreement is label-free, not correctness. Accuracy and incomplete-mark false-accept rate require labelled sheets. Failed and mismatched photographs count against full-cohort unanimity.</p>
       <div className="table-responsive">
         <table className="table table-sm align-middle small">
           <thead><tr><th>Photo</th><th>Scan / identity</th><th>Accepted via</th><th>AI model</th><th>Timing</th><th>Detected</th><th>Light (0–255)</th><th>Contrast</th><th>Orientation</th></tr></thead>
@@ -205,7 +214,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
             <td title={s.filename}>{i+1}. {s.filename}</td>
             <td>{s.result?.overallStatus??'failed'} / {s.result?.qrValid?'QR ✓':'QR unverified'}</td>
             <td>{s.result?.registrationMethod?.startsWith('ai-')?'Local AI':s.result?.registrationMethod?'Classical':'Unverified'}</td>
-            <td>{(s.result?.stageLogs??[]).some(log=>/AI last-resort summary/i.test(log.message))?'Invoked':'Not needed'}</td>
+            <td>{(s.result?.stageLogs??[]).some(log=>/AI last-resort summary|ai-lcnet|dual AI rescue/i.test(log.message))?'Invoked':'Not needed'}</td>
             <td>{s.result?.alignmentVerified?s.result.alignmentMatched+'/50':'Not verified'}</td>
             <td>{s.result?.answers.filter(a=>a.status==='detected').length??'–'}/50</td>
             <td>{s.metrics.mean}</td><td>{s.metrics.contrast}</td>
