@@ -2350,3 +2350,148 @@ test('Experiment 3.6: 360-degree quad orientation covers each distinct corner as
   }
   assert.deepEqual(corners,[{x:12,y:5},{x:97,y:27},{x:81,y:152},{x:4,y:124}]);
 });
+
+test('Experiment 3.7.3 P-1 hatch shadow requires paper-bright internal gaps',()=>{
+  // The normal unit-test OMR layout stubs mmToPx as identity. For this
+  // spatial kernel test we need the physical 150 dpi mapping (~6px/mm).
+  const shadow=loadTS('src/scanner/bubbleDetector.ts',{
+    '../config/omrLayout':{
+      mmToPx:(mm,dpi)=>mm*dpi/25.4,
+      getBubbleCentre:()=>({xMm:0,yMm:0}),
+      getTestIdBubbleCentre:()=>({xMm:0,yMm:0}),OMR_LAYOUT:{testId:{}}
+    },
+    '../config/scannerSettings':{getSettings:()=>settings,
+      MARK_REVIEW_THRESHOLDS:{minFill:45}},
+    './strayInk':{measureOutlineBand:()=>255,hasInterBubbleInk:()=>false,
+      hasExternalStroke:()=>false},
+    './radialInk':{measureRadialInk:()=>({core:0,middle:0,outer:0,
+      classification:'insufficient_resolution'})}
+  });
+  const mk=(gapBrightness)=>{
+    const pixels=Array.from({length:35},()=>Array(35).fill(50));
+    // Repeated light slots in the same two columns: ordinary JPEG grey
+    // holes must not mimic an actual paper-white hatch.
+    for(let y=13;y<=21;y++){pixels[y][17]=gapBrightness;pixels[y][18]=gapBrightness;}
+    return {rows:35,cols:35,ucharPtr:(y,x)=>[pixels[y][x]]};
+  };
+  const grey=shadow.interiorHatchEvidenceV2(mk(180),17,17,150,150,235);
+  const bright=shadow.interiorHatchEvidenceV2(mk(244),17,17,150,150,235);
+  assert.equal(grey.hatchLike,false);
+  assert.equal(bright.hatchLike,true);
+});
+
+test('Experiment 3.7.4 classical-only mode guards neural document inference',()=>{
+  const orchestrator=readFileSync(resolve(process.cwd(),
+    'src/scanner/scanOrchestrator.ts'),'utf8');
+  assert.match(orchestrator,/if\(!selected && !options\?\.disableAiRecovery\)\{/);
+  assert.match(orchestrator,/disableAiRecovery\?: boolean/);
+  const page=readFileSync(resolve(process.cwd(),
+    'src/pages/MultiPhotoDiagnosticsPage.tsx'),'utf8');
+  assert.match(page,/disableAiRecovery:true/);
+});
+
+test('immutable OpenCV grayscale threshold cache returns identical value and supports invalidation',()=>{
+  const mat={rows:32,cols:32,data:new Uint8Array(1024).fill(190),
+    channels:()=>1,ucharPtr(y,x){return [this.data[y*32+x]];}};
+  const a=bubbles.computeAdaptiveDarkThreshold(mat);
+  const b=bubbles.computeAdaptiveDarkThreshold(mat);
+  assert.equal(a,b);
+  mat.data.fill(28);
+  // Explicit invalidation is mandatory for in-place Mat edits.
+  bubbles.invalidateAdaptiveThreshold(mat);
+  const c=bubbles.computeAdaptiveDarkThreshold(mat);
+  assert.equal(c,bubbles.computeAdaptiveDarkThreshold({...mat,data:new Uint8Array(1024).fill(28)}));
+});
+test('non-byte-backed fake mats bypass adaptive-threshold cache',()=>{
+  const fake={rows:24,cols:24,value:200,ucharPtr(){return [this.value];}};
+  const before=bubbles.computeAdaptiveDarkThreshold(fake);
+  fake.value=40;
+  const after=bubbles.computeAdaptiveDarkThreshold(fake);
+  const fresh=bubbles.computeAdaptiveDarkThreshold({rows:24,cols:24,ucharPtr:()=>[40]});
+  assert.equal(after,fresh);
+  assert.ok(Number.isFinite(before));
+});
+
+test('Exp3.7.9 QR-relative corner assignment is invariant to 0/35/90/180 degree rotation',()=>{
+  const marks={topLeft:{xMm:6,yMm:6,sizeMm:7},
+    topRight:{xMm:197,yMm:6,sizeMm:7},
+    bottomLeft:{xMm:6,yMm:284,sizeMm:7},
+    bottomRight:{xMm:197,yMm:284,sizeMm:7}};
+  const layout={qr:{xMm:169.35,yMm:10.4,sizeMm:21.25},
+    markers:marks};
+  const geometry=loadTS('src/scanner/rotationInvariantCorners.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:layout}
+  });
+  const nameToPoint=name=>{
+    const m=marks[name];return {x:m.xMm+3.5,y:m.yMm+3.5};
+  };
+  for(const degrees of [0,35,90,180,270]){
+    const theta=degrees*Math.PI/180,cos=Math.cos(theta),sin=Math.sin(theta);
+    const rotate=({x,y})=>({
+      x:750+(x-105)*4*cos-(y-148.5)*4*sin,
+      y:850+(x-105)*4*sin+(y-148.5)*4*cos
+    });
+    const q=layout.qr;
+    const qrCorners=[
+      {x:q.xMm,y:q.yMm},{x:q.xMm+q.sizeMm,y:q.yMm},
+      {x:q.xMm+q.sizeMm,y:q.yMm+q.sizeMm},
+      {x:q.xMm,y:q.yMm+q.sizeMm}
+    ].map(rotate);
+    const corners=['topLeft','topRight','bottomRight','bottomLeft'].map((name,i)=>{
+      const m=rotate(nameToPoint(name));
+      return {...m,cx:m.x,cy:m.y,width:26,height:26,area:625,
+        index:i,...geometry.qrFrameCoordinates(qrCorners,m)};
+    });
+    const qr={valid:true,found:true,raw:'SFGOMR1:test',
+      corners:qrCorners,center:rotate({x:q.xMm+q.sizeMm/2,y:q.yMm+q.sizeMm/2}),
+      attempts:1};
+    const extra=[{...corners[0],cx:750,cy:850,
+      u:0,v:4,index:30}];
+    const proposals=geometry.rankQrGuidedMarkers([...corners,...extra],qr,1500,1800,4);
+    assert.ok(proposals.length>0,'rotation '+degrees+' proposed no quadrilateral');
+    const best=proposals[0].markers;
+    for(const [index,label] of ['topLeft','topRight','bottomRight','bottomLeft'].entries()){
+      const picked=best[label],expected=corners[index];
+      assert.ok(Math.hypot(picked.x-expected.x,picked.y-expected.y)<1,
+        'rotation '+degrees+' assigned wrong '+label);
+    }
+  }
+});
+
+test('Exp3.7.9 small-page mode recovers a modest sheet without changing strict rejection',()=>{
+  const mod=loadTS('src/scanner/pageBoundaryRecovery.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{page:{widthMm:210,heightMm:297}},mmToPx:x=>x},
+    '../config/scannerSettings':{getSettings:()=>({scanDpi:150})}
+  });
+  const small=[{x:300,y:430},{x:700,y:430},
+    {x:690,y:820},{x:290,y:820}];
+  assert.equal(mod.plausiblePageBoundary(small,1000,1400),false);
+  assert.equal(mod.plausiblePageBoundary(small,1000,1400,'small-page-rescue'),true);
+  assert.equal(mod.plausiblePageBoundary([
+    {x:0,y:0},{x:999,y:0},{x:999,y:1399},{x:0,y:1399}
+  ],1000,1400,'small-page-rescue'),false);
+});
+test('Exp3.7.9 read-only timing residuals report 50 known centered squares',()=>{
+  const mod=loadTS('src/scanner/timingResidualDiagnostics.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{answers:{
+      rowStartY:83,rowSpacingY:7.4}},mmToPx:(v,dpi)=>v*dpi/25.4},
+    './bubbleDetector':{computeAdaptiveDarkThreshold:()=>150}
+  });
+  const rows=1754,cols=1240,dpi=150;
+  const data=new Uint8Array(rows*cols).fill(255);
+  for(const xMm of [13.3,196.7])for(let i=0;i<25;i++){
+    const x=Math.round(xMm*dpi/25.4),
+      y=Math.round((83+i*7.4)*dpi/25.4);
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)
+      data[(y+dy)*cols+x+dx]=0;
+  }
+  const gray={rows,cols,data,channels:()=>1,step:cols,
+    ucharPtr:(y,x)=>[data[y*cols+x]]};
+  const result=mod.diagnosticTimingResiduals(gray,dpi);
+  assert.equal(result.samples.length,50);
+  assert.equal(result.foundNearby,50);
+  assert.equal(result.leftNearby,25);
+  assert.equal(result.rightNearby,25);
+  assert.equal(result.medianAbsDxMm,0);
+  assert.equal(result.medianAbsDyMm,0);
+});
