@@ -47,6 +47,7 @@ import { measureGrayCalibration, grayStripInkCeiling, investigateGrayStrip } fro
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import {refineQuestionRings} from './answerCentricRings';
 import {probeSourceInk} from './sourceInkProbe';
+import {refineGeometryOnlyRings} from './templatePoseRefinement';
 import { rescueTestIdOffset } from './testIdAlignment';
 import { validateScanResult } from './scanValidator';
 import { getSettings } from '../config/scannerSettings';
@@ -1332,6 +1333,64 @@ export async function runFullScan(
             if(selected&&canStopUnifiedRegistration(selected.qr.valid,
               selected.check.matched,selected.check.leftMatched,
               selected.check.rightMatched))break;
+          }
+          // 3.8.0: run geometry-only template matching on the coarse A4 view
+          // when all conventional fiducial re-detection has failed.
+          // This fits printed bubble outlines (not student's answer ink),
+          // then validates separately on withheld rings and finally QR +
+          // left/right timing. No QR-less scoring is permitted.
+          if(!selected){
+            const template=refineGeometryOnlyRings(rough.canvas,dpi);
+            logger.info('perspective','Exp3.8 correspondence-free geometry-only template proposal',template.evidence);
+            if(template.canvas){
+              let probeMat:any=null,probeGray:any=null;
+              let adopted=false;
+              try{
+                const quickQr=decodeQRFromRegion(template.canvas,
+                  OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+                if(quickQr.valid){
+                  probeMat=cv.imread(template.canvas);
+                  probeGray=new cv.Mat();
+                  cv.cvtColor(probeMat,probeGray,cv.COLOR_RGBA2GRAY);
+                  const timing=verifyTimingMarks(probeGray,dpi);
+                  logger.info('perspective','Exp3.8 template proposal independently verified',{
+                    qrValid:true,matched:timing.matched,left:timing.leftMatched,
+                    right:timing.rightMatched,passed:timing.passed});
+                  if(timing.passed){
+                    selected={hypothesis:{kind:'corner',
+                      name:'template-rings/affine-direct',markers:primary},
+                      perspective:{corrected:probeMat,correctedDataUrl:'',
+                        transform:null,success:true},
+                      gray:probeGray,canvas:template.canvas,qr:quickQr,
+                      check:timing,rotated:false};
+                    adopted=true;probeMat=null;probeGray=null;
+                  }
+                }else logger.info('perspective','Exp3.8 template QR not verified',{
+                  reason:'no-identifiable-QR-at-template-coordinate'});
+                if(!selected){
+                  const p=preprocessImage(template.canvas);
+                  try{
+                    const corner=detectMarkers(p.thresholded,template.canvas.width,template.canvas.height);
+                    const mid=detectMidpointMarkers(p.thresholded,template.canvas.width,template.canvas.height);
+                    const refinements:Hypothesis[]=[];
+                    if(corner.found)refinements.push({kind:'corner',
+                      name:'template-rings/corner',markers:corner});
+                    if(mid.found)refinements.push({kind:'midpoint',
+                      name:'template-rings/midpoint',markers:mid});
+                    for(const hypothesis of refinements){
+                      warpAttempts++;
+                      const candidate=traceRegistration(template.canvas,hypothesis,dpi,curveBudget);
+                      if(candidate){
+                        selected=candidate;adopted=true;break;
+                      }
+                    }
+                  }finally{cleanupMats(p.gray,p.blurred,p.thresholded);}
+                }
+                logger.info('perspective','Exp3.8 template rescue conclusion',{
+                  adopted,method:selected?.hypothesis.name??null,
+                  heldoutScore:template.evidence.heldoutBest});
+              }finally{cleanupMats(probeMat,probeGray);}
+            }
           }
         }catch(error){
           logger.warning('perspective','Outer-page recovery aborted',{reason:String(error)});
