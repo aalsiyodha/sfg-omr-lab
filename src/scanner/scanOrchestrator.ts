@@ -1354,7 +1354,7 @@ export async function runFullScan(
         onProgress?.({stage:'Last resort: detecting page corners with local AI…',percent:52});
         const ai=await recoverPageWithScanic(loaded.canvas,(event,data)=>{
           logger.info('perspective','AI trace: '+event,data);
-        });
+        },{sourceQrCenter:photoQr?.valid?photoQr.center:null});
         aiStatus=ai?'page-detected':'page-not-detected';
         logger.info('perspective','AI document boundary recovery',{
           model:'Scanic DocCornerNet SimCC',invoked:true,
