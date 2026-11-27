@@ -294,6 +294,40 @@ export function interiorHatchEvidence(
   return {gapRows:rows,hatchLike:rows>=Math.max(4,Math.round(r*.6))};
 }
 
+/** Z.ai P-1 shadow classifier, diagnostic only. Never changes scoring.
+ * A hatch must contain PAPER-BRIGHT internal gaps repeated in approximately
+ * the same column; ordinary mid-grey JPEG holes cannot veto a solid mark.
+ * Diagonal/crossed strokes are evaluated separately by the strict shape rules.
+ */
+export function interiorHatchEvidenceV2(
+  gray:{rows:number;cols:number;ucharPtr(y:number,x:number):ArrayLike<number>},
+  cxPx:number,cyPx:number,dpi:number,threshold:number,paperBrightness:number
+):{gapRows:number;hatchLike:boolean}{
+  const r=Math.max(2,Math.round(mmToPx(1.0,dpi)));
+  const cx=Math.round(cxPx),cy=Math.round(cyPx);
+  if(cx-r<0||cy-r<0||cx+r>=gray.cols||cy+r>=gray.rows)
+    return {gapRows:0,hatchLike:false};
+  const sample=grayReader(gray);
+  const paperGate=Math.max(threshold+18,Math.min(245,paperBrightness-22));
+  const locations:number[]=[];
+  for(let dy=-Math.round(r*.72);dy<=Math.round(r*.72);dy++){
+    const xs:number[]=[];
+    for(let dx=-r;dx<=r;dx++)if(dx*dx+dy*dy<=r*r)xs.push(dx);
+    const grayRow=xs.map(dx=>sample(cy+dy,cx+dx));
+    const dark=grayRow.map(x=>x<threshold);
+    for(let i=2;i<dark.length-3;i++){
+      if(dark[i-2]&&dark[i-1]&&
+        grayRow[i]>=paperGate&&grayRow[i+1]>=paperGate&&
+        dark.slice(i+2).some(Boolean)){
+        locations.push(xs[i]);break;
+      }
+    }
+  }
+  const required=Math.max(4,Math.round(r*.6));
+  const matched=locations.filter(x=>locations.filter(y=>Math.abs(x-y)<=2).length>=required).length;
+  return {gapRows:matched,hatchLike:matched>=required};
+}
+
 /**
  * Experimental v2.7.3: recover only broad, centre-and-edge-supported ink
  * that was rejected by a directional stroke test. A high fill percentage
@@ -360,6 +394,11 @@ export function detectQuestion(
       ? interiorHatchEvidence(correctedGray, cxPx, cyPx, dpi,
           detail.effectiveThreshold ?? effectiveThreshold)
       : {gapRows:0,hatchLike:false};
+    const hatchV2=detail.fillPercent>=30
+      ?interiorHatchEvidenceV2(correctedGray,cxPx,cyPx,dpi,
+        detail.effectiveThreshold ?? effectiveThreshold,
+        detail.paperReferenceBrightness ?? detail.localPaperBrightness ?? 235)
+      :{gapRows:0,hatchLike:false};
     const clearlyInvalid = radial.classification === 'centre_dot' || radial.classification === 'hollow_ring';
     const unevenOuter = radial.classification === 'partial' && detail.fillPercent >= settings.bubbleFillThreshold;
     // Q38-D-type crescent can darken most of the *interior* while leaving
@@ -400,6 +439,8 @@ export function detectQuestion(
         filledQuadrants: detail.filledQuadrants,
         hatchGapRows: hatchEvidence.gapRows,
         hatchLike: hatchEvidence.hatchLike,
+        hatchV2: hatchV2.hatchLike,
+        hatchV2GapRows: hatchV2.gapRows,
         strokeLike: detail.strokeLike,
         axisCoverage: detail.axisCoverage,
         diagonalCoverage: detail.diagonalCoverage,
