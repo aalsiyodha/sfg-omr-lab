@@ -2389,3 +2389,48 @@ test('Experiment 3.7.4 classical-only mode guards neural document inference',()=
     'src/pages/MultiPhotoDiagnosticsPage.tsx'),'utf8');
   assert.match(page,/disableAiRecovery:true/);
 });
+
+test('pooled fusion recovers a homography from QR and two distant ArUco landmarks',()=>{
+  const fusion=loadTS('src/scanner/multiLandmarkFusion.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{qr:{xMm:169.35,yMm:10.4,sizeMm:21.25},
+      page:{widthMm:210,heightMm:297}},mmToPx:(mm,dpi)=>mm*dpi/25.4},
+    './arucoDetector':{ARUCO_MARKERS_MM:[]},
+    './midpointDetector':{MIDPOINTS_MM:{}}
+  });
+  const dpi=150,toPx=x=>x*dpi/25.4;
+  // Rotated/slanted camera mapping with no extreme perspective.
+  const source=(x,y)=>({x:1850-x*5.1+y*.25,
+    y:230+y*5.1+x*.15});
+  const target=(x,y)=>({x:toPx(x),y:toPx(y)});
+  const anchor=(x,y,family,name)=>({
+    source:source(x,y),target:target(x,y),family,name
+  });
+  const markers=[
+    anchor(169.35,10.4,'qr','qr-0'),
+    anchor(190.6,10.4,'qr','qr-1'),
+    anchor(190.6,31.65,'qr','qr-2'),
+    anchor(169.35,31.65,'qr','qr-3'),
+    anchor(51.5,287,'aruco','aruco-2'),
+    anchor(117.5,287,'aruco','aruco-3')
+  ];
+  const result=fusion.fitMultiLandmarkGeometry(markers,dpi);
+  assert.ok(result,'QR + just two independently identified bottom IDs must be eligible');
+  assert.ok(result.evidence.nonQrInliers>=2);
+  assert.equal(result.evidence.inlierFamilies.includes('qr'),true);
+  const p=result.matrix,q=markers[4].source,d=p[6]*q.x+p[7]*q.y+p[8];
+  assert.ok(Math.abs((p[0]*q.x+p[1]*q.y+p[2])/d-markers[4].target.x)<2);
+});
+test('pooled fusion rejects QR-only extrapolation and a missing distant landmark',()=>{
+  const fusion=loadTS('src/scanner/multiLandmarkFusion.ts',{
+    '../config/omrLayout':{OMR_LAYOUT:{qr:{xMm:169.35,yMm:10.4,sizeMm:21.25},
+      page:{widthMm:210,heightMm:297}},mmToPx:(mm,dpi)=>mm*dpi/25.4},
+    './arucoDetector':{ARUCO_MARKERS_MM:[]},
+    './midpointDetector':{MIDPOINTS_MM:{}}
+  });
+  const a=(x,y,family)=>({source:{x:x*5,y:y*5},
+    target:{x:x*5,y:y*5},family,name:family+'-'+x+'-'+y});
+  const q=[a(169,10,'qr'),a(190,10,'qr'),
+    a(190,31,'qr'),a(169,31,'qr')];
+  assert.equal(fusion.fitMultiLandmarkGeometry(q,150),null);
+  assert.equal(fusion.fitMultiLandmarkGeometry([...q,a(51,287,'aruco')],150),null);
+});
