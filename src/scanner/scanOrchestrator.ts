@@ -1340,8 +1340,17 @@ export async function runFullScan(
           // then validates separately on withheld rings and finally QR +
           // left/right timing. No QR-less scoring is permitted.
           if(!selected){
-            const template=refineGeometryOnlyRings(rough.canvas,dpi);
-            logger.info('perspective','Exp3.8 correspondence-free geometry-only template proposal',template.evidence);
+            // Reuse the same source paper quadrilateral at each quarter-turn.
+            // No camera-frame quadrant assumption: image orientation is unknown.
+            for(const turn of [0,1,2,3] as const){
+              if(selected)break;
+              const oriented=turn===0?rough.canvas:
+                rough.evidence.quadrilateral?
+                  warpBoundaryOrientation(loaded.canvas,rough.evidence.quadrilateral,turn):null;
+              if(!oriented)continue;
+              const template=refineGeometryOnlyRings(oriented,dpi);
+              logger.info('perspective','Exp3.8 correspondence-free geometry-only template proposal',
+                {...template.evidence,turnDegrees:turn*90});
             if(template.canvas){
               let probeMat:any=null,probeGray:any=null;
               let adopted=false;
@@ -1358,11 +1367,11 @@ export async function runFullScan(
                     right:timing.rightMatched,passed:timing.passed});
                   if(timing.passed){
                     selected={hypothesis:{kind:'corner',
-                      name:'template-rings/affine-direct',markers:primary},
+                      name:'template-rings/affine-'+(turn*90),markers:primary},
                       perspective:{corrected:probeMat,correctedDataUrl:'',
                         transform:null,success:true},
                       gray:probeGray,canvas:template.canvas,qr:quickQr,
-                      check:timing,rotated:false};
+                      check:timing,rotated:turn===2};
                     adopted=true;probeMat=null;probeGray=null;
                   }
                 }else logger.info('perspective','Exp3.8 template QR not verified',{
@@ -1391,6 +1400,7 @@ export async function runFullScan(
                   heldoutScore:template.evidence.heldoutBest});
               }finally{cleanupMats(probeMat,probeGray);}
             }
+            } // 4 quarter-turn template hypotheses
           }
         }catch(error){
           logger.warning('perspective','Outer-page recovery aborted',{reason:String(error)});
