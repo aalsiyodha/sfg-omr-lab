@@ -22,6 +22,7 @@ import { makeReviewCropSheet } from './reviewCropSheet';
 import { fitMaskedLatentPredictor } from './latentPredictor';
 import { predictSyntheticDecision, SYNTHETIC_MODEL_INFO } from './trainedDecisionHead';
 import { recoverPaperBoundary } from './pageBoundaryRecovery';
+import { warpQrAnchoredPaper, type QrAnchoredVariant } from './qrAnchoredPaperRecovery';
 import { warpBoundaryOrientation } from './omniBoundary';
 import { recoverPageWithScanic } from './scanicPageRescue';
 import { hybridAnchorEvidence, correctPerspectiveFromHybrid } from './hybridRegistration';
@@ -1049,6 +1050,54 @@ export async function runFullScan(
         try{
           boundarySourceMat=cv.imread(loaded.canvas);
         for(const [candidateIndex,page] of pageCandidates.entries()){
+        if(selected)break;
+        // Exp 3.7.7: use the decoded source QR as a local anchor, with
+        // independently found far paper corners constraining sheet perspective.
+        // A candidate is NEVER accepted without the exact same QR and two
+        // complete independently verified timing tracks.
+        if(photoQr?.valid){
+          for(const variant of ['top-pair','left-pair','diagonal'] as QrAnchoredVariant[]){
+            let rescueCanvas:HTMLCanvasElement|null=null;
+            let rescueMat:any=null,rescueGray:any=null;
+            let kept=false;
+            try{
+              rescueCanvas=warpQrAnchoredPaper(
+                loaded.canvas,photoQr,page.corners,dpi,variant,boundarySourceMat);
+              if(!rescueCanvas)continue;
+              const qrStart=performance.now();
+              const checkedQr=decodeQRFromRegion(rescueCanvas,
+                OMR_LAYOUT.qr.xMm,OMR_LAYOUT.qr.yMm,OMR_LAYOUT.qr.sizeMm,dpi);
+              boundaryQrMs+=performance.now()-qrStart;
+              boundaryQrAttempts++;
+              if(!checkedQr.valid||checkedQr.raw!==photoQr.raw){
+                logger.info('perspective','Exp3.7.7 QR-anchor proposal rejected',{
+                  candidateIndex,method:page.method,variant,phase:'qr',
+                  valid:checkedQr.valid,sourceIdentityMatched:checkedQr.raw===photoQr.raw});
+                continue;
+              }
+              rescueMat=cv.imread(rescueCanvas);
+              rescueGray=new cv.Mat();
+              cv.cvtColor(rescueMat,rescueGray,cv.COLOR_RGBA2GRAY);
+              const t=verifyTimingMarks(rescueGray,dpi);
+              logger.info('perspective','Exp3.7.7 QR-anchor geometry evidence',{
+                candidateIndex,method:page.method,variant,qrVerified:true,
+                timing:t.matched,left:t.leftMatched,right:t.rightMatched,
+                accepted:t.passed});
+              if(!t.passed)continue;
+              selected={hypothesis:{kind:'corner',name:'boundary/qr-anchor-'+variant,
+                markers:primary},
+                perspective:{corrected:rescueMat,correctedDataUrl:'',
+                  transform:null,success:true},
+                gray:rescueGray,canvas:rescueCanvas,qr:checkedQr,
+                check:t,rotated:false};
+              kept=true;rescueMat=null;rescueGray=null;
+              break;
+            }catch(error){
+              logger.warning('perspective','Exp3.7.7 QR-anchor rescue exception',{
+                candidateIndex,variant,reason:String(error)});
+            }finally{if(!kept)cleanupMats(rescueMat,rescueGray);}
+          }
+        }
         if(selected)break;
         // Z.ai P-3 conservative prefilter: the independently decoded source QR
         // must lie inside the proposed physical paper quad. Reject only when
