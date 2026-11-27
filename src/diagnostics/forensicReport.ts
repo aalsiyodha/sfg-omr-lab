@@ -4,7 +4,7 @@
  * Candidate QR/timing figures never imply grading acceptance.
  */
 import type { PhotoScan } from './multiPhoto';
-import { comparePhotos, scanIdentity } from './multiPhoto';
+import { comparePhotos, scanIdentity, answerQualityScorecard } from './multiPhoto';
 type Evidence={message:string;data?:unknown};
 const round=(n:number)=>Math.round(n*10)/10;
 const dataOf=(e:Evidence|undefined):Record<string,unknown> =>
@@ -56,6 +56,7 @@ function residualLines(out:string[],logs:Evidence[],prefix:string){
 }
 export function buildForensicReport(scans:PhotoScan[]):string {
   const comparison=comparePhotos(scans);
+  const scorecard=answerQualityScorecard(scans);
   const count=scans.filter(s=>Boolean(s.result&&scanIdentity(s.result))).length;
   const classical=scans.filter(s=>s.result&&scanIdentity(s.result)&&
     !s.result.registrationMethod?.startsWith('ai-')).length;
@@ -65,7 +66,7 @@ export function buildForensicReport(scans:PhotoScan[]):string {
     /AI last-resort summary|AI document boundary recovery|Exp3\.7\.11 dual AI rescue summary/i.test(e.message))).length;
   const totalMs=scans.reduce((sum,s)=>sum+(s.result?.processingTimeMs??0),0);
   const out=[
-    'SFG OMR Lab — Experiment 3.7.12 — Classical Vertex Lab (Harris + Tangent Deflection)',
+    'SFG OMR Lab — Experiment 3.8.0 — Answer Centric / recom1 + recom2 implementation lab',
     'Generated: '+new Date().toISOString(),
     'Engine policy: CLASSICAL FIRST; Scanic after failure; DocAligner FastViT/LCNet after Scanic fails. All require QR and independent bilateral timing.',
     'Acceptance: valid QR + at least 35/50 timing squares and at least 10/25 on each side.',
@@ -118,7 +119,7 @@ export function buildForensicReport(scans:PhotoScan[]):string {
       ' | proposal confidence '+str(aiModel.confidence)+
       ' | 360° probes '+str(aiSummary.orientationProbes)+
       ' | best QR+timing '+compactData(aiSummary.bestTiming,175),
-      '     Second AI: '+(dualSummary.invoked===true?'invoked model='+str(dualSummary.model)+' verified='+str(dualSummary.verified):'not needed')+
+      '     Second AI: '+(r?.registrationMethod?.startsWith('ai-lcnet')?'USED (LCNet) — verified by final QR + timing':dualSummary.invoked===true?'invoked model='+str(dualSummary.model)+' verified='+str(dualSummary.verified):'no structured invocation evidence')+
       ' | failures '+compactData(dualSummary.failures,250),
       '     AI warped candidates: '+aiCandidates.length+
       ' | best QR-valid '+(bestA?bestA.method+' '+fmtTiming(bestA as unknown as Record<string,unknown>):'none'),
@@ -129,6 +130,19 @@ export function buildForensicReport(scans:PhotoScan[]):string {
     );
     if(s.error)out.push('     Rejection: '+s.error);
   });
+  out.push('','02B  ANSWER-CENTRIC SCORECARD (LABEL FREE)',
+    'Unanimous among verified same-ID photos: '+str(scorecard.conditionalUnanimousQuestions)+'/50',
+    'Unanimous across FULL input set (failed scans count): '+str(scorecard.fullCohortUnanimousQuestions)+'/50',
+    'Mean per-question modal agreement: '+str(scorecard.meanModalAgreementPercent)+'%',
+    'Abstention (uncertain/error among verified answers): '+str(scorecard.abstentionRatePercent)+'%',
+    'Latency p50='+str(scorecard.p50Seconds)+'s; p95='+str(scorecard.p95Seconds)+'s',
+    'Per-question accuracy: '+scorecard.accuracy,
+    'Incomplete mark false accepts: '+scorecard.incompleteMarkFalseAcceptRate,
+    'NOTE: Never treat matching answers as true labels; ground truth is mandatory.',
+    'Per-photo answer counts:');
+  for(const row of scorecard.perPhoto)out.push('  '+row.filename+
+    ' | verified='+row.verified+' | detected='+str(row.detected)+
+    '/50 | abstained='+str(row.abstained)+' | '+str(row.seconds)+'s');
   out.push('','03  FORENSIC TRACE — FULL PER-PHOTO EVIDENCE');
   scans.forEach((s,i)=>{
     const e=(s.result?.stageLogs??[]) as Evidence[];
@@ -143,7 +157,7 @@ export function buildForensicReport(scans:PhotoScan[]):string {
       ['Quadrant-free QR-oriented corners',/Exp3\.7\.9 rotation-invariant corner search/i],
       ['Paper boundary detection and rejection',/Outer-page boundary recovery evidence|Exp3\.7\.9 small-page boundary rejection evidence|Exp3\.7 alternative paper hypotheses/i],
       ['Local AI model and orientation candidates',/AI document boundary recovery|Exp3\.7\.10 AI orientation evidence|AI first-warp independent landmark verification|Exp3\.7\.11|AI-prewarped fiducial discovery|AI candidate verification result|AI last-resort summary|Optional AI recovery unavailable/i],
-      ['Bubble grid and stability',/Exp3\.7\.11 local bubble consistency probe|Independent printed-ring grid offsets|withheld-print-validated local mesh/i],
+      ['Bubble grid and stability',/Exp3\.7\.11 local bubble consistency probe|Exp3\.8 heldout|Exp3\.8 original-pixel|Independent printed-ring grid offsets|withheld-print-validated local mesh/i],
       ['Scan performance and decision',/Registration performance summary|Exp3\.7\.3 failed registration taxonomy|scan stage timings|Scan complete in/i]
     ] as const;
     for(const [heading,pattern] of stages){
