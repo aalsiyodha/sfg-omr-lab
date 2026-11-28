@@ -36,7 +36,9 @@ function scoredCandidate(e:Evidence):{
 function residualLines(out:string[],logs:Evidence[],prefix:string){
   const records=logs.filter(e=>/rejected bilateral timing offsets|AI rejected timing residuals/i.test(e.message));
   if(!records.length){out.push(prefix+'No timing displacement vector collected (QR failed or diagnostic not run).');return;}
-  for(const record of records.slice(0,5)){
+  // Keep at most two representative per-photo offset maps; the original
+  // 3.9 report repeated large, near-identical 50-row vectors thousands of times.
+  for(const record of records.slice(0,2)){
     const d=dataOf(record);
     const samples=Array.isArray(d.samples)?d.samples as Array<Record<string,unknown>>:[];
     // Keep the complete 25x2 row fields; a 2,100-character cap previously
@@ -67,7 +69,7 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
     /AI last-resort summary|AI document boundary recovery|Exp3\.7\.11 dual AI rescue summary/i.test(e.message))).length;
   const totalMs=scans.reduce((sum,s)=>sum+(s.result?.processingTimeMs??0),0);
   const out=[
-    'SFG OMR Lab — Experiment 3.9.0 — OMRKit + OMRChecker complementary classical geometry and optics lab',
+    'SFG OMR Lab — Experiment 3.9.1 — Geometry, illumination and optical forensic laboratory',
     'Generated: '+new Date().toISOString(),
     'Engine policy: CLASSICAL FIRST; Scanic after failure; DocAligner FastViT/LCNet after Scanic fails. All require QR and independent bilateral timing.',
     'Acceptance: valid QR + at least 35/50 timing squares and at least 10/25 on each side.',
@@ -131,6 +133,45 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
     );
     if(s.error)out.push('     Rejection: '+s.error);
   });
+  out.push('','02A  EXPERIMENT 3.9.1: PER-PHOTO ROOT-CAUSE SUMMARY');
+  scans.forEach((s,i)=>{
+    const r=s.result;
+    const logs=(r?.stageLogs??[]) as Evidence[];
+    const registration=logs.map(scoredCandidate).filter((x):x is NonNullable<typeof x>=>x!==null);
+    const best=[...registration].filter(x=>x.qr).sort((a,b)=>b.timing-a.timing)[0];
+    const aruco=dataOf(last(logs,/Exp3\\.9 exact-template marker-corner evidence/i));
+    const illumMarkers=dataOf(last(logs,/Exp3\\.9\\.1 illumination-normalized marker discovery/i));
+    const block=dataOf(last(logs,/Exp3\\.9 OMRKit Sobel block-ring correlation/i));
+    const optics=dataOf(last(logs,/Exp3\\.9\\.1 OMRKit \\+ OMRChecker optical shadow comparison/i));
+    const illumOptics=dataOf(last(logs,/Exp3\\.9\\.1 illumination-normalized optical shadow/i));
+    const stages=dataOf(last(logs,/Scan stage timings/i));
+    const model404=logs.filter(e=>/second model unavailable/i.test(e.message) &&
+      /404|not found|could not fetch/i.test(JSON.stringify(e.data??'')));
+    const missingOptics=!Object.keys(optics).length;
+    const qrSource=dataOf(last(logs,/original-photo QR orientation hint|Independent original-photo QR locator/i));
+    const classification=r?.overallStatus==='failed'
+      ?qrSource.valid===true?'GEOMETRY FAILURE (source QR decoded, no bilateral verified warp)':
+        'GEOMETRY / SOURCE QR FAILURE'
+      :r?.registrationMethod?.startsWith('ai-')?'AI-RESCUED GEOMETRY':
+        'CLASSICAL GEOMETRY VERIFIED';
+    out.push('['+String(i+1).padStart(2,'0')+'] '+s.filename+' | '+classification,
+      '  Best verified-identity timing candidate: '+(best?
+        best.method+' '+best.timing+'/50 L='+best.left+' R='+best.right:'none'),
+      '  Exact ArUco corner fit: '+(Object.keys(aruco).length?compactData(aruco,300):
+        'not attempted / no eligible three-ID candidate'),
+      '  Normalized-marker retry: '+(Object.keys(illumMarkers).length?
+        compactData(illumMarkers,400):'NOT RECORDED'),
+      '  Block-ring adoption: '+str(block.adoptedRegions??'NOT RUN')+
+        ' | independent per-question optics: '+(missingOptics?'NOT RECORDED':
+          'OMRKit differs Q='+compactData(optics.kitVsStrict,200)+
+          ' | OMRChecker block-local differs Q='+compactData(optics.localVsStrict,200)),
+      '  Illumination shadow: '+(Object.keys(illumOptics).length?
+        'available='+str((illumOptics.normalization as Record<string,unknown>|undefined)?.supported)+
+        ' | normalized local disagreements='+compactData(illumOptics.normalizedLocalVsStrict,220):
+        'NOT RECORDED'),
+      '  AI model missing asset (404): '+model404.length+
+      ' | timing stages='+compactData(stages.stages,400));
+  });
   out.push('','02B  ANSWER-CENTRIC SCORECARD (LABEL FREE)',
     'Unanimous among verified same-ID photos: '+str(scorecard.conditionalUnanimousQuestions)+'/50',
     'Unanimous across FULL input set (failed scans count): '+str(scorecard.fullCohortUnanimousQuestions)+'/50',
@@ -170,6 +211,8 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
       ['Quadrant-free QR-oriented corners',/Exp3\.7\.9 rotation-invariant corner search/i],
       ['Paper boundary detection and rejection',/Outer-page boundary recovery evidence|Exp3\.7\.9 small-page boundary rejection evidence|Exp3\.7 alternative paper hypotheses/i],
       ['Local AI model and orientation candidates',/AI document boundary recovery|Exp3\.7\.10 AI orientation evidence|AI first-warp independent landmark verification|Exp3\.7\.11|AI-prewarped fiducial discovery|AI candidate verification result|AI last-resort summary|Optional AI recovery unavailable/i],
+      ['3.9.1 geometry and illumination experiments',
+        /Exp3\\.9\\.1|Exp3\\.9 exact-template|Exp3\\.9 contrast-normalized|Exp3\\.9 OMRKit Sobel|Exp3\\.8 heldout|withheld-print-validated local mesh/i],
       ['Bubble grid and stability',/Exp3\.7\.11 local bubble consistency probe|Exp3\.8 heldout|Exp3\.8 original-pixel|Exp3\.9 OMRKit Sobel|Exp3\.9 OMRKit \+ OMRChecker|Independent printed-ring grid offsets|withheld-print-validated local mesh/i],
       ['Scan performance and decision',/Registration performance summary|Exp3\.7\.3 failed registration taxonomy|scan stage timings|Scan complete in/i]
     ] as const;
@@ -217,6 +260,8 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
     'QR source localization and AI paper corners are hypotheses until verified on warped sheet.',
     'Timing offsets search nearby dark pixels and are NOT certified timing-square detections.',
     'A scan can be verified while its filled-bubble classifications still disagree.',
-    'No original photographs or image pixels are included in this report.');
+    'No original photographs or image pixels are included in this report.',
+    'OFFICIAL GRADE: always original strict-fill classifier; alternative optical signals are SHADOW ONLY.',
+    'A diagnostic marked NOT RECORDED is not proof that the algorithm failed; inspect stage event filtering.');
   return out.join('\n')+'\n';
 }
