@@ -108,6 +108,7 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
             {fastQrRoi:true,coarseToFine:true,robustFusion:true,
               proofscan:false,proofmodel:false,proofmesh:true,
               answerCentricRings:true,sourceInkProbe:true,
+              blockRingAlignment:true,comparativeOptics:true,
               simdProbe:false,ttopProbe:false,compact:true,qrOptionalExperiment:false,disableAiRecovery:false});
           // Preserve forensic evidence rather than discarding 3.7.9 events:
           // previous report filtered out exactly the corner and timing logs
@@ -143,8 +144,8 @@ export default function MultiPhotoDiagnosticsPage({appState}:Props){
   const labeled=evaluateLabeledAnswers(scans,truth);
   return <div className="v26-shell" style={{maxWidth:1000,margin:'0 auto'}}>
     <div className="mb-4">
-      <div className="text-secondary small mb-2">EXPERIMENT 3.8.0 · v{APP_BUILD_META.version}</div>
-      <h1 className="h3 fw-bold mb-2">Experiment 3.8.0 — Answer-Centric Registration Laboratory</h1>
+      <div className="text-secondary small mb-2">EXPERIMENT 3.9.0 · v{APP_BUILD_META.version}</div>
+      <h1 className="h3 fw-bold mb-2">Experiment 3.9.0 — OMRKit + OMRChecker Complementary Laboratory</h1>
       <p className="small text-secondary">Classical OpenCV runs first. When all classical registration methods fail, the optional on-device Scanic corner model proposes another page outline. AI cannot recognize answers or bypass QR identity and both timing tracks. The report identifies which method succeeded and whether AI ran.</p>
       <p className="text-secondary mb-2">Upload 2–10 different photos of the <strong>same physical sheet</strong>.
         Each photo is analysed separately, then compared by question.
