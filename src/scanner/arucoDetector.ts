@@ -4,6 +4,7 @@
  * optional cv.aruco module in the browser WASM distribution.
  * All four independently identified markers are required for rescue.
  */
+import {refineMarkerQuad} from './subpixelMarkerCorners';
 declare const cv: any;
 export interface ImagePoint { x:number; y:number }
 export interface ArucoRegistration {
@@ -152,7 +153,16 @@ export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
         const p:ImagePoint[]=[];
         const a=approx.data32S;
         for(let j=0;j<4;j++)p.push({x:a[j*2],y:a[j*2+1]});
-        const result=readCandidate(gray,p);
+        // The decoded ID is established from the original contour first.
+        // Only then attempt bounded subpixel vertex optimisation; never
+        // accept a different ID solely because corner refinement moved it.
+        const initial=readCandidate(gray,p);
+        if(!initial)continue;
+        const refined=refineMarkerQuad(gray,p);
+        const reconsidered=refined.method==='cornerSubPix-bounded'
+          ?readCandidate(gray,refined.points):null;
+        const result=reconsidered?.id===initial.id&&
+          reconsidered.errors<=initial.errors?reconsidered:initial;
         if(!result)continue;
         candidates++;
         const id=result.id;
