@@ -22,7 +22,9 @@ function loadTS(path, dependencies = {}) {
     .replace(/^export\s+(?=(?:async\s+)?(?:function|const|class))/gm, '');
   const resolved = path === 'src/scanner/pixelAccess.ts'
     ? dependencies
-    : { './pixelAccess': loadTS('src/scanner/pixelAccess.ts'), ...dependencies };
+    : { './pixelAccess': loadTS('src/scanner/pixelAccess.ts'),
+      './subpixelMarkerCorners': {refineMarkerQuad:(_gray,points)=>({points,method:'not-available',maxShift:0})},
+      ...dependencies };
   return new Function('deps', 'cv', js + `\nreturn { ${exports.join(', ')} };\n`)(resolved, globalThis.cv);
 }
 
