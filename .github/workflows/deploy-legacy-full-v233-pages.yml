@@ -228,7 +228,7 @@ jobs:
           cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
           mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.8.0"
           cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.8.0/"
-      # 3.9.0 source validation rerun after TypeScript corrections and extra contrast rescue.
+      # 3.9.0 final validation: corrected high-resolution annular optical regression fixture.
       - name: Validate and build 3.9.0 OMRKit + OMRChecker complementary lab
         working-directory: open-omr-390
         run: |
