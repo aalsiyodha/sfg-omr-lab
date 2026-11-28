@@ -23,7 +23,7 @@ const percentile=(vals:number[],fraction:number):number=>{
 };
 export function sampleAlternativeOptics(
   gray:Gray,dpi:number,offset:(q:number)=>{dx:number;dy:number},
-  strictAnswers:ReadonlyArray<{question:number;answer:string|null;status:string}>
+  strictAnswers:ReadonlyArray<{question:number;detectedAnswer:string|null;status:string}>
 ):OpticalProbe {
   const empty=(reason:string):OpticalProbe=>({possible:false,reason,measured:0,
     checkerGapThreshold:null,kitPredictions:[],checkerPredictions:[],
@@ -88,7 +88,7 @@ export function sampleAlternativeOptics(
       checkChosen.length===1?checkChosen[0]:'M';
     const strictRow=strictAnswers.find(x=>x.question===q);
     const strict=strictRow?.status==='multiple'?'M':strictRow?.status==='uncertain'?'?':
-      strictRow?.answer??'-';
+      strictRow?.detectedAnswer??'-';
     kitPredictions.push(kit);checkerPredictions.push(checker);
     if(kit!==strict)kitVsStrict.push(q);
     if(checker!==strict)checkerVsStrict.push(q);
