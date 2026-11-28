@@ -67,7 +67,7 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
     /AI last-resort summary|AI document boundary recovery|Exp3\.7\.11 dual AI rescue summary/i.test(e.message))).length;
   const totalMs=scans.reduce((sum,s)=>sum+(s.result?.processingTimeMs??0),0);
   const out=[
-    'SFG OMR Lab — Experiment 3.8.0 — Answer Centric / recom1 + recom2 implementation lab',
+    'SFG OMR Lab — Experiment 3.9.0 — OMRKit + OMRChecker complementary classical geometry and optics lab',
     'Generated: '+new Date().toISOString(),
     'Engine policy: CLASSICAL FIRST; Scanic after failure; DocAligner FastViT/LCNet after Scanic fails. All require QR and independent bilateral timing.',
     'Acceptance: valid QR + at least 35/50 timing squares and at least 10/25 on each side.',
