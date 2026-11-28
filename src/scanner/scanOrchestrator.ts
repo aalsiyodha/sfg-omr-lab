@@ -48,6 +48,7 @@ import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import {refineQuestionRings} from './answerCentricRings';
 import {refineBlockRings} from './blockRingAlignment';
 import {sampleAlternativeOptics} from './comparativeOptics';
+import {normalizePaperIllumination} from './illuminationNormalization';
 import {fitArucoCornerWarp} from './arucoCornerRecovery';
 import {probeSourceInk} from './sourceInkProbe';
 import {refineGeometryOnlyRings} from './templatePoseRefinement';
@@ -500,6 +501,8 @@ export interface ScanModeOptions {
   blockRingAlignment?: boolean;
   /** 3.9: read-only OMRKit/OMRChecker optical measurements. */
   comparativeOptics?: boolean;
+  /** 3.9.1: illumination-normalized rescue and diagnostic-only optical comparison. */
+  illuminationNormalization?: boolean;
   fastQrRoi?: boolean;
   coarseToFine?: boolean;
   robustFusion?: boolean;
@@ -856,6 +859,44 @@ export async function runFullScan(
           logger.warning('markerDetection','Exp3.9 contrast retry unavailable',{
             reason:String(error)});
         }finally{cleanupMats(contrastBinary,equalized);}
+      }
+      // OMRKit P0: spatially normalize paper illumination, then detect
+      // alternatives under the same ORIGINAL image coordinate system.
+      // This is failure-budget discovery only, never the fast path.
+      if(options?.illuminationNormalization!==false){
+        const started=Date.now();
+        const normalized=normalizePaperIllumination(preprocessed.gray);
+        let binary:any=null;
+        try{
+          if(normalized.normalized){
+            binary=new cv.Mat();
+            cv.adaptiveThreshold(normalized.normalized,binary,255,
+              cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY_INV,31,8);
+            const marker=detectArucoMarkers(normalized.normalized,binary);
+            const corners=detectMarkers(binary,loaded.width,loaded.height);
+            const midpoint=detectMidpointMarkers(binary,loaded.width,loaded.height);
+            logger.info('markerDetection','Exp3.9.1 illumination-normalized marker discovery',{
+              supported:true,arucoIds:Object.keys(marker.points),
+              arucoCount:marker.count,corners:corners.count,
+              midpointCount:midpoint.count,elapsedMs:Date.now()-started,
+              normalization:normalized.evidence,
+              note:'Only geometry proposals; QR identity and bilateral timing remain mandatory'});
+            if(marker.count>=3&&marker.corners)
+              hypotheses.push({kind:'aruco',name:'aruco/corners-illumination',
+                markers:marker});
+            if(corners.found)hypotheses.push({kind:'corner',
+              name:'corner/illumination',markers:corners});
+            if(midpoint.found)hypotheses.push({kind:'midpoint',
+              name:'midpoint/illumination',markers:midpoint});
+          }else{
+            logger.info('markerDetection','Exp3.9.1 illumination-normalized marker discovery',{
+              supported:false,reason:normalized.evidence.reason,
+              elapsedMs:Date.now()-started});
+          }
+        }catch(error){
+          logger.warning('markerDetection','Exp3.9.1 illumination marker retry failed',{
+            reason:String(error),elapsedMs:Date.now()-started});
+        }finally{cleanupMats(binary,normalized.normalized);}
       }
       markerProfile.fallbackDiscoveryMs=Date.now()-fallbackDiscoveryStart;
     }
@@ -1984,14 +2025,37 @@ export async function runFullScan(
       const opticsStart=Date.now();
       const optics=comparativeEnabled?sampleAlternativeOptics(
         chosen.gray,dpi,activeGridOffset,rawAnswers):null;
-      logger.info('bubbleDetection','Exp3.9 OMRKit + OMRChecker optical shadow comparison',{
+      logger.info('bubbleDetection','Exp3.9.1 OMRKit + OMRChecker optical shadow comparison',{
         enabled:comparativeEnabled,elapsedMs:Date.now()-opticsStart,
         possible:optics?.possible??false,reason:optics?.reason??'disabled',
         measured:optics?.measured??0,checkerGapThreshold:optics?.checkerGapThreshold??null,
+        localThresholds:optics?.localThresholds??[],
+        thresholdGaps:optics?.thresholdGaps??[],
         kitVsStrict:optics?.kitVsStrict??[],checkerVsStrict:optics?.checkerVsStrict??[],
-        knownCases:optics?.knownCases??[],
+        localVsStrict:optics?.localVsStrict??[],knownCases:optics?.knownCases??[],
         disclaimer:'Read-only comparators. Strict SFG/UPSC scores unchanged.'
       });
+      // OMRKit P0 illumination correction: measure photometric effect without
+      // allowing that correction to override our strict fill-shape policy.
+      const normalizedOpticsStart=Date.now();
+      const normalization=options?.illuminationNormalization===false
+        ?null:normalizePaperIllumination(chosen.gray);
+      try{
+        const opticalComparison=normalization?.normalized?
+          sampleAlternativeOptics(normalization.normalized,dpi,activeGridOffset,rawAnswers):null;
+        logger.info('bubbleDetection','Exp3.9.1 illumination-normalized optical shadow',{
+          enabled:options?.illuminationNormalization!==false,
+          normalization:normalization?.evidence??null,
+          elapsedMs:Date.now()-normalizedOpticsStart,
+          originalKitVsStrict:optics?.kitVsStrict??[],
+          normalizedKitVsStrict:opticalComparison?.kitVsStrict??[],
+          originalLocalVsStrict:optics?.localVsStrict??[],
+          normalizedLocalVsStrict:opticalComparison?.localVsStrict??[],
+          keyQuestions:opticalComparison?.knownCases.filter(x=>[20,38,49].includes(x.question))??[],
+          gradingUnchanged:true
+        });
+      }finally{cleanupMats(normalization?.normalized);}
+
       // Independent original-source photometry is a comparison measurement
       // rather than an automatic change to the strict bubble classifier.
       const sourceProbeEnabled=options?.sourceInkProbe??true;
