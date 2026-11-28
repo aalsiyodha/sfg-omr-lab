@@ -170,7 +170,7 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
       ['Quadrant-free QR-oriented corners',/Exp3\.7\.9 rotation-invariant corner search/i],
       ['Paper boundary detection and rejection',/Outer-page boundary recovery evidence|Exp3\.7\.9 small-page boundary rejection evidence|Exp3\.7 alternative paper hypotheses/i],
       ['Local AI model and orientation candidates',/AI document boundary recovery|Exp3\.7\.10 AI orientation evidence|AI first-warp independent landmark verification|Exp3\.7\.11|AI-prewarped fiducial discovery|AI candidate verification result|AI last-resort summary|Optional AI recovery unavailable/i],
-      ['Bubble grid and stability',/Exp3\.7\.11 local bubble consistency probe|Exp3\.8 heldout|Exp3\.8 original-pixel|Independent printed-ring grid offsets|withheld-print-validated local mesh/i],
+      ['Bubble grid and stability',/Exp3\.7\.11 local bubble consistency probe|Exp3\.8 heldout|Exp3\.8 original-pixel|Exp3\.9 OMRKit Sobel|Exp3\.9 OMRKit \+ OMRChecker|Independent printed-ring grid offsets|withheld-print-validated local mesh/i],
       ['Scan performance and decision',/Registration performance summary|Exp3\.7\.3 failed registration taxonomy|scan stage timings|Scan complete in/i]
     ] as const;
     for(const [heading,pattern] of stages){
