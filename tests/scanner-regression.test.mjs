@@ -2599,8 +2599,8 @@ test('3.9.0: OMRKit and OMRChecker optical probes remain shadow-only on blank sh
 });
 
 test('3.9.0: ArUco recovery uses three marker corner sets and retains QR/timing gates',()=>{
-  const corner=fs.readFileSync('src/scanner/arucoCornerRecovery.ts','utf8');
-  const pipeline=fs.readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  const corner=readFileSync('src/scanner/arucoCornerRecovery.ts','utf8');
+  const pipeline=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
   assert.match(corner,/ids.length<3/);
   assert.match(corner,/cv.findHomography\(srcMat,dstMat,cv.RANSAC/);
   assert.match(corner,/marker.x-side\/2/);
