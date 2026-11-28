@@ -65,7 +65,7 @@ export default function App() {
           <div className="minimal-nav-links">
             <NavLink to="/scan">Scanner</NavLink>
             <NavLink to="/practice">Practice test</NavLink>
-            <NavLink to="/experiment-3-8-0">Experiment 3.8.0 · Answer-Centric Lab</NavLink>
+            <NavLink to="/experiment-3-9-0">Experiment 3.9.0 · Open OMR Fusion Lab</NavLink>
             <span className="v26-nav-status"><span className="v26-nav-status-dot"/> On-device processing</span>
             <button type="button" className="minimal-theme-switch"
               aria-label={theme==='dark'?'Use light appearance':'Use dark appearance'}
@@ -94,8 +94,8 @@ export default function App() {
             <Route path="/experiment-3-7-9" element={<Navigate to="/experiment-3-7-12" replace />} />
             <Route path="/experiment-3-7-10" element={<Navigate to="/experiment-3-7-12" replace />} />
             <Route path="/experiment-3-7-11" element={<Navigate to="/experiment-3-7-12" replace />} />
-            <Route path="/experiment-3-7-12" element={<Navigate to="/experiment-3-8-0" replace />} />
-            <Route path="/experiment-3-8-0" element={<MultiPhotoDiagnosticsPage appState={appState} />} />
+            <Route path="/experiment-3-7-12" element={<Navigate to="/experiment-3-9-0" replace />} />
+            <Route path="/experiment-3-9-0" element={<MultiPhotoDiagnosticsPage appState={appState} />} />
           </Routes>
         </main>
 
