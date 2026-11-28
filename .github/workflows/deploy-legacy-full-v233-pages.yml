@@ -55,6 +55,11 @@ jobs:
         with:
           ref: experiment/3-8-0-answer-centric-registration
           path: answer-centric-380
+      - name: Checkout isolated 3.9.0 Open OMR complementary lab
+        uses: actions/checkout@v4
+        with:
+          ref: experiment/3-9-0-open-omr-complementary
+          path: open-omr-390
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -68,6 +73,7 @@ jobs:
             adaptive-dual-3711/package-lock.json
             vertex-3712/package-lock.json
             answer-centric-380/package-lock.json
+            open-omr-390/package-lock.json
       - name: Validate and build stable root
         working-directory: production
         run: |
@@ -222,6 +228,31 @@ jobs:
           cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
           mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.8.0"
           cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.8.0/"
+      - name: Validate and build 3.9.0 OMRKit + OMRChecker complementary lab
+        working-directory: open-omr-390
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:scanner
+          mkdir -p public/opencv public/ai-runtime public/ai-model
+          archive=$(npm pack --silent @techstark/opencv-js@4.8.0-release.10)
+          tar -xzf "$archive" package/dist/opencv.js
+          cp package/dist/opencv.js public/opencv/opencv.js
+          rm -rf package "$archive"
+          archive=$(npm pack --silent --ignore-scripts quadscan@1.0.0)
+          tar -xzf "$archive"
+          cp package/dist/quadscan.iife.js public/ai-runtime/quadscan.iife.js
+          cp package/models/lcnet100_h_e_bifpn_256_fp32.onnx public/ai-model/
+          rm -rf package "$archive"
+          archive=$(npm pack --silent --ignore-scripts onnxruntime-web@1.20.1)
+          tar -xzf "$archive"
+          cp package/dist/*.wasm public/ai-runtime/
+          rm -rf package "$archive"
+          GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_PAGES=true GITHUB_PAGES_BASE='/sfg-omr-lab/experiments/3.9.0/' npm run build
+          mkdir -p dist/ai-model/scanic
+          cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
+          mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.9.0"
+          cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.9.0/"
       - name: Combine stable root and isolated experiment
         run: |
           mkdir -p production/dist/experiments/legacy-full-v233
@@ -244,6 +275,9 @@ jobs:
           test -s production/dist/experiments/3.7.12/ai-runtime/quadscan.iife.js
           test -s production/dist/experiments/3.7.12/ai-model/lcnet100_h_e_bifpn_256_fp32.onnx
           test -d production/dist/experiments/3.7.12/ai-model/scanic
+          test -s production/dist/experiments/3.9.0/index.html
+          test -s production/dist/experiments/3.9.0/opencv/opencv.js
+          test -d production/dist/experiments/3.9.0/ai-model/scanic
           test -s production/dist/experiments/3.8.0/index.html
           test -s production/dist/experiments/3.8.0/opencv/opencv.js
           test -s production/dist/experiments/3.8.0/ai-runtime/quadscan.iife.js
