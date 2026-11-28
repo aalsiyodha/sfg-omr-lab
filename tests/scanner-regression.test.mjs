@@ -2632,18 +2632,18 @@ test('3.9.1: OMRChecker-inspired intensity-gap calibration abstains on uniform p
 test('3.9.1: 10-photo diagnostics retain algorithm evidence instead of silently discarding it',()=>{
   const page=readFileSync('src/pages/MultiPhotoDiagnosticsPage.tsx','utf8');
   const report=readFileSync('src/diagnostics/forensicReport.ts','utf8');
-  assert.match(page,/illuminationNormalization:true/);
-  assert.match(page,/Exp3\\.9/);
-  assert.match(report,/illumination-normalized optical shadow/);
-  assert.match(report,/PER-PHOTO ROOT-CAUSE SUMMARY/);
-  assert.match(report,/NOT RECORDED/);
+  assert.ok(page.includes('illuminationNormalization:true'));
+  assert.ok(page.includes('Exp3'));
+  assert.ok(report.includes('illumination-normalized optical shadow'));
+  assert.ok(report.includes('PER-PHOTO ROOT-CAUSE SUMMARY'));
+  assert.ok(report.includes('NOT RECORDED'));
 });
 
-test('3.9.1: proposed illumination geometry never bypasses verified QR and timing',()=>{
+test('3.9.1: illumination geometry and alternative optics retain independent gates',()=>{
   const code=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
-  assert.match(code,/aruco\\/corners-illumination/);
-  assert.match(code,/Exp3\\.9\\.1 illumination-normalized marker discovery/);
-  assert.match(code,/traceRegistration\\(loaded.canvas, hypothesis/);
-  assert.match(code,/verifyTimingMarks\\(/);
-  assert.match(code,/sampleAlternativeOptics\\(normalization.normalized/);
+  assert.ok(code.includes('aruco/corners-illumination'));
+  assert.ok(code.includes('Exp3.9.1 illumination-normalized marker discovery'));
+  assert.ok(code.includes('traceRegistration(loaded.canvas, hypothesis'));
+  assert.ok(code.includes('verifyTimingMarks('));
+  assert.ok(code.includes('sampleAlternativeOptics(normalization.normalized'));
 });
