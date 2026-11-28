@@ -101,7 +101,7 @@ function readCandidate(gray:any,pts:ImagePoint[]):{
     // correspondences until the ArUco payload establishes their orientation.
     const decoded=decodeArucoCells(bits);
     if(!decoded)return null;
-    let current=bits,turn=-1;
+    let current:number[][]=bits,turn=-1;
     for(let t=0;t<4;t++){
       let errors=0;
       const expected=ARUCO_BITS[decoded.id];
