@@ -771,6 +771,7 @@ export async function runFullScan(
     const arucoMidpointPrediction=predictMidpointsFromArucos(arucoAdaptive);
     logger.info('markerDetection','ArUco 4x4 marker identification (adaptive)',{
       identified:arucoAdaptive.count,ids:Object.keys(arucoAdaptive.points),
+      cornerRefinement:arucoAdaptive.refinement??{},
       readyForRescue:arucoAdaptive.found});
     // Initial corner already evaluated; do not warp it again.
 
