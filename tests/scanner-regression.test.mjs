@@ -2590,7 +2590,7 @@ test('3.9.0: OMRKit and OMRChecker optical probes remain shadow-only on blank sh
   });
   const baseline=Array.from({length:50},(_,i)=>({
     question:i+1,answer:null,status:'blank'}));
-  const result=mod.sampleAlternativeOptics(gray,25.4,()=>({dx:0,dy:0}),baseline);
+  const result=mod.sampleAlternativeOptics(gray,100,()=>({dx:0,dy:0}),baseline);
   assert.equal(result.possible,true);
   assert.equal(result.measured,200);
   assert.equal(result.checkerGapThreshold,null);
