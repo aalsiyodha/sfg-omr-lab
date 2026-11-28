@@ -10,6 +10,10 @@ export interface ArucoRegistration {
   found:boolean;
   count:number;
   points: Record<number,ImagePoint>;
+  /** Four ordered marker corners in printed-marker TL/TR/BR/BL orientation. */
+  corners?: Record<number,[ImagePoint,ImagePoint,ImagePoint,ImagePoint]>;
+  /** Number of mismatched ArUco cells (including border) for each ID. */
+  errors?: Record<number,number>;
   error?:string;
 }
 export const ARUCO_MARKERS_MM = [
@@ -54,16 +58,17 @@ export function decodeArucoCells(bits:number[][]):{id:number;errors:number}|null
   return best && best.errors<=1 && !ambiguous?best:null;
 }
 function orderCorners(pts:ImagePoint[]):ImagePoint[]{
-  const sum=(p:ImagePoint)=>p.x+p.y;
-  const diff=(p:ImagePoint)=>p.x-p.y;
-  return [
-    pts.reduce((a,b)=>sum(a)<sum(b)?a:b),
-    pts.reduce((a,b)=>diff(a)>diff(b)?a:b),
-    pts.reduce((a,b)=>sum(a)>sum(b)?a:b),
-    pts.reduce((a,b)=>diff(a)<diff(b)?a:b),
-  ];
+  // Centroid-angle ordering avoids duplicated vertices at 45-degree roll.
+  if(pts.length!==4)throw new Error('Expected exactly four marker vertices');
+  const cx=pts.reduce((s,p)=>s+p.x,0)/4;
+  const cy=pts.reduce((s,p)=>s+p.y,0)/4;
+  const ordered=[...pts].sort((a,b)=>Math.atan2(a.y-cy,a.x-cx)-Math.atan2(b.y-cy,b.x-cx));
+  const start=ordered.reduce((best,p,i)=>p.x+p.y<ordered[best].x+ordered[best].y?i:best,0);
+  return [...ordered.slice(start),...ordered.slice(0,start)];
 }
-function readCandidate(gray:any,pts:ImagePoint[]):{id:number;errors:number}|null{
+function readCandidate(gray:any,pts:ImagePoint[]):{
+  id:number;errors:number;corners:[ImagePoint,ImagePoint,ImagePoint,ImagePoint]
+}|null{
   let src:any=null,dst:any=null,H:any=null,patch:any=null;
   try{
     const p=orderCorners(pts);
@@ -91,15 +96,34 @@ function readCandidate(gray:any,pts:ImagePoint[]):{id:number;errors:number}|null
     const dark=sorted[7],light=sorted[29];
     if(light-dark<35)return null;
     const threshold=(dark+light)/2;
-    return decodeArucoCells(values.map(row=>row.map(v=>v<threshold?1:0)));
+    const bits=values.map(row=>row.map(v=>v<threshold?1:0));
+    // Preserve the rotational phase. Marker corners alone are not labelled
+    // correspondences until the ArUco payload establishes their orientation.
+    const decoded=decodeArucoCells(bits);
+    if(!decoded)return null;
+    let current=bits,turn=-1;
+    for(let t=0;t<4;t++){
+      let errors=0;
+      const expected=ARUCO_BITS[decoded.id];
+      for(let y=0;y<6;y++)for(let x=0;x<6;x++)
+        if(current[y][x] !== (expected[y][x]==='#'?1:0))errors++;
+      if(errors===decoded.errors){turn=t;break;}
+      current=rotate(current);
+    }
+    if(turn<0)return null;
+    const canonical=Array.from({length:4},(_,i)=>p[(4-turn+i)%4]) as
+      [ImagePoint,ImagePoint,ImagePoint,ImagePoint];
+    return {...decoded,corners:canonical};
   }catch{return null;}finally{
     for(const v of [src,dst,H,patch]){try{v?.delete?.();}catch{/* WASM cleanup */}}
   }
 }
 export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
   const points:Record<number,ImagePoint>={};
+  const corners:Record<number,[ImagePoint,ImagePoint,ImagePoint,ImagePoint]>={};
+  const errors:Record<number,number>={};
   const missed=(reason:string):ArucoRegistration=>({
-    found:false,count:Object.keys(points).length,points,error:reason,
+    found:false,count:Object.keys(points).length,points,corners,errors,error:reason,
   });
   if(!gray||!thresholded||!gray.cols||!gray.rows)
     return missed('No grayscale or thresholded image');
@@ -135,6 +159,8 @@ export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
         const score=1-result.errors*.25;
         if(strengths[id]!==undefined&&strengths[id]>=score)continue;
         strengths[id]=score;
+        corners[id]=result.corners;
+        errors[id]=result.errors;
         points[id]={
           x:p.reduce((s,v)=>s+v.x,0)/4,
           y:p.reduce((s,v)=>s+v.y,0)/4,
@@ -142,7 +168,7 @@ export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
       }finally{approx?.delete?.();contour.delete();}
     }
     const count=Object.keys(points).length;
-    return {found:count===4,count,points,
+    return {found:count===4,count,points,corners,errors,
       error:count===4?undefined:`Decoded ${count}/4 ArUco IDs; full four-marker rescue unavailable (${candidates} candidates)`};
   }catch(e){
     return missed('ArUco identification failed: '+String(e));
