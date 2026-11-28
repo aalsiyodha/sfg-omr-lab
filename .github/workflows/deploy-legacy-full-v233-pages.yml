@@ -260,6 +260,7 @@ jobs:
           cp -a node_modules/scanic-ml/dist/. dist/ai-model/scanic/
           mkdir -p "$GITHUB_WORKSPACE/production/dist/experiments/3.9.0"
           cp -a dist/. "$GITHUB_WORKSPACE/production/dist/experiments/3.9.0/"
+      # Verify new OCR-independent geometry/photometry stages and regression dependency stubs.
       - name: Validate and build 3.9.1 Geometry + Illumination Forensic Lab
         working-directory: geometry-391
         run: |
