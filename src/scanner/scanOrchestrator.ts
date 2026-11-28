@@ -46,6 +46,9 @@ import { detectAllAnswers, detectTestId, computeAdaptiveDarkThreshold } from './
 import { measureGrayCalibration, grayStripInkCeiling, investigateGrayStrip } from './grayCalibration';
 import { estimateGridAlignment, offsetForQuestion } from './gridAlignment';
 import {refineQuestionRings} from './answerCentricRings';
+import {refineBlockRings} from './blockRingAlignment';
+import {sampleAlternativeOptics} from './comparativeOptics';
+import {fitArucoCornerWarp} from './arucoCornerRecovery';
 import {probeSourceInk} from './sourceInkProbe';
 import {refineGeometryOnlyRings} from './templatePoseRefinement';
 import { rescueTestIdOffset } from './testIdAlignment';
@@ -79,7 +82,7 @@ function geometryFingerprint(h:Hypothesis):string|null {
     h.markers.topRight,h.markers.bottomLeft,h.markers.bottomRight]);
   if(h.kind==='midpoint')return JSON.stringify(['midpoint',h.markers.top,
     h.markers.right,h.markers.bottom,h.markers.left]);
-  return JSON.stringify(['aruco',Object.entries(h.markers.points)
+  return JSON.stringify([h.name.startsWith('aruco/corners-')?'aruco-corners':'aruco',Object.entries(h.markers.points)
     .sort(([a],[b])=>a.localeCompare(b))]);
 }
 
@@ -167,6 +170,9 @@ function evaluateHypothesis(
           logger.info('perspective','v2.5.3 robust homography evidence',{...fusion});
         })?.perspective ?? {corrected:null,correctedDataUrl:'',
             transform:null,success:false,error:'RANSAC failed independent marker agreement'}
+      : hypothesis.name.startsWith('aruco/corners-')
+      ? fitArucoCornerWarp(source,hypothesis.markers,dpi,e=>
+          logger.info('perspective','Exp3.9 exact-template marker-corner evidence',e))
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
@@ -490,6 +496,10 @@ export interface ScanModeOptions {
   answerCentricRings?: boolean;
   /** 3.8: original-source pixel probe; diagnostic only. */
   sourceInkProbe?: boolean;
+  /** 3.9: OMRKit-inspired held-out Sobel block-ring registration. */
+  blockRingAlignment?: boolean;
+  /** 3.9: read-only OMRKit/OMRChecker optical measurements. */
+  comparativeOptics?: boolean;
   fastQrRoi?: boolean;
   coarseToFine?: boolean;
   robustFusion?: boolean;
@@ -809,9 +819,15 @@ export async function runFullScan(
       logger.info('markerDetection','ArUco identification (Otsu)',{
         identified:arucoOtsu.count,ids:Object.keys(arucoOtsu.points),
         readyForRescue:arucoOtsu.found});
+      // A three-ID result still has twelve oriented marker corners.
+      // Exact SFG geometry is used, unlike generic approximate-target 3pt rescue.
+      if((arucoAdaptive.count>=3)&&arucoAdaptive.corners)
+        hypotheses.push({kind:'aruco',name:'aruco/corners-adaptive',markers:arucoAdaptive});
       if(arucoAdaptive.found)hypotheses.push({kind:'aruco',name:'aruco/adaptive',markers:arucoAdaptive});
       // Independent thresholding can recover a different set of marker
       // centres. Evaluate both, even if adaptive ArUco detection succeeded.
+      if(arucoOtsu.count>=3&&arucoOtsu.corners)
+        hypotheses.push({kind:'aruco',name:'aruco/corners-Otsu',markers:arucoOtsu});
       if(arucoOtsu.found)hypotheses.push({kind:'aruco',name:'aruco/Otsu',markers:arucoOtsu});
     } finally {
       cleanupMats(alternate);
@@ -1903,6 +1919,22 @@ export async function runFullScan(
         durationMs:meshMs,
         note:'Candidate based only on printed rings; cannot override QR identity'
       });
+      // OMRKit's coherent block-shift hypothesis, fitted on alternate rows
+      // and checked on independent held-out rows. Preserve v3.8 offsets
+      // whenever the proposed translation is not supported.
+      const blockEnabled=options?.blockRingAlignment ?? true;
+      const blockStart=Date.now();
+      const block=blockEnabled
+        ?refineBlockRings(chosen.gray,dpi,activeGridOffset):null;
+      if(block?.adopted){
+        const previous=activeGridOffset;
+        activeGridOffset=q=>block.offsets[q]??previous(q);
+      }
+      logger.info('perspective','Exp3.9 OMRKit Sobel block-ring correlation',{
+        enabled:blockEnabled,adoptedRegions:block?.adopted??0,
+        checkedRegions:block?.checked??0,evidence:block?.evidence??[],
+        elapsedMs:Date.now()-blockStart,
+        acceptedBy:'heldout printed rings; no answer-ink optimisation'});
       const ringEnabled=options?.answerCentricRings ?? true;
       const ringStart=Date.now();
       const ringRecovery=ringEnabled?refineQuestionRings(chosen.gray,dpi,activeGridOffset):null;
