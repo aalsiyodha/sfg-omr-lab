@@ -1724,7 +1724,16 @@ export async function runFullScan(
     if(!selected && !options?.disableAiRecovery){
       const dualStart=Date.now(),failures:string[]=[];
       let model='none';
-      for(const variant of ['fastvit','lcnet'] as const){
+      // The 3.9.x GitHub Pages workflow packages LCNet but not FastViT.
+      // Avoid a guaranteed HTTP 404 + costly ONNX error path on every failed
+      // photograph. On hosts that explicitly package FastViT, keep both.
+      const pagesModelsOnly=import.meta.env.BASE_URL.startsWith('/sfg-omr-lab/experiments/');
+      const variants:('fastvit'|'lcnet')[]=pagesModelsOnly?['lcnet']:['fastvit','lcnet'];
+      logger.info('perspective','Exp3.9.1 AI model availability',{
+        fastvit:pagesModelsOnly?'not-packaged-skipped':'attempt-if-needed',
+        lcnet:'available-by-pages-build',baseUrl:import.meta.env.BASE_URL,
+        noModelDownloadedOnClassicalSuccess:true});
+      for(const variant of variants){
         try{
           onProgress?.({stage:'Second local AI geometry: '+variant,percent:58});
           const proposal=await recoverPageWithAI(loaded.canvas,(event,data)=>
