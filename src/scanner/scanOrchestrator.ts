@@ -1950,10 +1950,24 @@ export async function runFullScan(
         questions:ringRecovery?.checks??[],durationMs:ringMs,
         note:'Fit A/C rings, validate B/D rings. No grade may be inferred from geometry confidence.'
       });
-      if(ringRecovery?.adopted){
+      if(ringRecovery?.adopted||block?.adopted){
         rawAnswers=detectAllAnswers(chosen.gray,dpi,inkCeiling??undefined,
           activeGridOffset,rawInkThreshold);
       }
+      // Reference optical classifiers are diagnostic-only; in particular,
+      // checkmarks and crescents must NEVER inherit OMRKit's permissive policy.
+      const comparativeEnabled=options?.comparativeOptics??true;
+      const opticsStart=Date.now();
+      const optics=comparativeEnabled?sampleAlternativeOptics(
+        chosen.gray,dpi,activeGridOffset,rawAnswers):null;
+      logger.info('bubbleDetection','Exp3.9 OMRKit + OMRChecker optical shadow comparison',{
+        enabled:comparativeEnabled,elapsedMs:Date.now()-opticsStart,
+        possible:optics?.possible??false,reason:optics?.reason??'disabled',
+        measured:optics?.measured??0,checkerGapThreshold:optics?.checkerGapThreshold??null,
+        kitVsStrict:optics?.kitVsStrict??[],checkerVsStrict:optics?.checkerVsStrict??[],
+        knownCases:optics?.knownCases??[],
+        disclaimer:'Read-only comparators. Strict SFG/UPSC scores unchanged.'
+      });
       // Independent original-source photometry is a comparison measurement
       // rather than an automatic change to the strict bubble classifier.
       const sourceProbeEnabled=options?.sourceInkProbe??true;
