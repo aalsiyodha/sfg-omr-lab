@@ -81,8 +81,9 @@ export function sampleAlternativeOptics(
       kitChosen.length>1?'M':'?';
     // Lower grayscale means darker. Checker's threshold is intentionally a
     // global, provisional prediction; never accepted as a strict answer.
-    const checkChosen=threshold===null?[]:row.flatMap((x,i)=>
-      x.valid&&x.mean<threshold!?['ABCD'[i]]:[]);
+    const cutoff=threshold;
+    const checkChosen=cutoff===null?[]:row.flatMap((x,i)=>
+      x.valid&&x.mean<cutoff?['ABCD'[i]]:[]);
     const checker=threshold===null?'?':checkChosen.length===0?'-':
       checkChosen.length===1?checkChosen[0]:'M';
     const strictRow=strictAnswers.find(x=>x.question===q);
