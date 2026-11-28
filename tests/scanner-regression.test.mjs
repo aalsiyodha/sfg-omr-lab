@@ -2560,3 +2560,51 @@ test('3.8.0: scorecard counts failed photos against full-cohort reproducibility'
   assert.equal(v.p95Seconds,2);
   assert.match(v.accuracy,/NOT MEASURED/);
 });
+
+
+test('3.9.0: blank photo cannot create an OMRKit-inspired block-ring shift',()=>{
+  const width=200,height=620;
+  const data=new Uint8Array(width*height).fill(240);
+  const gray={rows:height,cols:width,data};
+  const centers=(q,opt)=>({xMm:(q<=25?30:115)+opt*18,yMm:(q<=25?q:q-25)*20+45});
+  const mod=loadTS('src/scanner/blockRingAlignment.ts',{
+    '../config/omrLayout':{getBubbleCentre:centers,mmToPx:x=>x,
+      OMR_LAYOUT:{answers:{bubbleDiamMm:7}}},
+    './pixelAccess':{grayReader:g=>(y,x)=>g.data[y*g.cols+x]}
+  });
+  const b=()=>({dx:0,dy:0,applied:false,confidence:0});
+  const result=mod.refineBlockRings(gray,25.4,b);
+  assert.equal(result.adopted,0);
+  assert.equal(result.checked,4);
+  assert.ok(result.evidence.every(e=>!e.accepted));
+  assert.equal(result.offsets[38].dx,0);
+});
+
+test('3.9.0: OMRKit and OMRChecker optical probes remain shadow-only on blank sheet',()=>{
+  const width=200,height=620,gray={cols:width,rows:height,
+    data:new Uint8Array(width*height).fill(245)};
+  const centers=(q,opt)=>({xMm:(q<=25?30:115)+opt*18,yMm:(q<=25?q:q-25)*20+45});
+  const mod=loadTS('src/scanner/comparativeOptics.ts',{
+    '../config/omrLayout':{getBubbleCentre:centers,mmToPx:x=>x},
+    './pixelAccess':{grayReader:g=>(y,x)=>g.data[y*g.cols+x]}
+  });
+  const baseline=Array.from({length:50},(_,i)=>({
+    question:i+1,answer:null,status:'blank'}));
+  const result=mod.sampleAlternativeOptics(gray,25.4,()=>({dx:0,dy:0}),baseline);
+  assert.equal(result.possible,true);
+  assert.equal(result.measured,200);
+  assert.equal(result.checkerGapThreshold,null);
+  assert.ok(result.kitPredictions.every(x=>x==='-'));
+  assert.equal(baseline[0].answer,null);
+});
+
+test('3.9.0: ArUco recovery uses three marker corner sets and retains QR/timing gates',()=>{
+  const corner=fs.readFileSync('src/scanner/arucoCornerRecovery.ts','utf8');
+  const pipeline=fs.readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.match(corner,/ids.length<3/);
+  assert.match(corner,/cv.findHomography\(srcMat,dstMat,cv.RANSAC/);
+  assert.match(corner,/marker.x-side\/2/);
+  assert.match(pipeline,/aruco\/corners-adaptive/);
+  assert.match(pipeline,/fitArucoCornerWarp\(/);
+  assert.match(pipeline,/verifyTimingMarks\(/);
+});
