@@ -2608,3 +2608,42 @@ test('3.9.0: ArUco recovery uses three marker corner sets and retains QR/timing 
   assert.match(pipeline,/fitArucoCornerWarp\(/);
   assert.match(pipeline,/verifyTimingMarks\(/);
 });
+
+
+test('3.9.1: background-division illumination normalizes a shaded white pixel',()=>{
+  const mod=loadTS('src/scanner/illuminationNormalization.ts');
+  assert.equal(mod.dividePaperPixel(220,220),245);
+  assert.equal(mod.dividePaperPixel(110,110),245);
+  assert.ok(mod.dividePaperPixel(70,140)<180);
+  assert.equal(mod.dividePaperPixel(255,1),255);
+  assert.equal(mod.dividePaperPixel(0,0),245);
+});
+
+test('3.9.1: OMRChecker-inspired intensity-gap calibration abstains on uniform paper',()=>{
+  const mod=loadTS('src/scanner/comparativeOptics.ts',{
+    '../config/omrLayout':{getBubbleCentre:()=>({xMm:10,yMm:10}),mmToPx:x=>x},
+    './pixelAccess':{grayReader:()=>()=>255}
+  });
+  assert.equal(mod.estimateIntensityGap([242,242,243,244],10).threshold,null);
+  const separated=mod.estimateIntensityGap([70,71,73,190,192,193],10);
+  assert.ok(separated.threshold!==null&&separated.threshold>70&&separated.threshold<193);
+});
+
+test('3.9.1: 10-photo diagnostics retain algorithm evidence instead of silently discarding it',()=>{
+  const page=readFileSync('src/pages/MultiPhotoDiagnosticsPage.tsx','utf8');
+  const report=readFileSync('src/diagnostics/forensicReport.ts','utf8');
+  assert.match(page,/illuminationNormalization:true/);
+  assert.match(page,/Exp3\\.9/);
+  assert.match(report,/illumination-normalized optical shadow/);
+  assert.match(report,/PER-PHOTO ROOT-CAUSE SUMMARY/);
+  assert.match(report,/NOT RECORDED/);
+});
+
+test('3.9.1: proposed illumination geometry never bypasses verified QR and timing',()=>{
+  const code=readFileSync('src/scanner/scanOrchestrator.ts','utf8');
+  assert.match(code,/aruco\\/corners-illumination/);
+  assert.match(code,/Exp3\\.9\\.1 illumination-normalized marker discovery/);
+  assert.match(code,/traceRegistration\\(loaded.canvas, hypothesis/);
+  assert.match(code,/verifyTimingMarks\\(/);
+  assert.match(code,/sampleAlternativeOptics\\(normalization.normalized/);
+});
