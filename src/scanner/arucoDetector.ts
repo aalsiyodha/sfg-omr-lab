@@ -15,6 +15,8 @@ export interface ArucoRegistration {
   corners?: Record<number,[ImagePoint,ImagePoint,ImagePoint,ImagePoint]>;
   /** Number of mismatched ArUco cells (including border) for each ID. */
   errors?: Record<number,number>;
+  /** Whether native cornerSubPix was used for each retained marker. */
+  refinement?: Record<number,string>;
   error?:string;
 }
 export const ARUCO_MARKERS_MM = [
@@ -123,8 +125,9 @@ export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
   const points:Record<number,ImagePoint>={};
   const corners:Record<number,[ImagePoint,ImagePoint,ImagePoint,ImagePoint]>={};
   const errors:Record<number,number>={};
+  const refinement:Record<number,string>={};
   const missed=(reason:string):ArucoRegistration=>({
-    found:false,count:Object.keys(points).length,points,corners,errors,error:reason,
+    found:false,count:Object.keys(points).length,points,corners,errors,refinement,error:reason,
   });
   if(!gray||!thresholded||!gray.cols||!gray.rows)
     return missed('No grayscale or thresholded image');
@@ -171,6 +174,7 @@ export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
         strengths[id]=score;
         corners[id]=result.corners;
         errors[id]=result.errors;
+        refinement[id]=result===reconsidered?'subpixel-refined':refined.method;
         points[id]={
           x:p.reduce((s,v)=>s+v.x,0)/4,
           y:p.reduce((s,v)=>s+v.y,0)/4,
@@ -178,7 +182,7 @@ export function detectArucoMarkers(gray:any,thresholded:any):ArucoRegistration{
       }finally{approx?.delete?.();contour.delete();}
     }
     const count=Object.keys(points).length;
-    return {found:count===4,count,points,corners,errors,
+    return {found:count===4,count,points,corners,errors,refinement,
       error:count===4?undefined:`Decoded ${count}/4 ArUco IDs; full four-marker rescue unavailable (${candidates} candidates)`};
   }catch(e){
     return missed('ArUco identification failed: '+String(e));
