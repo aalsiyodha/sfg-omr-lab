@@ -139,11 +139,11 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
     const logs=(r?.stageLogs??[]) as Evidence[];
     const registration=logs.map(scoredCandidate).filter((x):x is NonNullable<typeof x>=>x!==null);
     const best=[...registration].filter(x=>x.qr).sort((a,b)=>b.timing-a.timing)[0];
-    const aruco=dataOf(last(logs,/Exp3\\.9 exact-template marker-corner evidence/i));
-    const illumMarkers=dataOf(last(logs,/Exp3\\.9\\.1 illumination-normalized marker discovery/i));
-    const block=dataOf(last(logs,/Exp3\\.9 OMRKit Sobel block-ring correlation/i));
-    const optics=dataOf(last(logs,/Exp3\\.9\\.1 OMRKit \\+ OMRChecker optical shadow comparison/i));
-    const illumOptics=dataOf(last(logs,/Exp3\\.9\\.1 illumination-normalized optical shadow/i));
+    const aruco=dataOf(last(logs,/Exp3\.9 exact-template marker-corner evidence/i));
+    const illumMarkers=dataOf(last(logs,/Exp3\.9\.1 illumination-normalized marker discovery/i));
+    const block=dataOf(last(logs,/Exp3\.9 OMRKit Sobel block-ring correlation/i));
+    const optics=dataOf(last(logs,/Exp3\.9\.1 OMRKit \+ OMRChecker optical shadow comparison/i));
+    const illumOptics=dataOf(last(logs,/Exp3\.9\.1 illumination-normalized optical shadow/i));
     const stages=dataOf(last(logs,/Scan stage timings/i));
     const model404=logs.filter(e=>/second model unavailable/i.test(e.message) &&
       /404|not found|could not fetch/i.test(JSON.stringify(e.data??'')));
@@ -212,7 +212,7 @@ export function buildForensicReport(scans:PhotoScan[],groundTruth=''):string {
       ['Paper boundary detection and rejection',/Outer-page boundary recovery evidence|Exp3\.7\.9 small-page boundary rejection evidence|Exp3\.7 alternative paper hypotheses/i],
       ['Local AI model and orientation candidates',/AI document boundary recovery|Exp3\.7\.10 AI orientation evidence|AI first-warp independent landmark verification|Exp3\.7\.11|AI-prewarped fiducial discovery|AI candidate verification result|AI last-resort summary|Optional AI recovery unavailable/i],
       ['3.9.1 geometry and illumination experiments',
-        /Exp3\\.9\\.1|Exp3\\.9 exact-template|Exp3\\.9 contrast-normalized|Exp3\\.9 OMRKit Sobel|Exp3\\.8 heldout|withheld-print-validated local mesh/i],
+        /Exp3\.9\.1|Exp3\.9 exact-template|Exp3\.9 contrast-normalized|Exp3\.9 OMRKit Sobel|Exp3\.8 heldout|withheld-print-validated local mesh/i],
       ['Bubble grid and stability',/Exp3\.7\.11 local bubble consistency probe|Exp3\.8 heldout|Exp3\.8 original-pixel|Exp3\.9 OMRKit Sobel|Exp3\.9 OMRKit \+ OMRChecker|Independent printed-ring grid offsets|withheld-print-validated local mesh/i],
       ['Scan performance and decision',/Registration performance summary|Exp3\.7\.3 failed registration taxonomy|scan stage timings|Scan complete in/i]
     ] as const;
