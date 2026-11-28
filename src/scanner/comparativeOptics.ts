@@ -11,6 +11,8 @@ export interface OpticalProbe {
   possible:boolean;reason:string;measured:number;checkerGapThreshold:number|null;
   kitPredictions:string[];checkerPredictions:string[];
   kitVsStrict:number[];checkerVsStrict:number[];
+  localThresholds:(number|null)[];localVsStrict:number[];
+  localPredictions:string[];thresholdGaps:number[];
   knownCases:Array<{question:number;strict:string;kit:string;checker:string;
     kitScores:number[];coreMeans:number[]}>;
 }
@@ -21,12 +23,24 @@ const percentile=(vals:number[],fraction:number):number=>{
   const sorted=[...vals].sort((a,b)=>a-b);
   return sorted[Math.min(sorted.length-1,Math.floor((sorted.length-1)*fraction))];
 };
+/** OMRChecker-inspired largest two-neighbour intensity gap with conservative fallback. */
+export function estimateIntensityGap(values:number[],minJump=10):{threshold:number|null;gap:number}{
+  if(values.length<3)return {threshold:null,gap:0};
+  const sorted=[...values].sort((a,b)=>a-b);
+  let best=0,thr:number|null=null;
+  for(let i=1;i<sorted.length-1;i++){
+    const delta=sorted[i+1]-sorted[i-1];
+    if(delta>best){best=delta;thr=(sorted[i-1]+sorted[i+1])/2;}
+  }
+  return {threshold:best>=minJump?thr:null,gap:best};
+}
 export function sampleAlternativeOptics(
   gray:Gray,dpi:number,offset:(q:number)=>{dx:number;dy:number},
   strictAnswers:ReadonlyArray<{question:number;detectedAnswer:string|null;status:string}>
 ):OpticalProbe {
   const empty=(reason:string):OpticalProbe=>({possible:false,reason,measured:0,
     checkerGapThreshold:null,kitPredictions:[],checkerPredictions:[],
+    localThresholds:[],localVsStrict:[],localPredictions:[],thresholdGaps:[],
     kitVsStrict:[],checkerVsStrict:[],knownCases:[]});
   if(!gray?.rows||!gray?.cols)return empty('no-registered-grayscale');
   const pixel=grayReader(gray),scale=dpi/25.4;
@@ -59,15 +73,22 @@ export function sampleAlternativeOptics(
   // OMRChecker-inspired: choose a significant global intensity gap, then
   // fall back to no decision. We deliberately do not force every question
   // to contain a marked bubble.
-  const sorted=valid.map(x=>x.mean).sort((a,b)=>a-b);
-  let gap=0,threshold:number|null=null;
-  for(let i=1;i<sorted.length;i++){
-    const jump=sorted[i]-sorted[i-1];
-    if(jump>gap){gap=jump;threshold=(sorted[i]+sorted[i-1])/2;}
-  }
-  if(gap<10)threshold=null;
+  const global=estimateIntensityGap(valid.map(x=>x.mean),10);
+  const threshold=global.threshold;
+  // OMRChecker's local fallback is represented by four physical response
+  // blocks (1..12, 13..25, 26..37, 38..50), rather than one global cutoff.
+  // On low-separation blocks use global threshold; if global is absent,
+  // abstain rather than force a dark option.
+  const regions=[[1,12],[13,25],[26,37],[38,50]] as const;
+  const local=regions.map(([a,b])=>{
+    const items=groups.slice(a-1,b).flat().filter(x=>x.valid).map(x=>x.mean);
+    const measured=estimateIntensityGap(items,13);
+    return {threshold:measured.threshold??threshold,gap:measured.gap,
+      source:measured.threshold===null?'global-fallback':'local'};
+  });
   const kitPredictions:string[]=[],checkerPredictions:string[]=[];
-  const kitVsStrict:number[]=[],checkerVsStrict:number[]=[];
+  const kitVsStrict:number[]=[],checkerVsStrict:number[]=[],localVsStrict:number[]=[];
+  const localPredictions:string[]=[];
   const knownCases:OpticalProbe['knownCases']=[];
   const baseline=percentile(valid.map(x=>x.score),.35);
   for(let q=1;q<=50;q++){
@@ -86,12 +107,20 @@ export function sampleAlternativeOptics(
       x.valid&&x.mean<cutoff?['ABCD'[i]]:[]);
     const checker=threshold===null?'?':checkChosen.length===0?'-':
       checkChosen.length===1?checkChosen[0]:'M';
+    const region=q<=12?0:q<=25?1:q<=37?2:3;
+    const localCutoff=local[region].threshold;
+    const localChosen=localCutoff===null?[]:row.flatMap((x,i)=>
+      x.valid&&x.mean<localCutoff?['ABCD'[i]]:[]);
+    const localPrediction=localCutoff===null?'?':localChosen.length===0?'-':
+      localChosen.length===1?localChosen[0]:'M';
     const strictRow=strictAnswers.find(x=>x.question===q);
     const strict=strictRow?.status==='multiple'?'M':strictRow?.status==='uncertain'?'?':
       strictRow?.detectedAnswer??'-';
     kitPredictions.push(kit);checkerPredictions.push(checker);
+    localPredictions.push(localPrediction);
     if(kit!==strict)kitVsStrict.push(q);
     if(checker!==strict)checkerVsStrict.push(q);
+    if(localPrediction!==strict)localVsStrict.push(q);
     if([20,38,49].includes(q)||kit!==strict||checker!==strict){
       knownCases.push({question:q,strict,kit,checker,
         kitScores:raw.map(round),coreMeans:row.map(x=>round(x.mean))});
@@ -100,5 +129,7 @@ export function sampleAlternativeOptics(
   return {possible:true,reason:'read-only-reference-alternatives;not-UPSC-compliant',
     measured:valid.length,checkerGapThreshold:threshold===null?null:round(threshold),
     kitPredictions,checkerPredictions,kitVsStrict,checkerVsStrict,
-    knownCases:knownCases.slice(0,50)};
+    knownCases:knownCases.slice(0,50),
+    localPredictions,localVsStrict,localThresholds:local.map(x=>x.threshold),
+    thresholdGaps:local.map(x=>round(x.gap))};
 }
