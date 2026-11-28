@@ -172,7 +172,7 @@ function evaluateHypothesis(
             transform:null,success:false,error:'RANSAC failed independent marker agreement'}
       : hypothesis.name.startsWith('aruco/corners-')
       ? fitArucoCornerWarp(source,hypothesis.markers,dpi,e=>
-          logger.info('perspective','Exp3.9 exact-template marker-corner evidence',e))
+          logger.info('perspective','Exp3.9 exact-template marker-corner evidence',{...e}))
       : correctPerspectiveFromArucos(source,hypothesis.markers,!fastQrRoi);
     if(evidence)evidence.warpMs=Math.round(performance.now()-warpStart);
     if (!persp.success || !persp.corrected) return null;
