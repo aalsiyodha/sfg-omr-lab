@@ -47,10 +47,16 @@ export function probeSourceInk(
   if(!context)return missing('original-canvas-pixels-unavailable');
   const data=context.getImageData(0,0,source.width,source.height).data;
   const luma=(x:number,y:number):number|null=>{
-    const ix=Math.round(x),iy=Math.round(y);
-    if(ix<0||iy<0||ix>=source.width||iy>=source.height)return null;
-    const k=(iy*source.width+ix)*4;
-    return .299*data[k]+.587*data[k+1]+.114*data[k+2];
+    if(x<0||y<0||x>=source.width-1||y>=source.height-1)return null;
+    // 3.9: source-domain bilinear photometry avoids nearest-pixel aliasing
+    // from a projective inverse map. Diagnostic-only, no grading changes.
+    const x0=Math.floor(x),y0=Math.floor(y),fx=x-x0,fy=y-y0;
+    const at=(xx:number,yy:number)=>{
+      const k=(yy*source.width+xx)*4;
+      return .299*data[k]+.587*data[k+1]+.114*data[k+2];
+    };
+    return (1-fy)*((1-fx)*at(x0,y0)+fx*at(x0+1,y0))+
+      fy*((1-fx)*at(x0,y0+1)+fx*at(x0+1,y0+1));
   };
   const measurements:SourceInkProbe['measurements']=[];
   const scale=dpi/25.4;
