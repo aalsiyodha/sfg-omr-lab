@@ -888,6 +888,20 @@ export async function runFullScan(
               name:'corner/illumination',markers:corners});
             if(midpoint.found)hypotheses.push({kind:'midpoint',
               name:'midpoint/illumination',markers:midpoint});
+            // Rotation-invariant QR-frame recovery from the new optical
+            // representation. Never assign marker identity by camera quadrant.
+            if(failureQrHint?.valid){
+              const qrFrame=proposeQrGuidedCorners(binary,loaded.width,
+                loaded.height,failureQrHint,2);
+              for(const [i,proposal] of qrFrame.proposals.entries()){
+                hypotheses.push({kind:'corner',name:'corner/illumination-qr-frame-'+(i+1),
+                  markers:proposal.markers});
+              }
+              logger.info('markerDetection','Exp3.9.1 illumination QR-oriented alternatives',{
+                proposed:qrFrame.proposals.length,
+                geometryOnly:true,independentQrTimingGate:true,
+                diagnostics:qrFrame.diagnostics});
+            }
           }else{
             logger.info('markerDetection','Exp3.9.1 illumination-normalized marker discovery',{
               supported:false,reason:normalized.evidence.reason,
