@@ -833,6 +833,30 @@ export async function runFullScan(
       cleanupMats(alternate);
     }
 
+      // OMRKit-inspired contrast retry, restricted to the failure-side
+      // discovery budget. OpenCV.js builds may lack CLAHE; equalizeHist is
+      // a supported grayscale contrast alternative when it is available.
+      // It proposes geometry only and cannot bypass QR/timing proof.
+      if(Math.max(arucoAdaptive.count,arucoOtsu.count)<4 &&
+         typeof cv.equalizeHist==='function'){
+        let equalized:any=null,contrastBinary:any=null;
+        try{
+          equalized=new cv.Mat();contrastBinary=new cv.Mat();
+          cv.equalizeHist(preprocessed.gray,equalized);
+          cv.threshold(equalized,contrastBinary,0,255,
+            cv.THRESH_BINARY_INV|cv.THRESH_OTSU);
+          const contrastMarkers=detectArucoMarkers(equalized,contrastBinary);
+          logger.info('markerDetection','Exp3.9 contrast-normalized ArUco retry',{
+            source:'equalizeHist + Otsu',ids:Object.keys(contrastMarkers.points),
+            count:contrastMarkers.count,qrAndTimingStillRequired:true});
+          if(contrastMarkers.count>=3 && contrastMarkers.corners)
+            hypotheses.push({kind:'aruco',name:'aruco/corners-contrast',
+              markers:contrastMarkers});
+        }catch(error){
+          logger.warning('markerDetection','Exp3.9 contrast retry unavailable',{
+            reason:String(error)});
+        }finally{cleanupMats(contrastBinary,equalized);}
+      }
       markerProfile.fallbackDiscoveryMs=Date.now()-fallbackDiscoveryStart;
     }
     finishStage('markerDiscovery');
